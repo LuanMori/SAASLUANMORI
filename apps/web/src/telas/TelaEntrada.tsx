@@ -174,7 +174,9 @@ function BotaoSuporte() {
   return (
     <div className="entrada-suporte">
       <button type="button" className="entrada-suporte-botao" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} aria-controls={id}>
-        <IconeAjuda />
+        <span className="entrada-suporte-icone">
+          <IconeFone />
+        </span>
         Suporte
       </button>
       {aberto && (
@@ -238,10 +240,11 @@ const IconeInfo = () => (
     <circle cx="12" cy="7.8" r="0.6" fill="currentColor" />
   </Svg>
 );
-const IconeAjuda = () => (
+const IconeFone = () => (
   <Svg>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.4" />
-    <circle cx="12" cy="17" r="0.6" fill="currentColor" />
+    <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+    <rect x="3" y="13.5" width="4" height="6" rx="2" />
+    <rect x="17" y="13.5" width="4" height="6" rx="2" />
+    <path d="M19 19.5v.5a2 2 0 0 1-2 2h-3.5" />
   </Svg>
 );
