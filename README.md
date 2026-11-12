@@ -32,6 +32,22 @@ navegador ── token Auth0 (org_id) ──▶ API
 
 ## Rodar localmente
 
+### Windows: um clique
+
+Com o Node 22+ instalado e o Docker Desktop aberto, dê dois cliques em **`teste-local.bat`**.
+Ele sobe o Postgres, cria os `.env` (se não existirem), instala as dependências, aplica as
+migrations, cadastra as lojas, abre API e web em janelas separadas e abre o navegador.
+
+```powershell
+.\teste-local.ps1 -PularInstalacao                              # próximas vezes (sem npm install)
+.\teste-local.ps1 -PularInstalacao -Org org_xxx -Sub "auth0|..." -Papel dono   # cadastra uma pessoa
+.\teste-local.ps1 -Parar                                        # para o banco
+```
+
+O login só funciona depois de preencher o Auth0 nos `.env` (docs/AUTH0.md).
+
+### Passo a passo (qualquer sistema)
+
 Pré-requisitos: Node 22+, Docker (ou um Postgres 16+ local), um tenant Auth0 configurado (docs/AUTH0.md).
 
 ```bash
