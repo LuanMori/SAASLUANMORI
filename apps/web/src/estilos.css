@@ -114,3 +114,84 @@ h2 { font-size: 1.05rem; }
   .codigos > span, .codigos > small { display: inline; margin: 0 8px 0 0; }
   .tabela td[data-rotulo='Preço'] { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
 }
+
+/* ------------------------------------------------------------------ Logo (provisória) */
+.logo { display: inline-flex; align-items: center; gap: 12px; color: #3d4148; }
+.logo-simbolo { width: 48px; height: 48px; flex: none; }
+.logo-nome { font-weight: 700; font-size: 1.7rem; letter-spacing: -0.01em; }
+.logo-pequena { gap: 8px; }
+.logo-pequena .logo-simbolo { width: 26px; height: 26px; }
+.logo-pequena .logo-nome { font-size: 1rem; }
+
+/* ------------------------------------------------------------------ Tela de entrada */
+.entrada {
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+  background: #f2f3f5; padding: 40px 16px 24px; position: relative;
+}
+.entrada-coluna { width: 100%; max-width: 560px; display: flex; flex-direction: column; align-items: center; flex: 1; }
+.entrada-form { width: 100%; display: flex; flex-direction: column; margin-top: 48px; }
+.entrada-loja { font-size: 2.3rem; font-weight: 400; color: #3d4148; text-align: center; line-height: 1.2; overflow-wrap: anywhere; }
+.entrada-boas-vindas { margin: 36px 0 28px; text-align: center; font-size: 1.6rem; color: var(--primaria-escura); }
+.entrada-form > .alerta { margin: 0 0 18px; }
+
+.entrada-campo { display: flex; flex-direction: column; margin-bottom: 20px; }
+.entrada-rotulo { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.entrada-rotulo label { font-weight: 600; font-size: 1rem; color: var(--texto); }
+.entrada-caixa {
+  display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px 0 14px;
+  background: #fff; border: 1px solid #6b7280; border-radius: 4px;
+}
+.entrada-caixa:focus-within { border-color: var(--primaria-escura); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primaria) 30%, transparent); }
+.entrada-caixa input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; font: inherit; font-size: 1.05rem; color: var(--texto); }
+.entrada-caixa input::placeholder { color: #a3a8b1; }
+.icone { width: 24px; height: 24px; flex: none; color: #3d4148; }
+.entrada-olho { border: 0; background: none; padding: 6px; margin-right: -4px; cursor: pointer; color: var(--suave); border-radius: 6px; display: grid; }
+.entrada-olho .icone { color: inherit; }
+.entrada-olho:focus-visible, .entrada-link:focus-visible, .entrada-suporte-botao:focus-visible, .entrada-dica:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 2px;
+}
+.entrada-caps { margin-top: 6px; font-size: 0.85rem; color: var(--aviso); }
+
+.entrada-dica { position: relative; display: inline-grid; color: var(--primaria-escura); cursor: help; border-radius: 50%; }
+.entrada-dica .icone { width: 20px; height: 20px; color: inherit; }
+.entrada-dica-balao {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: max-content; max-width: 240px;
+  background: #1c2430; color: #fff; font-size: 0.82rem; padding: 8px 10px; border-radius: 6px; line-height: 1.35;
+  opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 2;
+}
+.entrada-dica:hover .entrada-dica-balao, .entrada-dica:focus-visible .entrada-dica-balao { opacity: 1; }
+
+.entrada-botao { height: 54px; margin-top: 4px; border-radius: 4px; font-weight: 600; font-size: 1.05rem; }
+.entrada-botao:disabled { background: #b3b6bb; border-color: #b3b6bb; color: #4b4f56; cursor: not-allowed; opacity: 1; }
+.entrada-link {
+  align-self: center; margin-top: 30px; border: 0; background: none; font: inherit; font-weight: 600;
+  color: var(--primaria-escura); cursor: pointer; padding: 4px 6px; border-radius: 4px;
+}
+.entrada-link:hover { text-decoration: underline; }
+.entrada-link + .alerta { text-align: center; }
+
+.entrada-suporte { position: absolute; top: 12px; right: 16px; z-index: 3; }
+.entrada-suporte-botao {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 20px;
+  background: #fff; border: 0; border-radius: 4px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  font: inherit; font-weight: 600; color: var(--primaria-escura); cursor: pointer;
+}
+.entrada-suporte-botao .icone { color: inherit; }
+.entrada-suporte-caixa {
+  position: absolute; right: 0; top: calc(100% + 8px); width: 300px; max-width: calc(100vw - 32px); background: #fff; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16); padding: 14px 16px; font-size: 0.92rem;
+}
+.entrada-suporte-caixa p { margin: 0 0 8px; }
+.entrada-suporte-caixa a { color: var(--primaria-escura); font-weight: 600; overflow-wrap: anywhere; }
+
+.entrada-rodape { margin-top: 40px; }
+
+@media (max-width: 640px) {
+  .entrada { padding-top: 88px; }
+  .logo-nome { font-size: 1.35rem; }
+  .logo-simbolo { width: 40px; height: 40px; }
+  .entrada-form { margin-top: 32px; }
+  .entrada-loja { font-size: 1.8rem; }
+  .entrada-boas-vindas { margin: 22px 0 20px; font-size: 1.35rem; }
+  .entrada-suporte-botao { flex-direction: row; padding: 10px 14px; }
+}
