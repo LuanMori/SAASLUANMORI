@@ -1,0 +1,90 @@
+// apps/api/prisma/schema.prisma
+// Fase -1: só lojas, usuarios e produtos.
+// Regras que o Prisma NÃO modela ficam no SQL da migration (e são testadas):
+//   - Row-Level Security (ENABLE + FORCE) e policies por loja_id
+//   - função app_loja_atual()
+//   - role saas_app e GRANTs
+//   - CHECK: super_admin <=> loja_id NULL
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Papel {
+  super_admin
+  dono
+  administrador
+  vendedor
+
+  @@map("papel")
+}
+
+/// Tenant. Cada loja corresponde a uma Organization do Auth0.
+/// Sem RLS (é o cadastro de tenants). A API só tem SELECT nesta tabela.
+model Loja {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  nome         String   @db.VarChar(120)
+  auth0OrgId   String   @unique @map("auth0_org_id") @db.VarChar(64)
+  ativa        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  usuarios Usuario[]
+  produtos Produto[]
+
+  @@map("lojas")
+}
+
+/// Pessoa que opera o sistema dentro de UMA loja. Só entra quem foi cadastrado
+/// aqui (pelo dono; por enquanto via `npm run db:usuario`). A API só lê esta tabela.
+/// A mesma conta Auth0 em duas lojas = duas linhas (uma por loja).
+/// super_admin: loja_id NULL (garantido por CHECK no banco).
+model Usuario {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  lojaId       String?  @map("loja_id") @db.Uuid
+  auth0Sub     String   @map("auth0_sub") @db.VarChar(128)
+  email        String?  @db.VarChar(254)
+  nome         String?  @db.VarChar(120)
+  papel        Papel    @default(vendedor)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  loja Loja? @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  @@unique([lojaId, auth0Sub])
+  @@map("usuarios")
+}
+
+/// Regras fora do Prisma (CHECK na migration 20261111190000, testadas):
+///   codigo_interno só dígitos · codigo_barras só dígitos · preco_centavos > 0.
+/// Código interno e código de barras não podem coincidir dentro da loja
+/// (o leitor do PDV aceita os dois): garantido pela API sob trava por loja.
+model Produto {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  lojaId        String   @map("loja_id") @db.Uuid
+  /// Gerado pelo sistema: 0001, 0002, … (maior + 1). Único DENTRO da loja.
+  codigoInterno String   @map("codigo_interno") @db.VarChar(18)
+  /// Opcional, só números. Único DENTRO da loja (lojas diferentes podem repetir).
+  codigoBarras  String?  @map("codigo_barras") @db.VarChar(64)
+  nome          String   @db.VarChar(120)
+  /// Dinheiro sempre em centavos inteiros. Maior que zero (brinde é dado na venda).
+  precoCentavos Int      @map("preco_centavos")
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm  DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+
+  loja Loja @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  @@unique([lojaId, codigoInterno])
+  @@unique([lojaId, codigoBarras])
+  @@index([lojaId, nome])
+  @@map("produtos")
+}
