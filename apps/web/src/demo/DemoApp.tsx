@@ -2,10 +2,10 @@
 // Entrada da demonstração. No sistema real a loja vem do subdomínio e o login é
 // validado no servidor; aqui o subdomínio é simulado na faixa amarela e os
 // usuários/senhas de teste ficam no próprio arquivo.
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { TelaPainel } from '../painel/TelaPainel';
 import { TelaEntrada } from '../telas/TelaEntrada';
-import { TelaProdutos } from '../telas/TelaProdutos';
-import { apagarDadosDemo, criarApiLocal } from './apiLocal';
+import { apagarDadosDemo } from './apiLocal';
 import { entrarDemo, LOJAS_DEMO, SENHA_DEMO, type UsuarioDemo } from './contasDemo';
 
 interface Sessao {
@@ -45,8 +45,14 @@ export function DemoApp() {
 }
 
 function AreaLogada({ loja, usuario, aoSair }: { loja: (typeof LOJAS_DEMO)[number]; usuario: UsuarioDemo; aoSair: () => void }) {
-  const api = useMemo(() => criarApiLocal({ lojaId: loja.id }), [loja.id]);
-  return <TelaProdutos api={api} sessao={{ nome: `${usuario.nome} (${usuario.papelRotulo})`, loja: loja.nome }} aoSair={aoSair} />;
+  // A tela de produtos (TelaProdutos) volta quando chegarmos em "Produtos e estoque".
+  return (
+    <TelaPainel
+      loja={{ nome: loja.nome, descricao: loja.descricao }}
+      pessoa={{ nome: usuario.nome, papel: usuario.papelRotulo }}
+      aoSair={aoSair}
+    />
+  );
 }
 
 function FaixaDemo({ subdominio, aoTrocar, logado }: { subdominio: string; aoTrocar: (s: string) => void; logado: boolean }) {

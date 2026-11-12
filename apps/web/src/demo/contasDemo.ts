@@ -9,8 +9,8 @@ export const TENTATIVAS_MAX = 5;
 export const BLOQUEIO_MS = 60_000;
 
 export const LOJAS_DEMO = [
-  { id: 'loja-a', subdominio: 'lojaa', nome: 'Loja A' },
-  { id: 'loja-b', subdominio: 'lojab', nome: 'Loja B' },
+  { id: 'loja-a', subdominio: 'lojaa', nome: 'Loja A', descricao: 'Rações, petiscos e acessórios' },
+  { id: 'loja-b', subdominio: 'lojab', nome: 'Loja B', descricao: 'Pet shop e banho e tosa' },
 ] as const;
 
 export interface UsuarioDemo {

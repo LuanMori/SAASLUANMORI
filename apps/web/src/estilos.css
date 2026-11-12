@@ -208,3 +208,90 @@ h2 { font-size: 1.05rem; }
   .entrada-loja { font-size: 1.8rem; }
   .entrada-boas-vindas { margin: 22px 0 20px; font-size: 1.35rem; }
 }
+
+/* ------------------------------------------------------------------ Área logada: barra lateral (formato DaniPets, em verde) */
+.painel-app { display: flex; min-height: 100vh; background: var(--fundo); }
+.barra {
+  --barra-fundo: #0c3b2b; --barra-fundo-meio: #10523b; --barra-texto: #d5ece2; --barra-suave: #9fcbb8; --barra-linha: rgba(255, 255, 255, 0.1);
+  position: sticky; top: 0; align-self: flex-start; flex: none; width: 248px; height: 100vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px; padding: 22px 14px 14px; color: #fff;
+  background: linear-gradient(180deg, var(--barra-fundo) 0%, var(--barra-fundo-meio) 58%, var(--barra-fundo) 100%);
+  box-shadow: 10px 0 28px rgba(6, 40, 28, 0.1);
+}
+.barra-loja { display: flex; align-items: center; gap: 12px; padding: 0 6px 20px; margin-bottom: 8px; border-bottom: 1px solid var(--barra-linha); }
+.barra-loja-logo {
+  display: grid; place-items: center; flex: none; width: 54px; height: 54px; border-radius: 50%;
+  background: #062a1e; color: #fff; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.02em;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 0 5px var(--primaria), 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+.barra-loja-texto { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.barra-loja-texto strong { font-size: 1.08rem; line-height: 1.15; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.barra-loja-texto span { font-size: 0.66rem; line-height: 1.35; letter-spacing: 0.07em; text-transform: uppercase; color: var(--barra-suave); }
+
+.barra-nav { display: flex; flex-direction: column; gap: 4px; }
+.barra-item {
+  position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 44px; padding: 0 12px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--barra-texto); font: inherit; font-weight: 550; text-align: left; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.barra-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.barra-item[aria-current='page'] {
+  background: var(--primaria); color: #fff; box-shadow: 0 8px 18px rgba(2, 24, 16, 0.25), inset 3px 0 0 #9be3c4;
+}
+.barra-item[aria-current='page']::before {
+  content: ''; position: absolute; left: -8px; top: calc(50% - 12px); width: 3px; height: 24px; border-radius: 99px; background: #9be3c4;
+}
+.barra-icone { width: 20px; height: 20px; flex: none; }
+.barra-item:focus-visible, .barra-mini:focus-visible { outline: 3px solid #9be3c4; outline-offset: 1px; }
+
+.barra-pessoa { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding: 12px 6px 4px; border-top: 1px solid var(--barra-linha); }
+.barra-pessoa-nome b { display: block; font-size: 0.9rem; }
+.barra-pessoa-nome small { color: var(--barra-suave); font-size: 0.75rem; }
+.barra-pessoa-acoes { display: flex; gap: 6px; }
+.barra-mini {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 8px;
+  font: inherit; font-size: 0.78rem; font-weight: 650; color: #fff; cursor: pointer;
+  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
+}
+.barra-mini:hover { background: rgba(255, 255, 255, 0.16); }
+.barra-icone-mini { width: 15px; height: 15px; }
+
+.barra-rodape {
+  margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 16px 6px 2px; border-top: 1px solid var(--barra-linha); color: var(--barra-suave); font-size: 0.72rem;
+}
+.barra-rodape .logo { color: var(--barra-texto); }
+.barra-rodape .logo-simbolo { color: #9be3c4; width: 22px; height: 22px; }
+.barra-rodape .logo-nome { font-size: 0.85rem; }
+
+.painel-conteudo { flex: 1; min-width: 0; padding: 28px 32px; }
+.visao-cabecalho h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
+.visao-cabecalho p { margin: 6px 0 0; }
+.painel-data::first-letter { text-transform: uppercase; }
+
+.painel-topo-celular { display: none; }
+.painel-veu { display: none; }
+
+@media (max-width: 900px) {
+  .painel-app { flex-direction: column; }
+  .painel-topo-celular {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px; position: sticky; top: 0; z-index: 5;
+    background: #0c3b2b; color: #fff;
+  }
+  .painel-topo-celular strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .painel-botao-menu {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px; border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .painel-botao-menu svg { width: 22px; height: 22px; }
+  .barra {
+    position: fixed; left: 0; top: 0; z-index: 20; height: 100dvh; transform: translateX(-105%); visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+  .barra-aberta { transform: none; visibility: visible; transition: transform 0.2s ease; }
+  .painel-veu { display: block; position: fixed; inset: 0; z-index: 15; background: rgba(4, 20, 14, 0.45); }
+  .painel-conteudo { padding: 20px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .barra { transition: none; }
+}
