@@ -1,0 +1,18 @@
+{
+  "name": "sistema-padrao",
+  "private": true,
+  "description": "SaaS multi-tenant de gestão de varejo — monorepo (core, api, web)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:core": "npm run build -w @saas/core",
+    "build": "npm run build:core && npm run build -w @saas/api && npm run build -w @saas/web",
+    "typecheck": "npm run build:core && npm run typecheck -w @saas/core && npm run typecheck -w @saas/api && npm run typecheck -w @saas/web",
+    "test": "npm run build:core && npm test -w @saas/core && npm test -w @saas/api && npm test -w @saas/web"
+  }
+}
