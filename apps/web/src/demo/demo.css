@@ -1,0 +1,15 @@
+/* apps/web/src/demo/demo.css — só o que a demonstração acrescenta ao visual do sistema. */
+.demo-faixa {
+  margin: 0; padding: 8px 16px; text-align: center; font-size: 0.85rem;
+  background: var(--aviso-fundo); color: var(--aviso); border-bottom: 1px solid var(--borda);
+}
+.demo-faixa + .login { min-height: calc(100vh - 37px); }
+.demo-entrada { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.demo-entrada .marca { margin-bottom: 4px; }
+.demo-entrada h1, .demo-entrada > p { text-align: center; }
+.demo-entrada > p.suave { margin: -8px 0 4px; }
+.campo select {
+  font: inherit; padding: 9px 12px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; color: var(--texto);
+  width: 100%;
+}
+.botao.demo-apagar { font-size: 0.85rem; color: var(--suave); border-style: dashed; }

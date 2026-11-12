@@ -30,6 +30,18 @@ navegador ── token Auth0 (org_id) ──▶ API
 - `set_config(..., true)` = vale só dentro da transação: não vaza pelo pool de conexões.
 - `FORCE ROW LEVEL SECURITY`: nem a role dona das tabelas escapa (só superusuário, que a API nunca usa).
 
+## Demonstração em um arquivo só (sem instalar nada)
+
+Abra **`sistema-padrao-demo.html`** no navegador (dois cliques). É a mesma tela de produtos e as
+mesmas regras do `@saas/core` (código interno 0001…, código de barras só números e sem repetir,
+preço maior que zero, Enter do leitor vai para o preço), mas **sem servidor**: o login é uma
+lista (Loja A/B; Dono, Vendedor ou pessoa não cadastrada, que vê o bloqueio) e os produtos ficam
+no `localStorage` do navegador, separados por loja.
+
+Serve para testar telas e regras de cadastro. **Não testa segurança**: Auth0, RLS e isolamento
+de verdade só existem com API + Postgres (abaixo). Para gerar o arquivo de novo depois de mudar
+a tela: `npm run build:core && npm run build:demo -w @saas/web`.
+
 ## Rodar localmente
 
 ### Windows: um clique
