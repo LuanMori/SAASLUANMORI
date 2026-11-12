@@ -4,6 +4,8 @@
 // usuário desativado, bloqueio após várias senhas erradas). Não é segurança:
 // tudo isto roda no navegador e qualquer pessoa pode ler.
 
+import type { PapelDeLoja } from '@saas/core';
+
 export const SENHA_DEMO = 'demo1234';
 export const TENTATIVAS_MAX = 5;
 export const BLOQUEIO_MS = 60_000;
@@ -16,14 +18,14 @@ export const LOJAS_DEMO = [
 export interface UsuarioDemo {
   usuario: string;
   nome: string;
-  papelRotulo: string;
+  papel: PapelDeLoja;
   ativo: boolean;
 }
 
 const USUARIOS: UsuarioDemo[] = [
-  { usuario: 'ana', nome: 'Ana', papelRotulo: 'Dono', ativo: true },
-  { usuario: 'bruno', nome: 'Bruno', papelRotulo: 'Vendedor', ativo: true },
-  { usuario: 'carla', nome: 'Carla', papelRotulo: 'Vendedor', ativo: false },
+  { usuario: 'ana', nome: 'Ana', papel: 'dono', ativo: true },
+  { usuario: 'bruno', nome: 'Bruno', papel: 'vendedor', ativo: true },
+  { usuario: 'carla', nome: 'Carla', papel: 'vendedor', ativo: false },
 ];
 
 export const MENSAGEM_CREDENCIAIS = 'Usuário ou senha incorretos.';

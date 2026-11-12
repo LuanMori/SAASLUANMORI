@@ -209,89 +209,109 @@ h2 { font-size: 1.05rem; }
   .entrada-boas-vindas { margin: 22px 0 20px; font-size: 1.35rem; }
 }
 
-/* ------------------------------------------------------------------ Área logada: barra lateral (formato DaniPets, em verde) */
-.painel-app { display: flex; min-height: 100vh; background: var(--fundo); }
-.barra {
-  --barra-fundo: #0c3b2b; --barra-fundo-meio: #10523b; --barra-texto: #d5ece2; --barra-suave: #9fcbb8; --barra-linha: rgba(255, 255, 255, 0.1);
-  position: sticky; top: 0; align-self: flex-start; flex: none; width: 248px; height: 100vh; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 4px; padding: 22px 14px 14px; color: #fff;
-  background: linear-gradient(180deg, var(--barra-fundo) 0%, var(--barra-fundo-meio) 58%, var(--barra-fundo) 100%);
-  box-shadow: 10px 0 28px rgba(6, 40, 28, 0.1);
+/* ------------------------------------------------------------------ Área logada
+   Barra lateral copiada do DaniPets V9.3.3 (mesmas medidas, grupos e comportamento),
+   trocando o laranja do DaniPets pelo verde do SaaS. */
+.painel-app {
+  --side: #1b1c1b; --side-ink: #d4d8d5; --side-muted: #989f9a; --side-group: #8b928d;
+  --side-hover: #252826; --side-active: #2c302e; --side-line: #313532; --side-btn: #3a3e3b;
+  --side-accent: #4cc792;            /* ícone do item ativo (no escuro, #0b7f55 não teria contraste) */
+  --font-head: 'Bricolage Grotesque', Bahnschrift, 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; background: var(--fundo);
 }
-.barra-loja { display: flex; align-items: center; gap: 12px; padding: 0 6px 20px; margin-bottom: 8px; border-bottom: 1px solid var(--barra-linha); }
-.barra-loja-logo {
-  display: grid; place-items: center; flex: none; width: 54px; height: 54px; border-radius: 50%;
-  background: #062a1e; color: #fff; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.02em;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 0 5px var(--primaria), 0 8px 20px rgba(0, 0, 0, 0.28);
+.sidebar {
+  position: sticky; top: 0; height: 100vh; align-self: start; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--side-btn) transparent;
+  background: var(--side); color: var(--side-ink); padding: 18px 12px 14px; display: flex; flex-direction: column; gap: 2px;
 }
-.barra-loja-texto { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.barra-loja-texto strong { font-size: 1.08rem; line-height: 1.15; letter-spacing: -0.02em; overflow-wrap: anywhere; }
-.barra-loja-texto span { font-size: 0.66rem; line-height: 1.35; letter-spacing: 0.07em; text-transform: uppercase; color: var(--barra-suave); }
+.brand { display: flex; align-items: center; gap: 12px; padding: 2px 6px 16px; }
+.brandmark {
+  width: 40px; height: 40px; min-width: 40px; border-radius: 50%; overflow: hidden; background: #0b0e12;
+  display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em;
+}
+.brandcopy { min-width: 0; }
+.brandcopy strong { display: block; font: 700 18px/1.1 var(--font-head); color: #fff; overflow-wrap: anywhere; }
+.brandcopy span { display: block; margin-top: 3px; font-size: 12px; line-height: 1.3; color: var(--side-muted); }
+.navlist { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.navsec { display: flex; flex-direction: column; gap: 2px; }
+.navgroup { padding: 14px 12px 4px; font-size: 12px; font-weight: 500; color: var(--side-group); }
+.nav {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 0 12px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--side-ink); font: inherit; font-weight: 500; text-align: left; cursor: pointer;
+}
+.nav:hover { background: var(--side-hover); color: #fff; }
+.nav.active { background: var(--side-active); color: #fff; font-weight: 600; }
+.nav .barra-icone { width: 18px; height: 18px; flex: 0 0 18px; }
+.nav.active .barra-icone { color: var(--side-accent); }
+.nav.nav-pos { min-height: 44px; margin: 0 0 6px; padding: 0 14px; background: var(--primaria); color: #fff; font-weight: 600; }
+.nav.nav-pos:hover { background: var(--primaria-escura); color: #fff; }
+.nav.nav-pos .barra-icone { color: currentColor; }
+.nav:focus-visible, .sidebar button:focus-visible { outline: 2px solid var(--side-accent); outline-offset: 2px; }
+.sideuser { margin-top: auto; padding: 14px 4px 0; border-top: 1px solid var(--side-line); display: flex; flex-direction: column; gap: 10px; color: var(--side-ink); }
+.sideuser-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sideuser-avatar {
+  width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--side-btn); color: #eef1ef; font-size: 13px; font-weight: 600;
+}
+.sideuser-name { flex: 1; min-width: 0; }
+.sideuser-name b { display: block; font-size: 14px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sideuser-name small { display: block; font-size: 12px; color: var(--side-muted); }
+.sideuser-actions { display: flex; gap: 8px; }
+.sidebar .sideuser-actions button, .sidebar .sideuser-theme {
+  flex: 1; min-height: 34px; padding: 6px 8px; border: 1px solid var(--side-btn); border-radius: 6px; background: transparent;
+  color: var(--side-ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.sidebar .sideuser-actions button:hover, .sidebar .sideuser-theme:hover { background: var(--side-hover); border-color: #4a4f4b; color: #fff; }
+.sidebar .sideuser-theme { flex: 0 0 36px; width: 36px; height: 36px; min-height: 0; padding: 0; display: grid; place-items: center; }
+.sidebar .sideuser-actions button { flex: 1 1 auto; padding: 6px; white-space: nowrap; }
+.sidefoot { padding: 10px 4px 0; font-size: 12px; color: var(--side-group); }
 
-.barra-nav { display: flex; flex-direction: column; gap: 4px; }
-.barra-item {
-  position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 44px; padding: 0 12px;
-  border: 0; border-radius: 10px; background: transparent; color: var(--barra-texto); font: inherit; font-weight: 550; text-align: left; cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.barra-item:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.barra-item[aria-current='page'] {
-  background: var(--primaria); color: #fff; box-shadow: 0 8px 18px rgba(2, 24, 16, 0.25), inset 3px 0 0 #9be3c4;
-}
-.barra-item[aria-current='page']::before {
-  content: ''; position: absolute; left: -8px; top: calc(50% - 12px); width: 3px; height: 24px; border-radius: 99px; background: #9be3c4;
-}
-.barra-icone { width: 20px; height: 20px; flex: none; }
-.barra-item:focus-visible, .barra-mini:focus-visible { outline: 3px solid #9be3c4; outline-offset: 1px; }
-
-.barra-pessoa { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; padding: 12px 6px 4px; border-top: 1px solid var(--barra-linha); }
-.barra-pessoa-nome b { display: block; font-size: 0.9rem; }
-.barra-pessoa-nome small { color: var(--barra-suave); font-size: 0.75rem; }
-.barra-pessoa-acoes { display: flex; gap: 6px; }
-.barra-mini {
-  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 8px;
-  font: inherit; font-size: 0.78rem; font-weight: 650; color: #fff; cursor: pointer;
-  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
-}
-.barra-mini:hover { background: rgba(255, 255, 255, 0.16); }
-.barra-icone-mini { width: 15px; height: 15px; }
-
-.barra-rodape {
-  margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 16px 6px 2px; border-top: 1px solid var(--barra-linha); color: var(--barra-suave); font-size: 0.72rem;
-}
-.barra-rodape .logo { color: var(--barra-texto); }
-.barra-rodape .logo-simbolo { color: #9be3c4; width: 22px; height: 22px; }
-.barra-rodape .logo-nome { font-size: 0.85rem; }
-
-.painel-conteudo { flex: 1; min-width: 0; padding: 28px 32px; }
+.painel-conteudo { min-width: 0; padding: 28px 32px; }
 .visao-cabecalho h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
 .visao-cabecalho p { margin: 6px 0 0; }
 .painel-data::first-letter { text-transform: uppercase; }
 
-.painel-topo-celular { display: none; }
-.painel-veu { display: none; }
-
-@media (max-width: 900px) {
-  .painel-app { flex-direction: column; }
-  .painel-topo-celular {
-    display: flex; align-items: center; gap: 12px; padding: 10px 16px; position: sticky; top: 0; z-index: 5;
-    background: #0c3b2b; color: #fff;
-  }
-  .painel-topo-celular strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .painel-botao-menu {
-    display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 10px; border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
-  }
-  .painel-botao-menu svg { width: 22px; height: 22px; }
-  .barra {
-    position: fixed; left: 0; top: 0; z-index: 20; height: 100dvh; transform: translateX(-105%); visibility: hidden;
-    transition: transform 0.2s ease, visibility 0s linear 0.2s;
-  }
-  .barra-aberta { transform: none; visibility: visible; transition: transform 0.2s ease; }
-  .painel-veu { display: block; position: fixed; inset: 0; z-index: 15; background: rgba(4, 20, 14, 0.45); }
-  .painel-conteudo { padding: 20px 16px; }
+/* Telas baixas (notebook): compacta como no DaniPets */
+@media (min-width: 1001px) and (max-height: 870px) {
+  .sidebar { padding-top: 12px; }
+  .brand { padding-bottom: 10px; }
+  .nav { min-height: 36px; }
+  .nav.nav-pos { min-height: 40px; }
+  .navgroup { padding: 10px 12px 2px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .barra { transition: none; }
+@media (min-width: 1001px) and (max-height: 790px) {
+  .sidebar { padding: 10px 12px 8px; }
+  .brand { padding: 0 6px 8px; }
+  .brandmark { width: 34px; height: 34px; min-width: 34px; }
+  .brandcopy span { display: none; }
+  .nav { min-height: 31px; }
+  .nav.nav-pos { min-height: 36px; margin-bottom: 4px; }
+  .navgroup { padding: 7px 12px 1px; font-size: 11px; }
+  .navlist { margin-bottom: 8px; }
+  .sideuser { padding-top: 8px; gap: 6px; }
+  .sidebar .sideuser-actions button { padding-top: 5px; padding-bottom: 5px; }
+  .sidefoot { padding-top: 6px; font-size: 11px; }
+}
+@media (min-width: 1001px) and (max-height: 650px) {
+  .navgroup { display: none; }
+  .navsec + .navsec { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--side-line); }
+  .nav { min-height: 30px; }
+}
+/* Tablet e celular: a barra vira uma faixa de botões no topo, como no DaniPets */
+@media (max-width: 1000px) {
+  .painel-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .sidebar { position: static; height: auto; overflow: visible; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 12px; }
+  .brand { padding: 0 6px 0 0; margin-right: auto; }
+  .brandmark { width: 34px; height: 34px; min-width: 34px; }
+  .brandcopy span { display: none; }
+  .navlist, .navsec { display: contents; }
+  .navgroup { display: none; }
+  .nav { width: auto; min-height: 36px; padding: 0 10px; font-size: 13px; }
+  .nav .barra-icone { display: none; }
+  .nav.nav-pos { min-height: 36px; margin: 0; }
+  .sideuser { flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; margin-top: 4px; padding: 8px 0 0; }
+  .sideuser-id { margin-right: auto; }
+  .sidebar .sideuser-actions button { flex: 0 0 auto; padding: 6px 10px; }
+  .sidefoot { display: none; }
+  .painel-conteudo { padding: 20px 16px; }
 }

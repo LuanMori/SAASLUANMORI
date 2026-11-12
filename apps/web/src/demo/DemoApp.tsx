@@ -49,7 +49,7 @@ function AreaLogada({ loja, usuario, aoSair }: { loja: (typeof LOJAS_DEMO)[numbe
   return (
     <TelaPainel
       loja={{ nome: loja.nome, descricao: loja.descricao }}
-      pessoa={{ nome: usuario.nome, papel: usuario.papelRotulo }}
+      pessoa={{ nome: usuario.nome, papel: usuario.papel }}
       aoSair={aoSair}
     />
   );

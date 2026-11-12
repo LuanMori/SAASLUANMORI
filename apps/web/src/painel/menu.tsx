@@ -1,5 +1,7 @@
-// apps/web/src/painel/menu.tsx — itens da barra lateral, na mesma ordem do DaniPets.
-// Para mudar a barra (tirar, pôr ou reordenar itens), mexa só nesta lista.
+// apps/web/src/painel/menu.tsx — itens da barra lateral, copiados do DaniPets V9.3.3:
+// "Frente de caixa" em destaque acima do menu e os outros itens em grupos
+// (Operação, Cadastros, Gestão, Sistema). Para mudar a barra, mexa só nesta lista.
+import type { PapelDeLoja } from '@saas/core';
 import type { ReactNode } from 'react';
 
 export type IdSecao =
@@ -19,6 +21,13 @@ export interface ItemMenu {
   id: IdSecao;
   rotulo: string;
   icone: ReactNode;
+  /** Como no DaniPets (PAGE_PERM): só Dono e Administrador veem. */
+  soGestor?: boolean;
+}
+
+export interface GrupoMenu {
+  titulo: string;
+  itens: readonly ItemMenu[];
 }
 
 function Icone({ children }: { children: ReactNode }) {
@@ -29,7 +38,7 @@ function Icone({ children }: { children: ReactNode }) {
   );
 }
 
-export const ITENS_MENU: readonly ItemMenu[] = [
+const ITENS: readonly ItemMenu[] = [
   {
     id: 'visao-geral',
     rotulo: 'Visão geral',
@@ -75,6 +84,7 @@ export const ITENS_MENU: readonly ItemMenu[] = [
   },
   {
     id: 'compras',
+    soGestor: true,
     rotulo: 'Compras',
     icone: (
       <Icone>
@@ -96,6 +106,7 @@ export const ITENS_MENU: readonly ItemMenu[] = [
   },
   {
     id: 'financeiro',
+    soGestor: true,
     rotulo: 'Financeiro',
     icone: (
       <Icone>
@@ -105,6 +116,7 @@ export const ITENS_MENU: readonly ItemMenu[] = [
   },
   {
     id: 'relatorios',
+    soGestor: true,
     rotulo: 'Relatórios',
     icone: (
       <Icone>
@@ -114,6 +126,7 @@ export const ITENS_MENU: readonly ItemMenu[] = [
   },
   {
     id: 'dados-e-backup',
+    soGestor: true,
     rotulo: 'Dados e backup',
     icone: (
       <Icone>
@@ -138,11 +151,33 @@ export const ITENS_MENU: readonly ItemMenu[] = [
     rotulo: 'Suporte',
     icone: (
       <Icone>
-        <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
-        <rect x="3" y="13.5" width="4" height="6" rx="2" />
-        <rect x="17" y="13.5" width="4" height="6" rx="2" />
-        <path d="M19 19.5v.5a2 2 0 0 1-2 2h-3.5" />
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.6" />
+        <path d="M12 17h.01" />
       </Icone>
     ),
   },
 ];
+
+const item = (id: IdSecao): ItemMenu => {
+  const achado = ITENS.find((i) => i.id === id);
+  if (!achado) throw new Error(`Item de menu desconhecido: ${id}`);
+  return achado;
+};
+
+/** Botão em destaque, acima dos grupos. */
+export const ITEM_CAIXA: ItemMenu = item('frente-de-caixa');
+
+export const GRUPOS_MENU: readonly GrupoMenu[] = [
+  { titulo: 'Operação', itens: [item('visao-geral'), item('caixa-do-dia')] },
+  { titulo: 'Cadastros', itens: [item('produtos-e-estoque'), item('compras'), item('clientes')] },
+  { titulo: 'Gestão', itens: [item('financeiro'), item('relatorios')] },
+  { titulo: 'Sistema', itens: [item('usuarios'), item('dados-e-backup'), item('suporte')] },
+];
+
+/** Todos os itens, na ordem em que aparecem na barra. */
+export const ITENS_MENU: readonly ItemMenu[] = [ITEM_CAIXA, ...GRUPOS_MENU.flatMap((g) => g.itens)];
+
+export function podeVer(item: ItemMenu, papel: PapelDeLoja): boolean {
+  return !item.soGestor || papel === 'dono' || papel === 'administrador';
+}
