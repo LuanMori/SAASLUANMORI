@@ -147,9 +147,10 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
 
     await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
     await screen.findByText('R$ 15,00', { selector: '[data-testid="vendido-hoje"]' });
-    const tabela = screen.getByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
+    const tabela = within(document.getElementById('vg-detalhe')!).getAllByRole('table').at(-1)!;
     expect(within(tabela).getByText('Bruno')).toBeTruthy();
-    expect(within(tabela).getByText(/2× Petisco Bifinho/)).toBeTruthy();
+    expect(txt(tabela.textContent)).toMatch(/2× Petisco Bifinho/);
 
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Relatórios' }));
     const linha = (await screen.findByText('nº 1')).closest('tr')!;
@@ -168,6 +169,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     );
     await screen.findByTestId('vendido-hoje');
     expect(screen.queryByRole('button', { name: 'Relatórios' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
     expect(screen.getByText(/Todas as vendas ficam guardadas em/).querySelector('button')).toBeNull();
   });
 });
