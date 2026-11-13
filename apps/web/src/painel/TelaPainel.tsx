@@ -40,7 +40,6 @@ export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-ge
             fuso={fuso}
             agora={agora}
             intervaloMs={intervaloMs}
-            aoAbrirCaixa={() => setSecao('frente-de-caixa')}
             aoVerRelatorios={podeVer(ITENS_MENU.find((i) => i.id === 'relatorios')!, pessoa.papel) ? () => setSecao('relatorios') : undefined}
           />
         )}
