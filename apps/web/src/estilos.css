@@ -354,35 +354,41 @@ h2 { font-size: 1.05rem; }
 .vg, .rel, .pdv { display: flex; flex-direction: column; gap: 20px; max-width: 1240px; }
 .vg-topo h1, .pdv-topo h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
 .vg-topo p, .pdv-topo p { margin: 6px 0 0; }
-.vg-hero { display: grid; grid-template-columns: minmax(0, 1fr); }
-/* Cards clicáveis (como no DaniPets): abrem o relatório "de onde vem este número" */
+.vg-hero { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); gap: 16px; align-items: stretch; }
+.vg-hero-so { grid-template-columns: minmax(0, 1fr); }
+/* Card grande: abre logo abaixo o relatório das vendas de hoje (como no DaniPets) */
 .vg-visor {
-  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 6px; min-width: 0; padding: 26px 28px;
-  border: 0; border-radius: 12px; background: #0d3a2b; color: #fff; font: inherit; text-align: left; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; min-height: 188px; padding: 28px 30px;
+  border: 0; border-radius: 14px; background: #0d3a2b; color: #fff; font: inherit; text-align: left; cursor: pointer;
   transition: background 0.12s, box-shadow 0.12s;
 }
 .vg-visor:hover { background: #104634; }
 .vg-visor:focus-visible { outline: 3px solid #8fe0bd; outline-offset: 2px; }
 .vg-visor.vg-on { box-shadow: 0 0 0 3px var(--fundo), 0 0 0 6px var(--primaria); }
-.vg-visor-rotulo { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; color: #8fe0bd; }
+.vg-visor-texto { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vg-visor-rotulo { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; color: #8fe0bd; }
 .vg-visor-valor { font-size: clamp(2.4rem, 4.4vw, 3.6rem); line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .vg-visor-nota { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #cde9dc; font-size: 1.02rem; }
 .vg-ponto { color: #8fe0bd; }
-.vg-visor-mais { margin-top: 10px; font-weight: 600; color: #8fe0bd; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(143, 224, 189, 0.45); }
-.vg-visor:hover .vg-visor-mais { text-decoration-color: currentColor; }
-.vg-seta { width: 18px; height: 18px; flex: none; color: var(--suave); transition: transform 0.15s; }
-.vg-on .vg-seta { transform: rotate(90deg); color: var(--primaria); }
-.vg-pares { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.lista-clicavel li { padding: 0; }
-.lista-clicavel button {
-  display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 8px; margin: 0 -8px; box-sizing: content-box;
-  border: 0; border-radius: 8px; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer;
+.vg-visor-seta { width: 28px; height: 28px; flex: none; color: #8fe0bd; transform: rotate(90deg); transition: transform 0.15s; }
+.vg-visor.vg-on .vg-visor-seta { transform: rotate(-90deg); }
+/* Cards do lado: levam para outra aba */
+.vg-lado { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--borda); border-radius: 14px; background: var(--superficie); }
+.vg-atalho {
+  flex: 1; display: flex; align-items: center; gap: 14px; width: 100%; padding: 18px 20px; text-align: left;
+  border: 0; border-bottom: 1px solid var(--borda); background: transparent; font: inherit; color: inherit; cursor: pointer;
 }
-.lista-clicavel button > span:first-child { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.lista-clicavel button:hover { background: #f5f9f7; }
-.lista-clicavel button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 40%, transparent); outline-offset: -1px; }
-.lista-clicavel button.vg-on { background: var(--primaria-clara); }
-.lista-clicavel .numero { font-weight: 600; }
+.vg-atalho:last-child { border-bottom: 0; }
+.vg-atalho:hover { background: #f5f9f7; }
+.vg-atalho:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 40%, transparent); outline-offset: -3px; }
+.vg-atalho-texto { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vg-atalho-rotulo { font-size: 0.85rem; font-weight: 500; color: var(--suave); }
+.vg-atalho-valor { font-size: 1.6rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.vg-atalho-valor small { font-size: 0.9rem; font-weight: 600; color: var(--suave); }
+.vg-atalho-nota { font-size: 0.8rem; color: var(--suave); }
+.vg-seta { width: 18px; height: 18px; flex: none; color: var(--suave); transition: transform 0.15s, color 0.15s; }
+.vg-atalho:hover .vg-seta { color: var(--primaria); transform: translateX(2px); }
+.vg-pares { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 
 /* Relatório aberto pelo card */
 .vg-detalhe { border-color: color-mix(in srgb, var(--primaria) 45%, var(--borda)); scroll-margin-top: 16px; }
@@ -481,6 +487,10 @@ h2 { font-size: 1.05rem; }
 .itens-venda details ul { margin: 6px 0 0; padding-left: 18px; }
 .itens-venda details li { padding: 2px 0; }
 
+@media (max-width: 760px) {
+  .vg-hero { grid-template-columns: minmax(0, 1fr); }
+  .vg-visor { min-height: 0; padding: 22px; }
+}
 @media (max-width: 1100px) {
   .pdv-corpo { grid-template-columns: minmax(0, 1fr); }
   .pdv-pagamento { position: static; }

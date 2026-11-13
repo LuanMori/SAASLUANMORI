@@ -147,7 +147,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
 
     await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
     await screen.findByText('R$ 15,00', { selector: '[data-testid="vendido-hoje"]' });
-    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
+    await userEvent.click(screen.getByRole('button', { name: /VENDAS DE HOJE/ }));
     const tabela = within(document.getElementById('vg-detalhe')!).getAllByRole('table').at(-1)!;
     expect(within(tabela).getByText('Bruno')).toBeTruthy();
     expect(txt(tabela.textContent)).toMatch(/2× Petisco Bifinho/);
@@ -156,6 +156,25 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     const linha = (await screen.findByText('nº 1')).closest('tr')!;
     expect(within(linha).getByText('Bruno')).toBeTruthy();
     expect(within(linha).getByText('R$ 15,00')).toBeTruthy();
+  });
+
+  it('Visão geral: Produtos ativos leva para Produtos e estoque; Saldo das contas leva para o Financeiro', async () => {
+    render(
+      <TelaPainel
+        api={criarApiLocal({ lojaId: 'loja-z', operador: { id: 'a', nome: 'Ana' }, exemplos: false, atrasoMs: 0 })}
+        loja={{ nome: 'Loja Z' }}
+        pessoa={{ nome: 'Ana', papel: 'dono' }}
+        aoSair={vi.fn()}
+      />,
+    );
+    const menu = screen.getByRole('navigation', { name: 'Menu principal' });
+    await userEvent.click(await screen.findByRole('button', { name: /Produtos ativos/ }));
+    expect(within(menu).getByRole('button', { name: 'Produtos e estoque' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('heading', { name: 'Visão geral' })).toBeNull();
+
+    await userEvent.click(within(menu).getByRole('button', { name: 'Visão geral' }));
+    await userEvent.click(await screen.findByRole('button', { name: /Saldo das contas/ }));
+    expect(within(menu).getByRole('button', { name: 'Financeiro' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('Vendedor não chega aos Relatórios nem pelo link da Visão geral', async () => {
@@ -169,7 +188,9 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     );
     await screen.findByTestId('vendido-hoje');
     expect(screen.queryByRole('button', { name: 'Relatórios' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
+    expect(await screen.findByRole('button', { name: /Produtos ativos/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Saldo das contas/ })).toBeNull(); // sem acesso ao Financeiro
+    await userEvent.click(screen.getByRole('button', { name: /VENDAS DE HOJE/ }));
     expect(screen.getByText(/Todas as vendas ficam guardadas em/).querySelector('button')).toBeNull();
   });
 });

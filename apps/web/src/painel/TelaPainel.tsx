@@ -28,6 +28,10 @@ export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-ge
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
   const permitido = item ? podeVer(item, pessoa.papel) : false;
+  const pode = (id: IdSecao) => {
+    const alvo = ITENS_MENU.find((i) => i.id === id);
+    return alvo ? podeVer(alvo, pessoa.papel) : false;
+  };
 
   return (
     <div className="painel-app">
@@ -40,7 +44,9 @@ export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-ge
             fuso={fuso}
             agora={agora}
             intervaloMs={intervaloMs}
-            aoVerRelatorios={podeVer(ITENS_MENU.find((i) => i.id === 'relatorios')!, pessoa.papel) ? () => setSecao('relatorios') : undefined}
+            aoVerProdutos={pode('produtos-e-estoque') ? () => setSecao('produtos-e-estoque') : undefined}
+            aoVerFinanceiro={pode('financeiro') ? () => setSecao('financeiro') : undefined}
+            aoVerRelatorios={pode('relatorios') ? () => setSecao('relatorios') : undefined}
           />
         )}
         {permitido && secao === 'frente-de-caixa' && (

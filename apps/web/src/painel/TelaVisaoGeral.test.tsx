@@ -40,33 +40,73 @@ async function preparar() {
 const detalhe = () => document.getElementById('vg-detalhe');
 const celulas = (linha: HTMLElement, ...indices: number[]) => indices.map((n) => txt((linha as HTMLTableRowElement).cells[n]?.textContent));
 
-describe('TelaVisaoGeral', () => {
-  it('card grande: só as vendas de HOJE, com vendas, hora da última e itens vendidos', async () => {
+const visor = () => screen.getByRole('button', { name: /VENDAS DE HOJE/ });
+
+describe('TelaVisaoGeral · formato', () => {
+  it('card grande: valor de hoje, produtos vendidos e número de vendas (a de ontem fica de fora)', async () => {
     const { api, agora } = await preparar();
     render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} />);
-    expect((await screen.findByText('R$ 74,70')).getAttribute('data-testid')).toBe('vendido-hoje'); // a de ontem fica de fora
-    expect(txt(screen.getByTestId('vendido-hoje-nota').textContent)).toBe('2 vendas·a última às 11:30·3 itens vendidos');
+    expect((await screen.findByText('R$ 74,70')).getAttribute('data-testid')).toBe('vendido-hoje'); // 3 × 24,90
+    expect(txt(screen.getByTestId('vendido-hoje-nota').textContent)).toBe('3 produtos vendidos·2 vendas');
   });
 
-  it('sem os cards pequenos, sem Ticket médio, sem botão de caixa e sem lista fixa de vendas', async () => {
+  it('nenhuma informação a mais na tela: sem listas, tabelas nem resumos por pessoa ou forma', async () => {
     const { api, agora } = await preparar();
-    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} />);
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} aoVerFinanceiro={vi.fn()} />);
     await screen.findByText('R$ 74,70');
-    expect(screen.queryByRole('button', { name: /Vendas hoje/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Itens vendidos/ })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Por quem vendeu' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Por forma de pagamento' })).toBeNull();
     expect(screen.queryByText('Ticket médio')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Abrir a Frente de caixa/ })).toBeNull();
-    expect(screen.queryByRole('table')).toBeNull(); // a lista só aparece no relatório do card
+    expect(screen.queryByText(/Ver de onde vem/)).toBeNull();
+    // Só três botões na área: o card grande e os dois do lado.
+    expect(within(screen.getByRole('region', { name: 'Resumo de hoje' })).getAllByRole('button')).toHaveLength(3);
   });
 
-  it('cards por quem vendeu e por forma de pagamento', async () => {
+  it('do lado: Produtos ativos e Saldo das contas; clicar leva para a aba de cada um', async () => {
     const { api, agora } = await preparar();
-    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} />);
-    const porQuem = (await screen.findByRole('heading', { name: 'Por quem vendeu' })).closest('section')!;
-    await within(porQuem).findByText('Bruno');
-    expect(within(porQuem).getAllByRole('listitem').map((li) => txt(li.textContent))).toEqual(['Bruno1 vendaR$ 49,80', 'Ana1 vendaR$ 24,90']);
-    const porForma = screen.getByRole('heading', { name: 'Por forma de pagamento' }).closest('section')!;
-    expect(within(porForma).getAllByRole('listitem').map((li) => txt(li.textContent))).toEqual(['Dinheiro1 vendaR$ 49,80', 'Pix1 vendaR$ 24,90']);
+    const aoVerProdutos = vi.fn();
+    const aoVerFinanceiro = vi.fn();
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={aoVerProdutos} aoVerFinanceiro={aoVerFinanceiro} />);
+    const produtos = await screen.findByRole('button', { name: /Produtos ativos/ });
+    await waitFor(() => expect(produtos.querySelector('.vg-atalho-valor')?.textContent).toBe('1'));
+    expect(produtos.getAttribute('title')).toBe('Abrir Produtos e estoque');
+    const saldo = screen.getByRole('button', { name: /Saldo das contas/ });
+    expect(saldo.getAttribute('title')).toBe('Abrir Financeiro');
+    expect(saldo.textContent).toMatch(/Financeiro ainda não configurado/);
+
+    await userEvent.click(produtos);
+    expect(aoVerProdutos).toHaveBeenCalledOnce();
+    await userEvent.click(saldo);
+    expect(aoVerFinanceiro).toHaveBeenCalledOnce();
+    expect(detalhe()).toBeNull(); // os do lado não abrem relatório: mudam de aba
+  });
+
+  it('Produtos ativos conta só os ativos e mostra os inativos ao lado', async () => {
+    const produto = (id: string, ativo: boolean) => ({
+      id,
+      codigoInterno: id,
+      codigoBarras: null,
+      nome: id,
+      precoCentavos: 100,
+      ativo,
+      criadoEm: '2026-11-01T00:00:00Z',
+      atualizadoEm: '2026-11-01T00:00:00Z',
+    });
+    const api = {
+      listarVendas: vi.fn(async () => []),
+      listarProdutos: vi.fn(async () => [produto('0001', true), produto('0002', true), produto('0003', false)]),
+    };
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} aoVerProdutos={vi.fn()} />);
+    const produtos = await screen.findByRole('button', { name: /Produtos ativos/ });
+    await waitFor(() => expect(produtos.querySelector('.vg-atalho-valor')?.textContent).toBe('2 · 1 inativo'));
+  });
+
+  it('sem permissão de Financeiro (Vendedor): o card Saldo das contas não aparece', async () => {
+    const { api, agora } = await preparar();
+    render(<TelaVisaoGeral api={api} nome="Bruno" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} />);
+    await screen.findByRole('button', { name: /Produtos ativos/ });
+    expect(screen.queryByRole('button', { name: /Saldo das contas/ })).toBeNull();
   });
 
   it('à meia-noite volta a zero sozinha (sem apagar nada)', async () => {
@@ -84,67 +124,61 @@ describe('TelaVisaoGeral', () => {
   });
 });
 
-describe('TelaVisaoGeral · relatórios ao clicar', () => {
+describe('TelaVisaoGeral · relatório do card grande', () => {
   const montar = async (comRelatorios = true) => {
     const { api, agora } = await preparar();
     render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerRelatorios={comRelatorios ? () => {} : undefined} />);
     await screen.findByText('R$ 74,70');
   };
 
-  it('card grande: a conta, por forma, por quem vendeu e, no fim, cada venda de hoje; clicar de novo fecha', async () => {
+  it('abre com a conta, por forma, por quem vendeu e venda por venda; clicar de novo fecha', async () => {
     await montar();
-    const visor = screen.getByRole('button', { name: /VENDIDO HOJE/ });
-    expect(visor.getAttribute('aria-expanded')).toBe('false');
-    await userEvent.click(visor);
-    expect(visor.getAttribute('aria-expanded')).toBe('true');
+    expect(visor().getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(visor());
+    expect(visor().getAttribute('aria-expanded')).toBe('true');
     const painel = detalhe()!;
-    expect(within(painel).getByRole('heading', { name: 'Vendido hoje' })).toBeTruthy();
+    expect(within(painel).getByRole('heading', { level: 2, name: 'Vendas de hoje' })).toBeTruthy();
     expect(txt(painel.querySelector('.vg-formula')?.textContent)).toBe('venda nº 2 R$ 24,90 + venda nº 3 R$ 49,80 = R$ 74,70');
     expect(within(painel).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
       'Por forma de pagamento',
       'Por quem vendeu',
-      'Vendas de hoje',
+      'Venda por venda',
     ]);
-    const [porForma, porQuem, vendasHoje] = within(painel).getAllByRole('table');
+    const [porForma, porQuem, vendaPorVenda] = within(painel).getAllByRole('table');
     expect(within(porForma!).getAllByRole('row').slice(1).map((r) => txt(r.textContent))).toEqual(['Dinheiro1R$ 49,8067%', 'Pix1R$ 24,9033%']);
     expect(within(porQuem!).getAllByRole('row').slice(1).map((r) => txt(r.textContent))).toEqual(['Bruno1R$ 49,8067%', 'Ana1R$ 24,9033%']);
-    const linhas = within(vendasHoje!).getAllByRole('row').slice(1);
-    expect(linhas.map((l) => celulas(l, 0, 1, 3, 5))).toEqual([
-      ['nº 3', '11:30', 'Bruno', 'R$ 49,80'],
-      ['nº 2', '10:05', 'Ana', 'R$ 24,90'],
+    const linhas = within(vendaPorVenda!).getAllByRole('row').slice(1);
+    expect(linhas.map((l) => celulas(l, 0, 1, 3, 4, 5))).toEqual([
+      ['nº 3', '11:30', 'Bruno', 'Dinheiro', 'R$ 49,80'],
+      ['nº 2', '10:05', 'Ana', 'Pix', 'R$ 24,90'],
     ]);
     expect(txt(linhas[0]!.textContent)).toMatch(/2× Areia 4 kg R\$ 24,90 cada · R\$ 49,80/);
-    expect(txt(painel.querySelector('.vg-soma')?.textContent)).toBe('Total: R$ 74,70 em 2 vendas · 3 itens vendidos');
+    expect(txt(painel.querySelector('.vg-soma')?.textContent)).toBe('Total: R$ 74,70 em 2 vendas · 3 produtos vendidos');
     expect(txt(painel.querySelector('.vg-detalhe-rodape')?.textContent)).toMatch(/À meia-noite esta tela volta a zero/);
-    await userEvent.click(visor);
+    await userEvent.click(visor());
     expect(detalhe()).toBeNull();
   });
 
-  it('clicar numa pessoa em "Por quem vendeu" mostra só as vendas dela', async () => {
+  it('Fechar recolhe o relatório', async () => {
     await montar();
-    const porQuem = screen.getByRole('heading', { name: 'Por quem vendeu' }).closest('section')!;
-    await userEvent.click(within(porQuem).getByRole('button', { name: /Bruno/ }));
-    const painel = detalhe()!;
-    expect(within(painel).getByRole('heading', { name: 'Vendas de Bruno hoje' })).toBeTruthy();
-    expect(within(within(painel).getByRole('table')).getAllByRole('row')).toHaveLength(2); // cabeçalho + 1 venda
-    expect(txt(painel.querySelector('.vg-soma')?.textContent)).toBe('Total: R$ 49,80 em 1 venda · 2 itens');
-  });
-
-  it('forma de pagamento mostra só as vendas pagas nela; trocar de card troca o relatório; Fechar recolhe', async () => {
-    await montar();
-    const porForma = screen.getByRole('heading', { name: 'Por forma de pagamento' }).closest('section')!;
-    await userEvent.click(within(porForma).getByRole('button', { name: /Pix/ }));
-    expect(within(detalhe()!).getByRole('heading', { name: 'Pago em Pix hoje' })).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
-    expect(within(detalhe()!).getByRole('heading', { name: 'Vendido hoje' })).toBeTruthy();
-    expect(within(porForma).getByRole('button', { name: /Pix/ }).getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(visor());
     await userEvent.click(within(detalhe()!).getByRole('button', { name: 'Fechar' }));
     expect(detalhe()).toBeNull();
+    expect(visor().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('dia sem vendas: o relatório avisa', async () => {
+    const api = { listarVendas: vi.fn(async () => []), listarProdutos: vi.fn(async () => []) };
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} />);
+    await waitFor(() => expect(txt(screen.getByTestId('vendido-hoje').textContent)).toBe('R$ 0,00'));
+    await userEvent.click(visor());
+    expect(within(detalhe()!).getByText(/Nenhuma venda hoje ainda/)).toBeTruthy();
+    expect(within(detalhe()!).queryByRole('table')).toBeNull();
   });
 
   it('sem acesso a Relatórios (Vendedor): o aviso aparece sem link', async () => {
     await montar(false);
-    await userEvent.click(screen.getByRole('button', { name: /VENDIDO HOJE/ }));
+    await userEvent.click(visor());
     const rodape = detalhe()!.querySelector('.vg-detalhe-rodape')!;
     expect(txt(rodape.textContent)).toBe('À meia-noite esta tela volta a zero. Todas as vendas ficam guardadas em Relatórios.');
     expect(rodape.querySelector('button')).toBeNull();

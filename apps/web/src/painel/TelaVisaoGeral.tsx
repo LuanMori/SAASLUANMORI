@@ -1,67 +1,63 @@
 // apps/web/src/painel/TelaVisaoGeral.tsx
-// Visão geral: as vendas de HOJE (dia no fuso da loja), em cards.
-// À meia-noite o dia muda e tudo volta a zero sozinho (nada é apagado): as
-// vendas continuam nos Relatórios. As vendas vêm da Frente de caixa e mostram
-// quem vendeu (a pessoa que estava logada).
-//
-// Como no DaniPets, os cards são clicáveis: abrem logo abaixo o relatório "de
-// onde vem este número". Clicar de novo no mesmo card (ou em Fechar) recolhe.
-// A lista das vendas de hoje só aparece dentro do relatório do card grande.
-import {
-  diaNoFuso,
-  type FormaPagamento,
-  formatarCentavos,
-  NOME_FORMA_PAGAMENTO,
-  resumirVendas,
-  type Venda,
-} from '@saas/core';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import type { ApiVendas } from '../api';
+// Visão geral no formato do DaniPets V9.3.3, só com o essencial:
+//   [ VENDAS DE HOJE (card grande) ] [ Produtos ativos  ]
+//                                    [ Saldo das contas ]
+// Nada mais aparece na tela. Mais informação só ao clicar:
+//   - card grande: abre logo abaixo o relatório das vendas de hoje (de onde vem
+//     o número, por forma de pagamento, por quem vendeu e venda por venda);
+//   - Produtos ativos: vai para a aba Produtos e estoque;
+//   - Saldo das contas: vai para a aba Financeiro (só Dono e Administrador).
+// "Hoje" é o dia no fuso da loja: à meia-noite tudo volta a zero sozinho, sem
+// apagar nada (as vendas continuam nos Relatórios).
+import { diaNoFuso, formatarCentavos, NOME_FORMA_PAGAMENTO, resumirVendas, type Venda } from '@saas/core';
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
+import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
-import { dataNoFuso, dataPorExtenso, horaNoFuso, plural, saudacao, totalItens } from './formato';
+import { dataNoFuso, dataPorExtenso, horaNoFuso, plural, saudacao } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: ApiVendas;
+  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos'>;
   nome: string;
   fuso: string;
   agora?: () => Date;
+  /** Card "Produtos ativos" leva para Produtos e estoque. Sem isto, o card não aparece. */
+  aoVerProdutos?: () => void;
+  /** Card "Saldo das contas" leva para o Financeiro. Sem isto (sem permissão), o card não aparece. */
+  aoVerFinanceiro?: () => void;
+  /** Link para Relatórios no rodapé do relatório. Sem isto (sem permissão), fica só o texto. */
   aoVerRelatorios?: () => void;
   /** Atualização automática (ms). */
   intervaloMs?: number;
 }
 
-type Detalhe =
-  | { tipo: 'vendido' }
-  | { tipo: 'vendedor'; id: string; nome: string }
-  | { tipo: 'forma'; forma: FormaPagamento };
-
-const igual = (a: Detalhe | null, b: Detalhe) =>
-  !!a &&
-  a.tipo === b.tipo &&
-  (a.tipo !== 'vendedor' || (b.tipo === 'vendedor' && a.id === b.id)) &&
-  (a.tipo !== 'forma' || (b.tipo === 'forma' && a.forma === b.forma));
-
 const ID_DETALHE = 'vg-detalhe';
 
-export function TelaVisaoGeral({ api, nome, fuso, agora = () => new Date(), aoVerRelatorios, intervaloMs = 5000 }: Props) {
+export function TelaVisaoGeral({
+  api,
+  nome,
+  fuso,
+  agora = () => new Date(),
+  aoVerProdutos,
+  aoVerFinanceiro,
+  aoVerRelatorios,
+  intervaloMs = 5000,
+}: Props) {
   const [instante, setInstante] = useState(() => agora());
   usarIntervalo(() => setInstante(agora()), intervaloMs);
   const hoje = diaNoFuso(instante, fuso);
 
   const { estado } = usarCarga(() => api.listarVendas({ de: hoje, ate: hoje }), [api, hoje], intervaloMs);
+  const { estado: estadoProdutos } = usarCarga(() => api.listarProdutos(), [api], aoVerProdutos ? intervaloMs : 0);
   // Filtra de novo pelo dia: à meia-noite zera na hora, mesmo antes da nova busca chegar (ou sem rede).
   const vendas = estado.tipo === 'pronto' ? estado.dados.filter((v) => diaNoFuso(v.criadaEm, fuso) === hoje) : [];
   const r = resumirVendas(vendas);
+  const [aberto, setAberto] = useState(false);
 
-  const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
-  const alternar = (d: Detalhe) => setDetalhe((atual) => (igual(atual, d) ? null : d));
-  const ativo = (d: Detalhe) => igual(detalhe, d);
-  const props = (d: Detalhe) => ({
-    'aria-expanded': ativo(d),
-    'aria-controls': ID_DETALHE,
-    onClick: () => alternar(d),
-  });
+  const produtos = estadoProdutos.tipo === 'pronto' ? estadoProdutos.dados : null;
+  const ativos = produtos ? produtos.filter((p) => p.ativo).length : 0;
+  const inativos = produtos ? produtos.length - ativos : 0;
+  const temLado = Boolean(aoVerProdutos || aoVerFinanceiro);
 
   return (
     <div className="vg">
@@ -86,90 +82,73 @@ export function TelaVisaoGeral({ api, nome, fuso, agora = () => new Date(), aoVe
             </p>
           )}
 
-          <section className="vg-hero" aria-label="Vendas de hoje em números">
-            <button type="button" className={`vg-visor${ativo({ tipo: 'vendido' }) ? ' vg-on' : ''}`} {...props({ tipo: 'vendido' })}>
-              <span className="vg-visor-rotulo">VENDIDO HOJE</span>
-              <strong className="vg-visor-valor" data-testid="vendido-hoje">
-                {estado.tipo === 'carregando' ? '…' : formatarCentavos(r.totalCentavos)}
-              </strong>
-              <span className="vg-visor-nota" data-testid="vendido-hoje-nota">
-                {r.quantidadeVendas === 0 ? (
-                  'Nenhuma venda ainda hoje'
-                ) : (
-                  <>
-                    <span>{plural(r.quantidadeVendas, 'venda', 'vendas')}</span>
-                    <span className="vg-ponto" aria-hidden="true">·</span>
-                    <span>a última às {horaNoFuso(vendas[0]!.criadaEm, fuso)}</span>
-                    <span className="vg-ponto" aria-hidden="true">·</span>
-                    <span>{plural(r.itensVendidos, 'item vendido', 'itens vendidos')}</span>
-                  </>
-                )}
+          <section className={`vg-hero${temLado ? '' : ' vg-hero-so'}`} aria-label="Resumo de hoje">
+            <button
+              type="button"
+              className={`vg-visor${aberto ? ' vg-on' : ''}`}
+              aria-expanded={aberto}
+              aria-controls={ID_DETALHE}
+              title={aberto ? 'Fechar o relatório' : 'Ver de onde vem este número'}
+              onClick={() => setAberto((v) => !v)}
+            >
+              <span className="vg-visor-texto">
+                <span className="vg-visor-rotulo">VENDAS DE HOJE</span>
+                <strong className="vg-visor-valor" data-testid="vendido-hoje">
+                  {estado.tipo === 'carregando' ? '…' : formatarCentavos(r.totalCentavos)}
+                </strong>
+                <span className="vg-visor-nota" data-testid="vendido-hoje-nota">
+                  {r.quantidadeVendas === 0 ? (
+                    'Nenhuma venda ainda hoje'
+                  ) : (
+                    <>
+                      <span>{plural(r.itensVendidos, 'produto vendido', 'produtos vendidos')}</span>
+                      <span className="vg-ponto" aria-hidden="true">
+                        ·
+                      </span>
+                      <span>{plural(r.quantidadeVendas, 'venda', 'vendas')}</span>
+                    </>
+                  )}
+                </span>
               </span>
-              <span className="vg-visor-mais">{ativo({ tipo: 'vendido' }) ? 'Fechar relatório' : 'Ver de onde vem'}</span>
+              <Seta className="vg-visor-seta" />
             </button>
+
+            {temLado && (
+              <div className="vg-lado">
+                {aoVerProdutos && (
+                  <Atalho
+                    rotulo="Produtos ativos"
+                    destino="Produtos e estoque"
+                    onClick={aoVerProdutos}
+                    valor={
+                      produtos === null ? (
+                        '…'
+                      ) : (
+                        <>
+                          {ativos}
+                          {inativos > 0 && <small> · {plural(inativos, 'inativo', 'inativos')}</small>}
+                        </>
+                      )
+                    }
+                  />
+                )}
+                {aoVerFinanceiro && (
+                  // O Financeiro (contas, recebimentos, despesas) ainda não existe: sem saldo para mostrar.
+                  <Atalho rotulo="Saldo das contas" destino="Financeiro" onClick={aoVerFinanceiro} valor="—" nota="Financeiro ainda não configurado" />
+                )}
+              </div>
+            )}
           </section>
 
-          {detalhe && (
-            <PainelDetalhe
-              detalhe={detalhe}
+          {aberto && (
+            <RelatorioVendasHoje
               vendas={vendas}
               fuso={fuso}
               hoje={dataNoFuso(instante, fuso)}
-              aoFechar={() => setDetalhe(null)}
+              aoFechar={() => setAberto(false)}
               aoVerRelatorios={aoVerRelatorios}
             />
           )}
-
-          <div className="vg-pares">
-            <section className="card" aria-labelledby="vg-vendedor-titulo">
-              <h2 id="vg-vendedor-titulo">Por quem vendeu</h2>
-              {r.porVendedor.length === 0 ? (
-                <p className="suave">Ninguém vendeu hoje ainda.</p>
-              ) : (
-                <ul className="lista-valores lista-clicavel">
-                  {r.porVendedor.map((p) => {
-                    const d: Detalhe = { tipo: 'vendedor', id: p.id, nome: p.nome };
-                    return (
-                      <li key={p.id}>
-                        <button type="button" className={ativo(d) ? 'vg-on' : undefined} {...props(d)}>
-                          <span>
-                            <b>{p.nome}</b>
-                            <small className="suave">{plural(p.quantidade, 'venda', 'vendas')}</small>
-                          </span>
-                          <span className="numero">{formatarCentavos(p.totalCentavos)}</span>
-                          <Seta />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-            <section className="card" aria-labelledby="vg-forma-titulo">
-              <h2 id="vg-forma-titulo">Por forma de pagamento</h2>
-              {r.porForma.length === 0 ? (
-                <p className="suave">Sem pagamentos hoje ainda.</p>
-              ) : (
-                <ul className="lista-valores lista-clicavel">
-                  {r.porForma.map((f) => {
-                    const d: Detalhe = { tipo: 'forma', forma: f.forma };
-                    return (
-                      <li key={f.forma}>
-                        <button type="button" className={ativo(d) ? 'vg-on' : undefined} {...props(d)}>
-                          <span>
-                            <b>{NOME_FORMA_PAGAMENTO[f.forma]}</b>
-                            <small className="suave">{plural(f.quantidade, 'venda', 'vendas')}</small>
-                          </span>
-                          <span className="numero">{formatarCentavos(f.totalCentavos)}</span>
-                          <Seta />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          </div>
         </>
       )}
     </div>
@@ -177,24 +156,42 @@ export function TelaVisaoGeral({ api, nome, fuso, agora = () => new Date(), aoVe
 }
 
 // ------------------------------------------------------------------ cards
-function Seta() {
+function Seta({ className = 'vg-seta' }: { className?: string }) {
   return (
-    <svg className="vg-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="m9 6 6 6-6 6" />
     </svg>
   );
 }
 
-// ------------------------------------------------------------------ relatório do card
-function PainelDetalhe({
-  detalhe,
+/** Card do lado do card grande: leva para outra aba. */
+function Atalho({
+  rotulo,
+  valor,
+  nota,
+  destino,
+  ...botao
+}: { rotulo: string; valor: ReactNode; nota?: string; destino: string } & ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button type="button" className="vg-atalho" title={`Abrir ${destino}`} {...botao}>
+      <span className="vg-atalho-texto">
+        <span className="vg-atalho-rotulo">{rotulo}</span>
+        <strong className="vg-atalho-valor">{valor}</strong>
+        {nota && <span className="vg-atalho-nota">{nota}</span>}
+      </span>
+      <Seta />
+    </button>
+  );
+}
+
+// ------------------------------------------------------------------ relatório do card grande
+function RelatorioVendasHoje({
   vendas,
   fuso,
   hoje,
   aoFechar,
   aoVerRelatorios,
 }: {
-  detalhe: Detalhe;
   vendas: Venda[];
   fuso: string;
   hoje: string;
@@ -202,23 +199,28 @@ function PainelDetalhe({
   aoVerRelatorios?: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);
-  // Ao abrir (ou trocar de card), traz o relatório para a tela — importante no celular.
+  // Ao abrir, traz o relatório para a tela — importante no celular.
   useEffect(() => {
     ref.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-  }, [detalhe.tipo, detalhe.tipo === 'vendedor' ? detalhe.id : detalhe.tipo === 'forma' ? detalhe.forma : '']);
+  }, []);
 
-  let titulo: string;
-  let intro: string;
-  let corpo: ReactNode;
-  const vazio = <p className="vazio">Nenhuma venda hoje ainda.</p>;
+  const r = resumirVendas(vendas);
 
-  if (detalhe.tipo === 'vendido') {
-    const r = resumirVendas(vendas);
-    titulo = 'Vendido hoje';
-    intro = `Soma de todas as vendas finalizadas hoje (${hoje}) na Frente de caixa: o total separado por forma de pagamento e por quem vendeu, e cada venda com os produtos.`;
-    corpo =
-      vendas.length === 0 ? (
-        vazio
+  return (
+    <section ref={ref} id={ID_DETALHE} className="card vg-detalhe" aria-labelledby="vg-detalhe-titulo" aria-live="polite">
+      <div className="vg-detalhe-cabeca">
+        <h2 id="vg-detalhe-titulo">Vendas de hoje</h2>
+        <button type="button" className="botao vg-fechar" onClick={aoFechar}>
+          Fechar
+        </button>
+      </div>
+      <p className="vg-intro">
+        Soma de todas as vendas finalizadas hoje ({hoje}) na Frente de caixa: o total por forma de pagamento, por quem vendeu e venda por
+        venda, com os produtos.
+      </p>
+
+      {vendas.length === 0 ? (
+        <p className="vazio">Nenhuma venda hoje ainda. Cada venda feita na Frente de caixa aparece aqui na hora.</p>
       ) : (
         <>
           <p className="vg-formula">
@@ -235,6 +237,7 @@ function PainelDetalhe({
             <span className="vg-op"> = </span>
             <b>{formatarCentavos(r.totalCentavos)}</b>
           </p>
+
           <h3 className="vg-sub">Por forma de pagamento</h3>
           <TabelaSimples
             colunas={['Forma de pagamento', 'Vendas', 'Valor', '% do total']}
@@ -245,54 +248,22 @@ function PainelDetalhe({
               pct(f.totalCentavos, r.totalCentavos),
             ])}
           />
+
           <h3 className="vg-sub">Por quem vendeu</h3>
           <TabelaSimples
             colunas={['Vendido por', 'Vendas', 'Valor', '% do total']}
             linhas={r.porVendedor.map((p) => [p.nome, String(p.quantidade), formatarCentavos(p.totalCentavos), pct(p.totalCentavos, r.totalCentavos)])}
           />
-          <h3 className="vg-sub">Vendas de hoje</h3>
+
+          <h3 className="vg-sub">Venda por venda</h3>
           <TabelaDetalhada vendas={vendas} fuso={fuso} />
           <p className="vg-soma">
             Total: <b>{formatarCentavos(r.totalCentavos)}</b> em {plural(vendas.length, 'venda', 'vendas')} ·{' '}
-            {plural(r.itensVendidos, 'item vendido', 'itens vendidos')}
+            {plural(r.itensVendidos, 'produto vendido', 'produtos vendidos')}
           </p>
         </>
-      );
-  } else {
-    const filtradas =
-      detalhe.tipo === 'vendedor' ? vendas.filter((v) => v.vendedor.id === detalhe.id) : vendas.filter((v) => v.formaPagamento === detalhe.forma);
-    if (detalhe.tipo === 'vendedor') {
-      titulo = `Vendas de ${detalhe.nome} hoje`;
-      intro = `Cada venda que ${detalhe.nome} fez hoje, entrando no sistema com o próprio usuário.`;
-    } else {
-      titulo = `Pago em ${NOME_FORMA_PAGAMENTO[detalhe.forma]} hoje`;
-      intro = `Cada venda de hoje paga em ${NOME_FORMA_PAGAMENTO[detalhe.forma]}, com os produtos e quem vendeu.`;
-    }
-    const total = filtradas.reduce((s, v) => s + v.totalCentavos, 0);
-    const itens = filtradas.reduce((s, v) => s + totalItens(v), 0);
-    corpo =
-      filtradas.length === 0 ? (
-        vazio
-      ) : (
-        <>
-          <TabelaDetalhada vendas={filtradas} fuso={fuso} />
-          <p className="vg-soma">
-            Total: <b>{formatarCentavos(total)}</b> em {plural(filtradas.length, 'venda', 'vendas')} · {plural(itens, 'item', 'itens')}
-          </p>
-        </>
-      );
-  }
+      )}
 
-  return (
-    <section ref={ref} id={ID_DETALHE} className="card vg-detalhe" aria-labelledby="vg-detalhe-titulo" aria-live="polite">
-      <div className="vg-detalhe-cabeca">
-        <h2 id="vg-detalhe-titulo">{titulo}</h2>
-        <button type="button" className="botao vg-fechar" onClick={aoFechar}>
-          Fechar
-        </button>
-      </div>
-      <p className="vg-intro">{intro}</p>
-      {corpo}
       <p className="vg-detalhe-rodape">
         À meia-noite esta tela volta a zero. Todas as vendas ficam guardadas em{' '}
         {aoVerRelatorios ? (
