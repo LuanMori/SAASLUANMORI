@@ -42,6 +42,8 @@ Já dá para testar o fluxo de vendas: **Frente de caixa** (leitor de código, c
 forma de pagamento) → **Visão geral** (cards com as vendas de HOJE, que voltam a zero à meia-noite)
 → **Relatórios** (todas as vendas, de todos os dias). Cada venda guarda quem vendeu: sempre a pessoa
 que entrou no sistema, nunca um campo da tela. As regras ficam em `packages/core/src/venda.ts`.
+O card **Pendências** da Visão geral já existe, mas o que entra nele ainda está **a definir**
+(sugestões em `docs/PENDENCIAS.md`); na demonstração, "Usuários de teste" → "Mostrar pendências de exemplo".
 
 Serve para testar telas e regras. **Não testa segurança**: Auth0, RLS e isolamento
 de verdade só existem com API + Postgres (abaixo). Para gerar o arquivo de novo depois de mudar

@@ -2,6 +2,7 @@
 // Visão geral no formato do DaniPets V9.3.3, só com o essencial:
 //   [ VENDAS DE HOJE (card grande) ] [ Produtos ativos  ]
 //                                    [ Saldo das contas ]
+// Embaixo, o card Pendências (o que entra nele AINDA NÃO FOI DEFINIDO: docs/PENDENCIAS.md).
 // Nada mais aparece na tela. Mais informação só ao clicar:
 //   - card grande: abre logo abaixo o relatório das vendas de hoje (de onde vem
 //     o número, por forma de pagamento, por quem vendeu e venda por venda);
@@ -13,7 +14,10 @@ import { diaNoFuso, formatarCentavos, NOME_FORMA_PAGAMENTO, resumirVendas, type 
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
+import { CardPendencias } from './CardPendencias';
 import { dataNoFuso, dataPorExtenso, horaNoFuso, plural, saudacao } from './formato';
+import type { IdSecao } from './menu';
+import type { Pendencia } from './pendencias';
 import { usarCarga } from './usarCarga';
 
 interface Props {
@@ -27,6 +31,10 @@ interface Props {
   aoVerFinanceiro?: () => void;
   /** Link para Relatórios no rodapé do relatório. Sem isto (sem permissão), fica só o texto. */
   aoVerRelatorios?: () => void;
+  /** Pendências do card. null = ainda não definidas (o card diz isso). */
+  pendencias?: readonly Pendencia[] | null;
+  /** Botão de uma pendência leva para a aba onde se resolve. */
+  aoIrPara?: (secao: IdSecao) => void;
   /** Atualização automática (ms). */
   intervaloMs?: number;
 }
@@ -41,6 +49,8 @@ export function TelaVisaoGeral({
   aoVerProdutos,
   aoVerFinanceiro,
   aoVerRelatorios,
+  pendencias = null,
+  aoIrPara,
   intervaloMs = 5000,
 }: Props) {
   const [instante, setInstante] = useState(() => agora());
@@ -149,6 +159,8 @@ export function TelaVisaoGeral({
               aoVerRelatorios={aoVerRelatorios}
             />
           )}
+
+          <CardPendencias pendencias={pendencias} aoIrPara={aoIrPara} />
         </>
       )}
     </div>

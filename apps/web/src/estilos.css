@@ -390,6 +390,27 @@ h2 { font-size: 1.05rem; }
 .vg-atalho:hover .vg-seta { color: var(--primaria); transform: translateX(2px); }
 .vg-pares { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 
+/* Card Pendências (formato do DaniPets): urgentes primeiro, ícone pela gravidade */
+.pend-card .card-cabeca h2 { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; }
+.pend-contagem {
+  display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 7px; border-radius: 6px;
+  background: #eceeed; color: var(--texto); font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.pend-lista { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--borda); }
+.pend-item { display: flex; gap: 12px; align-items: flex-start; padding: 14px 20px; border-bottom: 1px solid var(--borda); }
+.pend-item:last-child { border-bottom: 0; }
+.pend-icone { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+.pend-alta .pend-icone { color: var(--erro); }
+.pend-media .pend-icone { color: var(--aviso); }
+.pend-corpo { min-width: 0; }
+.pend-texto { margin: 0; line-height: 1.55; max-width: 80ch; }
+.pend-acao { margin-top: 10px; padding: 6px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; }
+.pend-vazio { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 16px 20px; border-top: 1px solid var(--borda); color: var(--suave); line-height: 1.5; }
+.pend-vazio .pend-icone { color: var(--suave); }
+.pend-ok { color: var(--texto); }
+.pend-ok .pend-icone { color: var(--primaria); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
 /* Relatório aberto pelo card */
 .vg-detalhe { border-color: color-mix(in srgb, var(--primaria) 45%, var(--borda)); scroll-margin-top: 16px; }
 .vg-detalhe-cabeca { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

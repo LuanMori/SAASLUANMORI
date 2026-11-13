@@ -7,6 +7,7 @@ import { useState } from 'react';
 import type { ApiPainel } from '../api';
 import { BarraLateral, type DadosBarra, NOME_PAPEL } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
+import type { Pendencia } from './pendencias';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 import { TelaRelatorios } from './TelaRelatorios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
@@ -21,9 +22,21 @@ interface Props extends DadosBarra {
   agora?: () => Date;
   /** Atualização automática da Visão geral (ms). */
   intervaloMs?: number;
+  /** Pendências da Visão geral. null = ainda não definidas (docs/PENDENCIAS.md). */
+  pendencias?: readonly Pendencia[] | null;
 }
 
-export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-geral', fuso = FUSO_PADRAO, agora, intervaloMs }: Props) {
+export function TelaPainel({
+  loja,
+  pessoa,
+  api,
+  aoSair,
+  secaoInicial = 'visao-geral',
+  fuso = FUSO_PADRAO,
+  agora,
+  intervaloMs,
+  pendencias = null,
+}: Props) {
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
@@ -32,6 +45,12 @@ export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-ge
     const alvo = ITENS_MENU.find((i) => i.id === id);
     return alvo ? podeVer(alvo, pessoa.papel) : false;
   };
+  // Pendência "só gestor" some para o Vendedor; nas outras, o botão só aparece para quem pode abrir a aba de destino.
+  const gestor = pessoa.papel === 'dono' || pessoa.papel === 'administrador';
+  const pendenciasVisiveis =
+    pendencias
+      ?.filter((p) => !p.soGestor || gestor)
+      .map((p) => (p.acao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
 
   return (
     <div className="painel-app">
@@ -47,6 +66,8 @@ export function TelaPainel({ loja, pessoa, api, aoSair, secaoInicial = 'visao-ge
             aoVerProdutos={pode('produtos-e-estoque') ? () => setSecao('produtos-e-estoque') : undefined}
             aoVerFinanceiro={pode('financeiro') ? () => setSecao('financeiro') : undefined}
             aoVerRelatorios={pode('relatorios') ? () => setSecao('relatorios') : undefined}
+            pendencias={pendenciasVisiveis}
+            aoIrPara={setSecao}
           />
         )}
         {permitido && secao === 'frente-de-caixa' && (

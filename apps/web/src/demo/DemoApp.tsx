@@ -7,6 +7,7 @@ import { TelaPainel } from '../painel/TelaPainel';
 import { TelaEntrada } from '../telas/TelaEntrada';
 import { apagarDadosDemo, criarApiLocal } from './apiLocal';
 import { entrarDemo, LOJAS_DEMO, SENHA_DEMO, type UsuarioDemo } from './contasDemo';
+import { pendenciasExemplo } from './pendenciasExemplo';
 
 interface Sessao {
   lojaId: string;
@@ -16,6 +17,8 @@ interface Sessao {
 export function DemoApp() {
   const [subdominio, setSubdominio] = useState<string>(LOJAS_DEMO[0].subdominio);
   const [sessao, setSessao] = useState<Sessao | null>(null);
+  // Pendências ainda não foram definidas: por padrão o card diz isso; o exemplo é só para ver o visual.
+  const [exemplos, setExemplos] = useState(false);
   const loja = LOJAS_DEMO.find((l) => l.subdominio === subdominio) ?? null;
 
   return (
@@ -27,9 +30,11 @@ export function DemoApp() {
           setSessao(null);
         }}
         logado={sessao !== null}
+        exemplos={exemplos}
+        aoMudarExemplos={setExemplos}
       />
       {sessao && loja ? (
-        <AreaLogada loja={loja} usuario={sessao.usuario} aoSair={() => setSessao(null)} />
+        <AreaLogada loja={loja} usuario={sessao.usuario} exemplos={exemplos} aoSair={() => setSessao(null)} />
       ) : (
         <TelaEntrada
           loja={loja}
@@ -44,7 +49,17 @@ export function DemoApp() {
   );
 }
 
-function AreaLogada({ loja, usuario, aoSair }: { loja: (typeof LOJAS_DEMO)[number]; usuario: UsuarioDemo; aoSair: () => void }) {
+function AreaLogada({
+  loja,
+  usuario,
+  exemplos,
+  aoSair,
+}: {
+  loja: (typeof LOJAS_DEMO)[number];
+  usuario: UsuarioDemo;
+  exemplos: boolean;
+  aoSair: () => void;
+}) {
   // O operador da API é quem entrou: é ele que fica registrado em cada venda.
   const api = useMemo(
     () => criarApiLocal({ lojaId: loja.id, operador: { id: usuario.usuario, nome: usuario.nome } }),
@@ -55,12 +70,25 @@ function AreaLogada({ loja, usuario, aoSair }: { loja: (typeof LOJAS_DEMO)[numbe
       api={api}
       loja={{ nome: loja.nome, descricao: loja.descricao }}
       pessoa={{ nome: usuario.nome, papel: usuario.papel }}
+      pendencias={exemplos ? pendenciasExemplo() : null}
       aoSair={aoSair}
     />
   );
 }
 
-function FaixaDemo({ subdominio, aoTrocar, logado }: { subdominio: string; aoTrocar: (s: string) => void; logado: boolean }) {
+function FaixaDemo({
+  subdominio,
+  aoTrocar,
+  logado,
+  exemplos,
+  aoMudarExemplos,
+}: {
+  subdominio: string;
+  aoTrocar: (s: string) => void;
+  logado: boolean;
+  exemplos: boolean;
+  aoMudarExemplos: (v: boolean) => void;
+}) {
   const [detalhes, setDetalhes] = useState(false);
   return (
     <div className="demo-faixa" role="note">
@@ -88,6 +116,10 @@ function FaixaDemo({ subdominio, aoTrocar, logado }: { subdominio: string; aoTro
             <code>carla</code> está desativada. 5 senhas erradas seguidas bloqueiam o usuário por 1 minuto. Cada loja já vem
             com produtos e algumas vendas de dias anteriores, de exemplo.
           </p>
+          <label className="demo-check">
+            <input type="checkbox" checked={exemplos} onChange={(e) => aoMudarExemplos(e.target.checked)} />
+            Mostrar pendências de exemplo (as de verdade ainda não foram definidas)
+          </label>
           {!logado && (
             <button
               type="button"

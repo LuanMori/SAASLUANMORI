@@ -12,3 +12,5 @@
 .demo-detalhes p { margin: 0; text-align: center; }
 .demo-detalhes code { background: #fff; padding: 1px 5px; border-radius: 4px; color: var(--texto); }
 .demo-faixa + .entrada { min-height: calc(100vh - 40px); }
+.demo-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.demo-check input { accent-color: var(--primaria); }

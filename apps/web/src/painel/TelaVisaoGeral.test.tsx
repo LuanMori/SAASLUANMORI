@@ -184,3 +184,50 @@ describe('TelaVisaoGeral · relatório do card grande', () => {
     expect(rodape.querySelector('button')).toBeNull();
   });
 });
+
+describe('TelaVisaoGeral · card Pendências', () => {
+  const semVendas = () => ({ listarVendas: vi.fn(async () => []), listarProdutos: vi.fn(async () => []) });
+  const card = () => screen.getByRole('heading', { name: /Pendências/ }).closest('section')!;
+
+  it('enquanto não forem definidas, o card diz isso (sem inventar aviso e sem contagem)', async () => {
+    render(<TelaVisaoGeral api={semVendas()} nome="Ana" fuso={FUSO} />);
+    await screen.findByRole('heading', { name: 'Pendências' });
+    expect(within(card()).getByText(/Ainda não definimos quais avisos entram aqui/)).toBeTruthy();
+    expect(screen.queryByTestId('pend-contagem')).toBeNull();
+    expect(within(card()).queryByRole('listitem')).toBeNull();
+  });
+
+  it('definidas e nada pendente: "Nada pendente. Tudo em ordem."', async () => {
+    render(<TelaVisaoGeral api={semVendas()} nome="Ana" fuso={FUSO} pendencias={[]} />);
+    expect(await within(await screen.findByRole('region', { name: /Pendências/ })).findByText('Nada pendente. Tudo em ordem.')).toBeTruthy();
+    expect(screen.queryByTestId('pend-contagem')).toBeNull();
+  });
+
+  it('com itens: contagem, urgentes primeiro, e o botão leva para a aba certa', async () => {
+    const aoIrPara = vi.fn();
+    render(
+      <TelaVisaoGeral
+        api={semVendas()}
+        nome="Ana"
+        fuso={FUSO}
+        aoIrPara={aoIrPara}
+        pendencias={[
+          { id: 'a', gravidade: 'media', texto: 'Caixa de hoje não foi aberto.', acao: { rotulo: 'Abrir caixa', secao: 'caixa-do-dia' } },
+          { id: 'b', gravidade: 'media', texto: 'Estoque baixo.' },
+          { id: 'c', gravidade: 'alta', texto: 'Lote vencido.', acao: { rotulo: 'Ver produto', secao: 'produtos-e-estoque' } },
+        ]}
+      />,
+    );
+    expect((await screen.findByTestId('pend-contagem')).textContent).toBe('3');
+    const itens = within(card()).getAllByRole('listitem');
+    expect(itens.map((li) => li.querySelector('.pend-texto')?.textContent)).toEqual([
+      'Urgente: Lote vencido.',
+      'Atenção: Caixa de hoje não foi aberto.',
+      'Atenção: Estoque baixo.',
+    ]);
+    expect(within(itens[2]!).queryByRole('button')).toBeNull(); // sem ação, sem botão
+    await userEvent.click(within(itens[0]!).getByRole('button', { name: 'Ver produto' }));
+    await userEvent.click(within(itens[1]!).getByRole('button', { name: 'Abrir caixa' }));
+    expect(aoIrPara.mock.calls).toEqual([['produtos-e-estoque'], ['caixa-do-dia']]);
+  });
+});

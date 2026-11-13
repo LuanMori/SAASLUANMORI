@@ -177,6 +177,34 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     expect(within(menu).getByRole('button', { name: 'Financeiro' }).getAttribute('aria-current')).toBe('page');
   });
 
+  it('Pendências: botão leva para a aba; Vendedor não vê as "só gestor" nem botão para aba sem acesso', async () => {
+    const pendencias = [
+      { id: 'caixa', gravidade: 'media' as const, texto: 'Caixa não aberto.', acao: { rotulo: 'Abrir caixa', secao: 'caixa-do-dia' as const } },
+      { id: 'estoque', gravidade: 'media' as const, texto: 'Estoque baixo.', acao: { rotulo: 'Fazer pedido', secao: 'compras' as const } },
+      { id: 'conta', gravidade: 'alta' as const, texto: 'Conta vencida.', acao: { rotulo: 'Ver contas', secao: 'financeiro' as const }, soGestor: true },
+    ];
+    const api = criarApiLocal({ lojaId: 'loja-p', operador: { id: 'b', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 });
+    const { unmount } = render(
+      <TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Bruno', papel: 'vendedor' }} aoSair={vi.fn()} pendencias={pendencias} />,
+    );
+    const card = (await screen.findByRole('heading', { name: /Pendências/ })).closest('section')!;
+    expect(within(card).getAllByRole('listitem').map((li) => li.querySelector('.pend-texto')?.textContent)).toEqual([
+      'Atenção: Caixa não aberto.',
+      'Atenção: Estoque baixo.',
+    ]);
+    expect(within(card).queryByRole('button', { name: 'Fazer pedido' })).toBeNull(); // Vendedor não abre Compras
+    await userEvent.click(within(card).getByRole('button', { name: 'Abrir caixa' }));
+    const menu = screen.getByRole('navigation', { name: 'Menu principal' });
+    expect(within(menu).getByRole('button', { name: 'Caixa do dia' }).getAttribute('aria-current')).toBe('page');
+    unmount();
+
+    render(<TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Ana', papel: 'dono' }} aoSair={vi.fn()} pendencias={pendencias} />);
+    const cardDono = (await screen.findByRole('heading', { name: /Pendências/ })).closest('section')!;
+    expect(within(cardDono).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(cardDono).getAllByRole('listitem')[0]!.textContent).toMatch(/Conta vencida/); // urgente primeiro
+    expect(within(cardDono).getByRole('button', { name: 'Fazer pedido' })).toBeTruthy();
+  });
+
   it('Vendedor não chega aos Relatórios nem pelo link da Visão geral', async () => {
     render(
       <TelaPainel
