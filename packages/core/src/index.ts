@@ -3,3 +3,4 @@ export * from './resultado';
 export * from './papeis';
 export * from './dinheiro';
 export * from './produto';
+export * from './venda';

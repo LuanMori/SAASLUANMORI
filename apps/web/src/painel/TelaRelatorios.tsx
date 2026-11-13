@@ -1,0 +1,262 @@
+// apps/web/src/painel/TelaRelatorios.tsx
+// Relatórios: TODAS as vendas (de todos os dias), com quem vendeu.
+// Filtros: período (atalhos + datas), quem vendeu e forma de pagamento.
+import {
+  diaNoFuso,
+  type FormaPagamento,
+  FORMAS_PAGAMENTO,
+  formatarCentavos,
+  NOME_FORMA_PAGAMENTO,
+  resumirVendas,
+} from '@saas/core';
+import { useMemo, useState } from 'react';
+import type { ApiVendas } from '../api';
+import { dataNoFuso, horaNoFuso, plural, totalItens } from './formato';
+import { usarCarga } from './usarCarga';
+
+interface Props {
+  api: ApiVendas;
+  fuso: string;
+  agora?: () => Date;
+}
+
+type Atalho = 'tudo' | 'hoje' | 'ontem' | '7dias' | 'mes';
+
+/** Soma dias a um AAAA-MM-DD (meio-dia em UTC evita erro de horário de verão). */
+function somarDias(dia: string, n: number): string {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function periodoDo(atalho: Atalho, hoje: string): { de: string; ate: string } {
+  switch (atalho) {
+    case 'hoje':
+      return { de: hoje, ate: hoje };
+    case 'ontem':
+      return { de: somarDias(hoje, -1), ate: somarDias(hoje, -1) };
+    case '7dias':
+      return { de: somarDias(hoje, -6), ate: hoje };
+    case 'mes':
+      return { de: `${hoje.slice(0, 8)}01`, ate: hoje };
+    default:
+      return { de: '', ate: '' };
+  }
+}
+
+const ATALHOS: { id: Atalho; rotulo: string }[] = [
+  { id: 'tudo', rotulo: 'Todas' },
+  { id: 'hoje', rotulo: 'Hoje' },
+  { id: 'ontem', rotulo: 'Ontem' },
+  { id: '7dias', rotulo: 'Últimos 7 dias' },
+  { id: 'mes', rotulo: 'Este mês' },
+];
+
+export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
+  const hoje = diaNoFuso(agora(), fuso);
+  const [de, setDe] = useState('');
+  const [ate, setAte] = useState('');
+  const [vendedor, setVendedor] = useState('');
+  const [forma, setForma] = useState<FormaPagamento | ''>('');
+
+  const { estado } = usarCarga(() => api.listarVendas({ de: de || null, ate: ate || null }), [api, de, ate]);
+  const doPeriodo = useMemo(() => (estado.tipo === 'pronto' ? estado.dados : []), [estado]);
+
+  // Lista de quem vendeu sai das próprias vendas do período (inclui quem já saiu da loja).
+  const vendedores = useMemo(() => {
+    const m = new Map<string, string>();
+    doPeriodo.forEach((v) => m.set(v.vendedor.id, v.vendedor.nome));
+    return [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+  }, [doPeriodo]);
+
+  const vendas = doPeriodo.filter((v) => (!vendedor || v.vendedor.id === vendedor) && (!forma || v.formaPagamento === forma));
+  const r = resumirVendas(vendas);
+  const atalhoAtivo = ATALHOS.find((a) => {
+    const p = periodoDo(a.id, hoje);
+    return p.de === de && p.ate === ate;
+  })?.id;
+
+  return (
+    <div className="rel">
+      <header className="vg-topo">
+        <div>
+          <h1>Relatórios</h1>
+          <p className="suave">Todas as vendas da loja, de todos os dias, com quem vendeu.</p>
+        </div>
+      </header>
+
+      <section className="card rel-filtros" aria-label="Filtros">
+        <div className="rel-atalhos" role="group" aria-label="Período">
+          {ATALHOS.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className={`chip${atalhoAtivo === a.id ? ' chip-on' : ''}`}
+              aria-pressed={atalhoAtivo === a.id}
+              onClick={() => {
+                const p = periodoDo(a.id, hoje);
+                setDe(p.de);
+                setAte(p.ate);
+              }}
+            >
+              {a.rotulo}
+            </button>
+          ))}
+        </div>
+        <div className="rel-campos">
+          <div className="campo">
+            <label htmlFor="rel-de">De</label>
+            <input id="rel-de" type="date" value={de} max={ate || undefined} onChange={(e) => setDe(e.target.value)} />
+          </div>
+          <div className="campo">
+            <label htmlFor="rel-ate">Até</label>
+            <input id="rel-ate" type="date" value={ate} min={de || undefined} onChange={(e) => setAte(e.target.value)} />
+          </div>
+          <div className="campo">
+            <label htmlFor="rel-vendedor">Vendido por</label>
+            <select id="rel-vendedor" value={vendedor} onChange={(e) => setVendedor(e.target.value)}>
+              <option value="">Todos</option>
+              {vendedores.map(([id, nome]) => (
+                <option key={id} value={id}>
+                  {nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="campo">
+            <label htmlFor="rel-forma">Pagamento</label>
+            <select id="rel-forma" value={forma} onChange={(e) => setForma(e.target.value as FormaPagamento | '')}>
+              <option value="">Todas</option>
+              {FORMAS_PAGAMENTO.map((f) => (
+                <option key={f} value={f}>
+                  {NOME_FORMA_PAGAMENTO[f]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? (
+        <p className="alerta alerta-erro" role="alert">
+          {estado.mensagem}
+        </p>
+      ) : (
+        <>
+          <section className="rel-metricas" aria-label="Resumo do período">
+            <Cartao rotulo="Total vendido" valor={formatarCentavos(r.totalCentavos)} />
+            <Cartao rotulo="Vendas" valor={String(r.quantidadeVendas)} />
+            <Cartao rotulo="Ticket médio" valor={formatarCentavos(r.ticketMedioCentavos)} />
+            <Cartao rotulo="Itens vendidos" valor={String(r.itensVendidos)} />
+          </section>
+
+          <div className="vg-pares">
+            <section className="card" aria-labelledby="rel-vendedor-titulo">
+              <h2 id="rel-vendedor-titulo">Por quem vendeu</h2>
+              {r.porVendedor.length === 0 ? (
+                <p className="suave">Sem vendas no período.</p>
+              ) : (
+                <ul className="lista-valores">
+                  {r.porVendedor.map((p) => (
+                    <li key={p.id}>
+                      <span>
+                        <b>{p.nome}</b>
+                        <small className="suave">{plural(p.quantidade, 'venda', 'vendas')}</small>
+                      </span>
+                      <span className="numero">{formatarCentavos(p.totalCentavos)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section className="card" aria-labelledby="rel-forma-titulo">
+              <h2 id="rel-forma-titulo">Por forma de pagamento</h2>
+              {r.porForma.length === 0 ? (
+                <p className="suave">Sem vendas no período.</p>
+              ) : (
+                <ul className="lista-valores">
+                  {r.porForma.map((f) => (
+                    <li key={f.forma}>
+                      <span>
+                        <b>{NOME_FORMA_PAGAMENTO[f.forma]}</b>
+                        <small className="suave">{plural(f.quantidade, 'venda', 'vendas')}</small>
+                      </span>
+                      <span className="numero">{formatarCentavos(f.totalCentavos)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          <section className="card card-plano" aria-labelledby="rel-lista-titulo">
+            <div className="card-cabeca">
+              <h2 id="rel-lista-titulo">Vendas</h2>
+              <span className="suave">{plural(vendas.length, 'venda', 'vendas')}</span>
+            </div>
+            {vendas.length === 0 ? (
+              <p className="vazio">{estado.tipo === 'carregando' ? 'Carregando…' : 'Nenhuma venda encontrada com esses filtros.'}</p>
+            ) : (
+              <div className="tabela-caixa">
+                <table className="tabela tabela-vendas">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Hora</th>
+                      <th>Venda</th>
+                      <th>Vendido por</th>
+                      <th>Itens</th>
+                      <th>Pagamento</th>
+                      <th className="numero">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vendas.map((v) => (
+                      <tr key={v.id}>
+                        <td data-rotulo="Data" className="mono">
+                          {dataNoFuso(v.criadaEm, fuso)}
+                        </td>
+                        <td data-rotulo="Hora" className="mono">
+                          {horaNoFuso(v.criadaEm, fuso)}
+                        </td>
+                        <td data-rotulo="Venda" className="mono">
+                          nº {v.numero}
+                        </td>
+                        <td data-rotulo="Vendido por">{v.vendedor.nome}</td>
+                        <td data-rotulo="Itens" className="itens-venda">
+                          <details>
+                            <summary>{plural(totalItens(v), 'item', 'itens')}</summary>
+                            <ul>
+                              {v.itens.map((i) => (
+                                <li key={i.produtoId}>
+                                  {i.quantidade}× {i.nome} <span className="suave">({formatarCentavos(i.precoCentavos)} cada)</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        </td>
+                        <td data-rotulo="Pagamento">{NOME_FORMA_PAGAMENTO[v.formaPagamento]}</td>
+                        <td data-rotulo="Total" className="numero">
+                          {formatarCentavos(v.totalCentavos)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Cartao({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div className="card rel-cartao">
+      <span className="vg-metrica-rotulo">{rotulo}</span>
+      <strong className="rel-cartao-valor">{valor}</strong>
+    </div>
+  );
+}

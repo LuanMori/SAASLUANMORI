@@ -2,10 +2,15 @@
 import type { PapelDeLoja } from '@saas/core';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { criarApiLocal } from '../demo/apiLocal';
 import { iniciais } from './BarraLateral';
 import { TelaPainel } from './TelaPainel';
 
+/** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
+const txt = (t: string | null | undefined) => (t ?? '').replace(/\u00a0/g, ' ');
+
+beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
 // Igual ao DaniPets V9.3.3.
@@ -22,7 +27,8 @@ function montar(papel: PapelDeLoja = 'dono', aoSair = vi.fn()) {
       loja={{ nome: 'Loja A', descricao: 'Rações, petiscos e acessórios' }}
       pessoa={{ nome: 'Ana', papel }}
       aoSair={aoSair}
-      hoje={new Date(2026, 10, 12, 9, 0)}
+      api={criarApiLocal({ lojaId: 'loja-teste', operador: { id: 'ana', nome: 'Ana' }, exemplos: false, atrasoMs: 0 })}
+      agora={() => new Date('2026-11-12T12:00:00Z')}
     />,
   );
   const barra = screen.getByRole('complementary', { name: 'Barra lateral' });
@@ -69,13 +75,14 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
     expect(screen.getByText(/Bom dia, Ana/)).toBeTruthy();
   });
 
-  it('escolher outro item só marca a seleção: conteúdo em branco por enquanto', async () => {
+  it('itens ainda sem tela só marcam a seleção: conteúdo em branco', async () => {
     const { barra } = montar();
     const itens = within(barra)
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    for (const item of itens.filter((b) => b.textContent !== 'Visão geral')) {
+    const comTela = ['Visão geral', 'Frente de caixa', 'Relatórios'];
+    for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
       expect(itens.filter((b) => b.getAttribute('aria-current') === 'page')).toHaveLength(1);
@@ -111,4 +118,56 @@ describe('iniciais', () => {
     ['Mercado', 'M'],
     ['  ', '?'],
   ])('%s -> %s', (nome, esperado) => expect(iniciais(nome)).toBe(esperado));
+});
+
+describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Relatórios', () => {
+  it('a venda feita na Frente de caixa aparece na Visão geral e nos Relatórios com quem vendeu', async () => {
+    const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'bruno', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 });
+    await api.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
+    render(
+      <TelaPainel
+        api={api}
+        loja={{ nome: 'Loja X' }}
+        pessoa={{ nome: 'Bruno', papel: 'dono' }}
+        aoSair={vi.fn()}
+        agora={() => new Date()}
+      />,
+    );
+    // Visão geral começa zerada
+    expect(txt((await screen.findByTestId('vendido-hoje')).textContent)).toBe('R$ 0,00');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
+    const busca = await screen.findByLabelText('Código ou nome do produto');
+    await screen.findByPlaceholderText('Leia o código de barras ou digite');
+    await userEvent.type(busca, '7897000400403{Enter}');
+    await userEvent.type(busca, '7897000400403{Enter}');
+    await userEvent.click(screen.getByLabelText('Pix'));
+    await userEvent.click(screen.getByRole('button', { name: 'Finalizar venda' }));
+    expect(txt((await screen.findByText(/Venda nº 1 registrada/)).textContent)).toMatch(/R\$ 15,00.*Pix, por Bruno/);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
+    await screen.findByText('R$ 15,00', { selector: '[data-testid="vendido-hoje"]' });
+    const tabela = screen.getByRole('table');
+    expect(within(tabela).getByText('Bruno')).toBeTruthy();
+    expect(within(tabela).getByText(/2× Petisco Bifinho/)).toBeTruthy();
+
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Relatórios' }));
+    const linha = (await screen.findByText('nº 1')).closest('tr')!;
+    expect(within(linha).getByText('Bruno')).toBeTruthy();
+    expect(within(linha).getByText('R$ 15,00')).toBeTruthy();
+  });
+
+  it('Vendedor não chega aos Relatórios nem pelo link da Visão geral', async () => {
+    render(
+      <TelaPainel
+        api={criarApiLocal({ lojaId: 'loja-y', operador: { id: 'b', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 })}
+        loja={{ nome: 'Loja Y' }}
+        pessoa={{ nome: 'Bruno', papel: 'vendedor' }}
+        aoSair={vi.fn()}
+      />,
+    );
+    await screen.findByTestId('vendido-hoje');
+    expect(screen.queryByRole('button', { name: 'Relatórios' })).toBeNull();
+    expect(screen.getByText(/Todas as vendas ficam guardadas em/).querySelector('button')).toBeNull();
+  });
 });

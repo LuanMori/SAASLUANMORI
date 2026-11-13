@@ -2,10 +2,10 @@
 // Entrada da demonstração. No sistema real a loja vem do subdomínio e o login é
 // validado no servidor; aqui o subdomínio é simulado na faixa amarela e os
 // usuários/senhas de teste ficam no próprio arquivo.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { TelaPainel } from '../painel/TelaPainel';
 import { TelaEntrada } from '../telas/TelaEntrada';
-import { apagarDadosDemo } from './apiLocal';
+import { apagarDadosDemo, criarApiLocal } from './apiLocal';
 import { entrarDemo, LOJAS_DEMO, SENHA_DEMO, type UsuarioDemo } from './contasDemo';
 
 interface Sessao {
@@ -45,9 +45,14 @@ export function DemoApp() {
 }
 
 function AreaLogada({ loja, usuario, aoSair }: { loja: (typeof LOJAS_DEMO)[number]; usuario: UsuarioDemo; aoSair: () => void }) {
-  // A tela de produtos (TelaProdutos) volta quando chegarmos em "Produtos e estoque".
+  // O operador da API é quem entrou: é ele que fica registrado em cada venda.
+  const api = useMemo(
+    () => criarApiLocal({ lojaId: loja.id, operador: { id: usuario.usuario, nome: usuario.nome } }),
+    [loja.id, usuario.usuario, usuario.nome],
+  );
   return (
     <TelaPainel
+      api={api}
       loja={{ nome: loja.nome, descricao: loja.descricao }}
       pessoa={{ nome: usuario.nome, papel: usuario.papel }}
       aoSair={aoSair}
@@ -80,17 +85,18 @@ function FaixaDemo({ subdominio, aoTrocar, logado }: { subdominio: string; aoTro
         <div className="demo-detalhes">
           <p>
             Em qualquer loja: <code>ana</code> (Dono) e <code>bruno</code> (Vendedor), senha <code>{SENHA_DEMO}</code>.{' '}
-            <code>carla</code> está desativada. 5 senhas erradas seguidas bloqueiam o usuário por 1 minuto.
+            <code>carla</code> está desativada. 5 senhas erradas seguidas bloqueiam o usuário por 1 minuto. Cada loja já vem
+            com produtos e algumas vendas de dias anteriores, de exemplo.
           </p>
           {!logado && (
             <button
               type="button"
               className="demo-faixa-botao"
               onClick={() => {
-                if (window.confirm('Apagar todos os produtos da demonstração?')) apagarDadosDemo();
+                if (window.confirm('Apagar todos os produtos e vendas da demonstração (Loja A e Loja B)?')) apagarDadosDemo();
               }}
             >
-              Apagar produtos da demonstração
+              Apagar produtos e vendas da demonstração
             </button>
           )}
         </div>

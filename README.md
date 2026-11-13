@@ -38,7 +38,12 @@ preço maior que zero, Enter do leitor vai para o preço), mas **sem servidor**:
 lista (Loja A/B; Dono, Vendedor ou pessoa não cadastrada, que vê o bloqueio) e os produtos ficam
 no `localStorage` do navegador, separados por loja.
 
-Serve para testar telas e regras de cadastro. **Não testa segurança**: Auth0, RLS e isolamento
+Já dá para testar o fluxo de vendas: **Frente de caixa** (leitor de código, código interno ou nome;
+forma de pagamento) → **Visão geral** (cards com as vendas de HOJE, que voltam a zero à meia-noite)
+→ **Relatórios** (todas as vendas, de todos os dias). Cada venda guarda quem vendeu: sempre a pessoa
+que entrou no sistema, nunca um campo da tela. As regras ficam em `packages/core/src/venda.ts`.
+
+Serve para testar telas e regras. **Não testa segurança**: Auth0, RLS e isolamento
 de verdade só existem com API + Postgres (abaixo). Para gerar o arquivo de novo depois de mudar
 a tela: `npm run build:core && npm run build:demo -w @saas/web`.
 

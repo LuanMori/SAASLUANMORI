@@ -1,7 +1,7 @@
 // apps/web/src/api.ts
 // Cliente HTTP da API. O token do Auth0 vai no Authorization; a LOJA não é
 // enviada pelo frontend em lugar nenhum — a API descobre pelo token.
-import type { ErroCampo, NovoProduto } from '@saas/core';
+import type { ErroCampo, NovaVenda, NovoProduto, Venda } from '@saas/core';
 
 export interface Produto {
   id: string;
@@ -68,3 +68,22 @@ export function criarApi(urlBase: string, obterToken: () => Promise<string>): Ap
     criarProduto: (dados) => chamar<Produto>('/produtos', { method: 'POST', body: JSON.stringify(dados) }),
   };
 }
+
+// ---- Vendas (Frente de caixa, Visão geral e Relatórios)
+// Quem vendeu e os preços não são enviados: a API usa a pessoa logada e o
+// cadastro de produtos (ver @saas/core/venda).
+
+export interface FiltroVendas {
+  /** Dia inicial (AAAA-MM-DD), inclusive, no fuso da loja. */
+  de?: string | null;
+  /** Dia final (AAAA-MM-DD), inclusive, no fuso da loja. */
+  ate?: string | null;
+}
+
+export interface ApiVendas {
+  listarVendas(filtro?: FiltroVendas): Promise<Venda[]>;
+  criarVenda(dados: NovaVenda): Promise<Venda>;
+}
+
+/** O que a área logada usa: produtos (para a Frente de caixa) e vendas. */
+export type ApiPainel = ApiProdutos & ApiVendas;

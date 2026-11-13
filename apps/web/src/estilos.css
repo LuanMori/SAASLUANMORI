@@ -315,3 +315,162 @@ h2 { font-size: 1.05rem; }
   .sidefoot { display: none; }
   .painel-conteudo { padding: 20px 16px; }
 }
+
+/* ------------------------------------------------------------------ Cards e peças comuns da área logada */
+.card { background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; padding: 20px; min-width: 0; }
+.card > h2 { margin: 0 0 12px; font-size: 1.02rem; }
+.card-plano { padding: 0; overflow: hidden; }
+.card-cabeca { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 20px; }
+.card-cabeca h2 { margin: 0; font-size: 1.02rem; }
+.card-plano .vazio { padding: 28px 20px; border-top: 1px solid var(--borda); }
+.card-rodape { margin: 0; padding: 12px 20px; border-top: 1px solid var(--borda); font-size: 0.82rem; color: var(--suave); }
+.link { border: 0; background: none; padding: 0; font: inherit; color: var(--primaria); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link:focus-visible { outline: 2px solid var(--primaria); outline-offset: 2px; border-radius: 3px; }
+.tabela-caixa { overflow-x: auto; border-top: 1px solid var(--borda); }
+.tabela-vendas th, .tabela-vendas td { white-space: nowrap; }
+.tabela-vendas th:first-child, .tabela-vendas td:first-child { padding-left: 20px; }
+.tabela-vendas th:last-child, .tabela-vendas td:last-child { padding-right: 20px; }
+.tabela-vendas .itens-venda { white-space: normal; min-width: 220px; max-width: 360px; }
+.tabela-vendas tbody tr:hover { background: #f7faf8; }
+.lista-valores { list-style: none; margin: 0; padding: 0; }
+.lista-valores li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--borda); }
+.lista-valores li:last-child { border-bottom: 0; }
+.lista-valores li > span:first-child { display: flex; flex-direction: column; min-width: 0; }
+.lista-valores small { font-size: 0.78rem; }
+.lista-valores .numero { font-weight: 600; }
+.campo select, .campo input[type='date'] {
+  font: inherit; padding: 9px 12px; border: 1px solid #8b929c; border-radius: 10px; background: #fff; color: var(--texto); width: 100%; min-width: 0;
+}
+.campo select:focus-visible, .campo input:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 30%, transparent); outline-offset: 1px; }
+.chip {
+  font: inherit; font-size: 0.88rem; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--borda); background: var(--superficie); color: var(--texto);
+}
+.chip:hover { border-color: var(--primaria); }
+.chip-on { background: var(--primaria); border-color: var(--primaria); color: #fff; }
+.chip:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ Visão geral */
+.vg, .rel, .pdv { display: flex; flex-direction: column; gap: 20px; max-width: 1240px; }
+.vg-topo h1, .pdv-topo h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
+.vg-topo p, .pdv-topo p { margin: 6px 0 0; }
+.vg-hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+.vg-visor {
+  display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; padding: 26px 28px;
+  border-radius: 12px; background: #0d3a2b; color: #fff;
+}
+.vg-visor-rotulo { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; color: #8fe0bd; }
+.vg-visor-valor { font-size: clamp(2.4rem, 4.4vw, 3.6rem); line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.vg-visor-nota { color: #cde9dc; }
+.vg-visor-botao {
+  align-self: flex-start; margin-top: 12px; padding: 9px 16px; border-radius: 10px; cursor: pointer;
+  border: 0; background: var(--primaria); color: #fff; font: inherit; font-weight: 600;
+}
+.vg-visor-botao:hover { background: var(--primaria-escura); }
+.vg-visor-botao:focus-visible { outline: 3px solid #8fe0bd; outline-offset: 2px; }
+.vg-lado { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--borda); border-radius: 12px; background: var(--superficie); }
+.vg-metrica { flex: 1; display: flex; flex-direction: column; gap: 1px; padding: 14px 20px; border-bottom: 1px solid var(--borda); }
+.vg-metrica:last-child { border-bottom: 0; }
+.vg-metrica-rotulo { font-size: 0.82rem; color: var(--suave); font-weight: 500; }
+.vg-metrica-valor { font-size: 1.5rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.vg-metrica-nota { font-size: 0.8rem; color: var(--suave); }
+.vg-pares { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* ------------------------------------------------------------------ Frente de caixa */
+.pdv-operador { color: var(--primaria); }
+.pdv-corpo { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 16px; align-items: start; }
+.pdv-carrinho { padding: 0; overflow: visible; }
+.pdv-busca { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 18px 20px 6px; }
+.pdv-busca label { font-weight: 600; font-size: 0.92rem; }
+.pdv-busca input {
+  font: inherit; font-size: 1.1rem; height: 52px; padding: 0 16px; border: 1px solid #8b929c; border-radius: 12px; background: #fff; color: var(--texto);
+}
+.pdv-busca input:focus-visible { outline: 0; border-color: var(--primaria); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primaria) 22%, transparent); }
+.pdv-busca .campo-erro { margin: 0; }
+.pdv-sugestoes {
+  position: absolute; left: 20px; right: 20px; top: calc(100% - 2px); z-index: 4; list-style: none; margin: 0; padding: 6px;
+  background: #fff; border: 1px solid var(--borda); border-radius: 12px; box-shadow: 0 10px 28px rgba(16, 40, 30, 0.14);
+}
+.pdv-sugestoes button {
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; text-align: left;
+  padding: 10px 12px; border: 0; border-radius: 8px; background: none; font: inherit; color: var(--texto); cursor: pointer;
+}
+.pdv-sugestoes button:hover, .pdv-sugestoes button:focus-visible { background: var(--primaria-clara); outline: 0; }
+.pdv-sug-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdv-carrinho .card-cabeca { padding-top: 14px; }
+.pdv-carrinho .vazio { border-top: 1px solid var(--borda); padding: 36px 20px; }
+.pdv-linhas { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--borda); }
+.pdv-linha {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto 110px 36px; gap: 14px; align-items: center;
+  padding: 12px 20px; border-bottom: 1px solid var(--borda);
+}
+.pdv-linha:last-child { border-bottom: 0; }
+.pdv-linha-produto { display: flex; flex-direction: column; min-width: 0; }
+.pdv-linha-produto b { font-weight: 600; overflow-wrap: anywhere; }
+.pdv-linha-produto small { font-size: 0.8rem; }
+.pdv-qtd { display: inline-flex; align-items: center; border: 1px solid #8b929c; border-radius: 10px; overflow: hidden; }
+.pdv-qtd button { width: 36px; height: 38px; border: 0; background: #f2f4f3; font: inherit; font-size: 1.1rem; cursor: pointer; color: var(--texto); }
+.pdv-qtd button:disabled { color: #a3a8b1; cursor: default; }
+.pdv-qtd button:not(:disabled):hover { background: var(--primaria-clara); }
+.pdv-qtd input { width: 54px; height: 38px; border: 0; text-align: center; font: inherit; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.pdv-qtd input::-webkit-outer-spin-button, .pdv-qtd input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pdv-subtotal { font-weight: 600; }
+.pdv-remover {
+  width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--borda); background: #fff; color: var(--erro);
+  font-size: 1.2rem; line-height: 1; cursor: pointer;
+}
+.pdv-remover:hover { background: var(--erro-fundo); }
+.pdv-pagamento { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.pdv-total-rotulo { margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--suave); }
+.pdv-total { font-size: 2.6rem; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--texto); }
+.pdv-formas { margin: 6px 0 0; padding: 0; border: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pdv-formas legend { padding: 0; margin-bottom: 8px; font-weight: 600; font-size: 0.92rem; }
+.pdv-forma {
+  display: flex; align-items: center; gap: 8px; padding: 11px 12px; border: 1px solid #8b929c; border-radius: 10px;
+  cursor: pointer; font-weight: 500; font-size: 0.92rem; background: #fff;
+}
+.pdv-forma:hover { border-color: var(--primaria); }
+.pdv-forma input { accent-color: var(--primaria); margin: 0; }
+.pdv-forma:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primaria) 30%, transparent); outline-offset: 1px; }
+.pdv-forma-on { border-color: var(--primaria); background: var(--primaria-clara); color: var(--primaria-escura); font-weight: 600; }
+.pdv-finalizar { margin-top: 6px; height: 54px; border-radius: 12px; font-weight: 700; }
+.pdv-finalizar:disabled { background: #c9cdd2; border-color: #c9cdd2; color: #4b4f56; cursor: not-allowed; opacity: 1; }
+.pdv-dica { margin: -4px 0 0; font-size: 0.82rem; }
+.pdv-cancelar { border-radius: 10px; }
+.pdv-cancelar:disabled { color: #8b929c; cursor: not-allowed; }
+.pdv-sucesso { margin: 4px 0 0; }
+
+/* ------------------------------------------------------------------ Relatórios */
+.rel-filtros { display: flex; flex-direction: column; gap: 14px; }
+.rel-atalhos { display: flex; flex-wrap: wrap; gap: 8px; }
+.rel-campos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.rel-metricas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.rel-cartao { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; }
+.rel-cartao-valor { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+.itens-venda details summary { cursor: pointer; color: var(--primaria); font-weight: 600; }
+.itens-venda details ul { margin: 6px 0 0; padding-left: 18px; }
+.itens-venda details li { padding: 2px 0; }
+
+@media (max-width: 1100px) {
+  .vg-hero, .pdv-corpo { grid-template-columns: minmax(0, 1fr); }
+  .pdv-pagamento { position: static; }
+  .rel-campos, .rel-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .vg-visor { padding: 20px; }
+  .vg-pares { grid-template-columns: minmax(0, 1fr); }
+  .pdv-linha { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
+  .pdv-linha .pdv-qtd { grid-column: 1; justify-self: start; }
+  .pdv-linha .pdv-subtotal { grid-column: 2; grid-row: 2; justify-self: end; }
+  .pdv-linha .pdv-remover { grid-column: 2; grid-row: 1; justify-self: end; }
+  .pdv-formas { grid-template-columns: minmax(0, 1fr); }
+  .rel-campos, .rel-metricas { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tabela-vendas thead { display: none; }
+  .tabela-vendas, .tabela-vendas tbody { display: block; }
+  .tabela-vendas tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 16px; border-bottom: 1px solid var(--borda); }
+  .tabela-vendas td { border: 0; padding: 0 !important; white-space: normal; }
+  .tabela-vendas td[data-rotulo='Vendido por'] { font-weight: 600; }
+  .tabela-vendas td[data-rotulo='Itens'] { flex-basis: 100%; max-width: none; min-width: 0; }
+  .tabela-vendas td[data-rotulo='Pagamento'] { color: var(--suave); }
+  .tabela-vendas td[data-rotulo='Total'] { margin-left: auto; font-weight: 700; }
+}
