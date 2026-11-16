@@ -3,7 +3,9 @@
 //   1) escolhe a venda pelo número ou numa lista das vendas de hoje;
 //   2) devolve itens (quantidade de cada um) ou cancela a venda inteira (só no mesmo dia e sem
 //      devolução); informa o motivo; o Vendedor precisa da senha do Dono ou do Administrador;
-//   3) o valor volta pelas mesmas formas de pagamento da venda.
+//   3) o valor volta pelas mesmas formas de pagamento da venda;
+//   4) cada item devolvido volta para o estoque (prateleira) ou não (avaria, vencido); no cancelamento,
+//      tudo volta para o estoque.
 // O vale-troca do DaniPets entra junto com a aba Clientes.
 import {
   type Devolucao,
@@ -156,6 +158,8 @@ function PassoVenda({
   const restante = restanteParaDevolver(venda);
   const [acao, setAcao] = useState<'devolver' | 'cancelar'>('devolver');
   const [qtds, setQtds] = useState<string[]>(venda.itens.map(() => '0'));
+  // como no DaniPets: vem marcado ("volta"); desmarque para avaria ou vencido
+  const [voltam, setVoltam] = useState<boolean[]>(venda.itens.map(() => true));
   const [motivo, setMotivo] = useState('');
   const [autorizadores, setAutorizadores] = useState<Autorizador[] | null>(null);
   const [quemId, setQuemId] = useState('');
@@ -177,8 +181,13 @@ function PassoVenda({
   }, []);
 
   const itens = venda.itens
-    .map((_, linha) => ({ linha, quantidade: Math.max(0, Math.min(restante[linha]!, Number.parseInt(qtds[linha] || '0', 10) || 0)) }))
+    .map((_, linha) => ({
+      linha,
+      quantidade: Math.max(0, Math.min(restante[linha]!, Number.parseInt(qtds[linha] || '0', 10) || 0)),
+      voltaAoEstoque: voltam[linha] !== false,
+    }))
     .filter((x) => x.quantidade > 0);
+  const descartados = itens.filter((x) => !x.voltaAoEstoque);
   const totalDevolver = acao === 'cancelar' ? venda.totalCentavos : itens.reduce((s, x) => s + venda.itens[x.linha]!.precoCentavos * x.quantidade, 0);
   const previa = acao === 'cancelar' ? { ok: true as const, valor: venda.pagamentos } : repartirEstorno(venda, totalDevolver);
   const disponivel = estornavelPorForma(venda);
@@ -248,6 +257,7 @@ function PassoVenda({
                   <th className="numero">Vendido</th>
                   <th className="numero">Já devolvido</th>
                   <th className="numero">Devolver</th>
+                  <th>Volta ao estoque</th>
                   <th className="numero">Preço</th>
                 </tr>
               </thead>
@@ -272,6 +282,18 @@ function PassoVenda({
                         onChange={(e) => setQtds((q) => q.map((v, i) => (i === linha ? e.target.value : v)))}
                       />
                     </td>
+                    <td data-rotulo="Volta ao estoque">
+                      <label className="dev-volta-estoque">
+                        <input
+                          type="checkbox"
+                          checked={voltam[linha] !== false}
+                          disabled={restante[linha] === 0}
+                          aria-label={`${item.nome} volta ao estoque`}
+                          onChange={(e) => setVoltam((v) => v.map((x, i) => (i === linha ? e.target.checked : x)))}
+                        />{' '}
+                        volta
+                      </label>
+                    </td>
                     <td data-rotulo="Preço" className="numero">
                       {formatarCentavos(item.precoCentavos)}
                     </td>
@@ -285,11 +307,14 @@ function PassoVenda({
         <p className="dev-volta" role="status">
           {acao === 'cancelar' ? (
             <>
-              Volta tudo para o cliente: <b>{comValores(venda.pagamentos)}</b>.
+              Volta tudo para o cliente: <b>{comValores(venda.pagamentos)}</b>. Todos os itens voltam ao estoque.
             </>
           ) : totalDevolver > 0 && previa.ok ? (
             <>
               Volta para o cliente: <b>{formatarCentavos(totalDevolver)}</b> ({comValores(previa.valor)}).
+              {descartados.length > 0 && (
+                <> Não volta ao estoque (avaria ou vencido): {descartados.map((x) => `${x.quantidade}× ${venda.itens[x.linha]!.nome}`).join(', ')}.</>
+              )}
             </>
           ) : (
             <>O valor volta pelas mesmas formas da venda ({disponivel.length ? `${comValores(disponivel)} disponíveis` : 'nada mais a devolver'}).</>

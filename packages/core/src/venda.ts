@@ -5,7 +5,10 @@
 //   - desconto por item com motivo: o Vendedor dá até 10% sozinho; acima disso precisa da senha do
 //     Dono ou do Administrador; brinde (preço final R$ 0,00) só com a autorização de um Dono;
 //   - cancelamento da venda inteira (no mesmo dia e sem devolução) e devolução de itens, com o valor
-//     voltando pelas mesmas formas de pagamento da venda; o Vendedor precisa de autorização.
+//     voltando pelas mesmas formas de pagamento da venda; o Vendedor precisa de autorização;
+//   - venda sem estoque é recusada ("Estoque insuficiente para X. Disponível: N un.");
+//   - cliente identificado (F6) opcional: vem do cadastro, nunca um nome digitado na tela.
+//   Os efeitos no estoque, no financeiro e no histórico do cliente estão em estoque.ts, financeiro.ts e cliente.ts.
 //
 // Segurança (mesma ideia do cadastro de produto):
 //   - Quem vendeu NÃO vem do cliente: é sempre a pessoa logada.
@@ -15,7 +18,9 @@
 //     servidor, nunca de um nome enviado pela tela.
 //
 // "Vendas de hoje" = vendas cujo dia, no fuso da loja, é o dia de hoje. Nada é apagado à meia-noite.
+import type { ClienteParaVenda } from './cliente';
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
+import { conferirEstoque } from './estoque';
 import type { PapelDeLoja } from './papeis';
 import type { ErroCampo, Resultado } from './resultado';
 
@@ -87,6 +92,14 @@ export interface NovaVenda {
   pagamentos: Pagamento[];
   /** Quanto o cliente entregou em dinheiro (para o troco). Obrigatório quando há parte em dinheiro. */
   recebidoDinheiroCentavos?: number | null;
+  /** Cliente identificado (F6). O nome sai do cadastro. */
+  clienteId?: string | null;
+}
+
+/** Cliente gravado na venda (o nome como estava no cadastro na hora da venda). */
+export interface ClienteDaVenda {
+  id: string;
+  nome: string;
 }
 
 export interface DescontoAplicado {
@@ -125,6 +138,8 @@ export interface ItemDevolvido {
   nome: string;
   quantidade: number;
   valorCentavos: number;
+  /** true = voltou para a prateleira (soma no estoque); false = descartado (avaria, vencido). */
+  voltaAoEstoque: boolean;
 }
 
 export interface Devolucao {
@@ -150,6 +165,8 @@ export interface Venda {
   criadaEm: string;
   /** Quem estava logado e fez a venda. */
   vendedor: Operador;
+  /** Cliente identificado (F6) ou null (venda sem cliente). */
+  cliente: ClienteDaVenda | null;
   itens: ItemVendido[];
   totalCentavos: number;
   /** Soma dos descontos dados nos itens. */
@@ -270,7 +287,7 @@ function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza
 }
 
 // ------------------------------------------------------------------ validação do pedido
-const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos']);
+const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos', 'clienteId']);
 const CAMPOS_ITEM = new Set(['produtoId', 'quantidade', 'desconto']);
 const CAMPOS_DESCONTO = new Set(['precoFinalCentavos', 'motivo', 'autorizacao']);
 const CAMPOS_PAGAMENTO = new Set(['forma', 'valorCentavos']);
@@ -286,7 +303,7 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
   }
   const erros: ErroCampo[] = [];
   camposDesconhecidos(entrada, CAMPOS_VENDA, '', erros, (c) =>
-    c === 'vendedor' ? 'Quem vendeu é sempre quem está logado.' : 'Campo não permitido.',
+    c === 'vendedor' ? 'Quem vendeu é sempre quem está logado.' : c.startsWith('cliente') ? 'O cliente vem do cadastro: envie só o clienteId.' : 'Campo não permitido.',
   );
 
   // itens
@@ -384,10 +401,20 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
     } else recebido = r;
   }
 
+  // cliente (F6)
+  let clienteId: string | null = null;
+  const c = entrada.clienteId;
+  if (c !== undefined && c !== null && c !== '') {
+    if (typeof c !== 'string' || c.trim() === '' || c.length > LIMITES_VENDA.produtoIdMax || CONTROLE.test(c)) {
+      erros.push({ campo: 'clienteId', mensagem: 'Cliente inválido.' });
+    } else clienteId = c.trim();
+  }
+
   if (erros.length > 0) return { ok: false, erros };
   return {
     ok: true,
     valor: {
+      clienteId,
       itens: [...porProduto.values()],
       // na ordem de FORMAS_PAGAMENTO, para a venda ficar igual não importa a ordem em que foi digitada
       pagamentos: FORMAS_PAGAMENTO.filter((f) => porForma.has(f)).map((forma) => ({ forma, valorCentavos: porForma.get(forma)! })),
@@ -402,6 +429,10 @@ export interface ContextoVenda {
   operador: OperadorComPapel;
   /** Autorizações dadas com senha, guardadas pelo servidor. */
   autorizacoes?: ReadonlyMap<string, Autorizacao>;
+  /** Saldo de estoque de cada produto. Com ele, a venda sem estoque é recusada. */
+  estoque?: ReadonlyMap<string, number>;
+  /** Clientes da loja, para conferir o cliente identificado (F6). */
+  clientes?: ReadonlyMap<string, ClienteParaVenda>;
   agora?: Date;
 }
 
@@ -412,13 +443,15 @@ export interface VendaCalculada {
   pagamentos: Pagamento[];
   recebidoDinheiroCentavos: number | null;
   trocoCentavos: number;
+  cliente: ClienteDaVenda | null;
   /** Autorizações usadas nesta venda: o servidor apaga (uso único). */
   autorizacoesUsadas: string[];
 }
 
 /**
  * Monta os itens com nome e preço do CADASTRO, aplica os descontos (conferindo quem pode dar),
- * soma o total e confere os pagamentos e o troco. Produto inexistente ou desativado recusa a venda.
+ * soma o total e confere os pagamentos e o troco. Produto inexistente ou desativado recusa a venda;
+ * com o saldo de estoque no contexto, falta de estoque também; cliente não encontrado também.
  */
 export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, ProdutoParaVenda>, ctx: ContextoVenda): Resultado<VendaCalculada> {
   const agora = ctx.agora ?? new Date();
@@ -489,6 +522,22 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
   }
   if (erros.length > 0) return { ok: false, erros };
 
+  // estoque: só passa se houver saldo para todos os itens
+  if (ctx.estoque) {
+    const estoque = conferirEstoque(itens, ctx.estoque);
+    if (!estoque.ok) return estoque;
+  }
+
+  // cliente: sai do cadastro (nome de hoje), nunca da tela
+  let cliente: ClienteDaVenda | null = null;
+  if (pedido.clienteId) {
+    const c = ctx.clientes?.get(pedido.clienteId);
+    if (!c || !c.ativo) {
+      return { ok: false, erros: [{ campo: 'clienteId', mensagem: 'Cliente não encontrado. Identifique o cliente de novo (F6) ou tire o cliente da venda.' }] };
+    }
+    cliente = { id: c.id, nome: c.nome };
+  }
+
   // pagamentos e troco
   const pago = pedido.pagamentos.reduce((s, p) => s + p.valorCentavos, 0);
   if (total > 0 && pedido.pagamentos.length === 0) return { ok: false, erros: [{ campo: 'pagamentos', mensagem: 'Informe a forma de pagamento.' }] };
@@ -524,6 +573,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       pagamentos: pedido.pagamentos.map((p) => ({ ...p })),
       recebidoDinheiroCentavos: recebido,
       trocoCentavos: troco,
+      cliente,
       autorizacoesUsadas: usadas,
     },
   };
@@ -577,7 +627,8 @@ export interface PedidoCancelamento {
 }
 
 export interface PedidoDevolucao {
-  itens: { linha: number; quantidade: number }[];
+  /** voltaAoEstoque: padrão true (volta para a prateleira); false para avaria ou vencido. */
+  itens: { linha: number; quantidade: number; voltaAoEstoque?: boolean }[];
   motivo: string;
   autorizacao?: string | null;
 }
@@ -595,7 +646,7 @@ export function validarPedidoDevolucao(entrada: unknown): Resultado<PedidoDevolu
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os itens e o motivo.' }] };
   const erros: ErroCampo[] = [];
   camposDesconhecidos(entrada, new Set(['itens', 'motivo', 'autorizacao']), '', erros);
-  const itens: { linha: number; quantidade: number }[] = [];
+  const itens: { linha: number; quantidade: number; voltaAoEstoque: boolean }[] = [];
   if (!Array.isArray(entrada.itens)) erros.push({ campo: 'itens', mensagem: 'Escolha o que vai ser devolvido.' });
   else
     entrada.itens.forEach((x, i) => {
@@ -603,8 +654,12 @@ export function validarPedidoDevolucao(entrada: unknown): Resultado<PedidoDevolu
         erros.push({ campo: `itens.${i}`, mensagem: 'Item inválido.' });
         return;
       }
-      camposDesconhecidos(x, new Set(['linha', 'quantidade']), `itens.${i}.`, erros);
-      if ((x.quantidade as number) > 0) itens.push({ linha: x.linha as number, quantidade: x.quantidade as number });
+      camposDesconhecidos(x, new Set(['linha', 'quantidade', 'voltaAoEstoque']), `itens.${i}.`, erros);
+      if (x.voltaAoEstoque !== undefined && typeof x.voltaAoEstoque !== 'boolean') {
+        erros.push({ campo: `itens.${i}.voltaAoEstoque`, mensagem: 'Marque se o item volta para o estoque.' });
+        return;
+      }
+      if ((x.quantidade as number) > 0) itens.push({ linha: x.linha as number, quantidade: x.quantidade as number, voltaAoEstoque: x.voltaAoEstoque !== false });
     });
   if (erros.length === 0 && itens.length === 0) erros.push({ campo: 'itens', mensagem: 'Informe a quantidade de pelo menos um item.' });
   const motivo = lerMotivo(entrada.motivo, 'motivo', erros, 'Informe o motivo da devolução.');
@@ -674,7 +729,14 @@ export function calcularDevolucao(
     if (x.quantidade > restante[x.linha]!) {
       return void erros.push({ campo: `itens.${i}`, mensagem: `De ${item.nome} ainda dá para devolver no máximo ${restante[x.linha]} un.` });
     }
-    itens.push({ linha: x.linha, produtoId: item.produtoId, nome: item.nome, quantidade: x.quantidade, valorCentavos: item.precoCentavos * x.quantidade });
+    itens.push({
+      linha: x.linha,
+      produtoId: item.produtoId,
+      nome: item.nome,
+      quantidade: x.quantidade,
+      valorCentavos: item.precoCentavos * x.quantidade,
+      voltaAoEstoque: x.voltaAoEstoque !== false,
+    });
   });
   if (erros.length) return { ok: false, erros };
   const total = itens.reduce((s, x) => s + x.valorCentavos, 0);

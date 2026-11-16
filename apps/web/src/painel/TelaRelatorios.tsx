@@ -1,7 +1,8 @@
 // apps/web/src/painel/TelaRelatorios.tsx
-// Relatórios: TODAS as vendas (de todos os dias), com quem vendeu.
-// Filtros: período (atalhos + datas), quem vendeu e forma de pagamento.
+// Relatórios: TODAS as vendas (de todos os dias), com quem vendeu e o cliente (F6).
+// Filtros: período (atalhos + datas), quem vendeu, cliente e forma de pagamento.
 // Vendas canceladas aparecem na lista (riscadas), mas ficam fora dos totais.
+// Do financeiro vem a taxa de cartão das vendas do período (o que fica com a operadora).
 import {
   descreverPagamentos,
   diaNoFuso,
@@ -12,14 +13,16 @@ import {
   NOME_FORMA_PAGAMENTO,
   resumirDevolucoes,
   resumirVendas,
+  taxasDasVendas,
 } from '@saas/core';
 import { useMemo, useState } from 'react';
-import type { ApiVendas } from '../api';
+import type { ApiFinanceiro, ApiVendas } from '../api';
 import { dataNoFuso, horaNoFuso, plural, totalItens } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: ApiVendas;
+  /** listarRecebiveis (Financeiro) é opcional: sem ele, as taxas de cartão não aparecem. */
+  api: ApiVendas & Partial<Pick<ApiFinanceiro, 'listarRecebiveis'>>;
   fuso: string;
   agora?: () => Date;
 }
@@ -48,6 +51,8 @@ function periodoDo(atalho: Atalho, hoje: string): { de: string; ate: string } {
   }
 }
 
+const SEM_CLIENTE = '__sem-cliente__';
+
 const ATALHOS: { id: Atalho; rotulo: string }[] = [
   { id: 'tudo', rotulo: 'Todas' },
   { id: 'hoje', rotulo: 'Hoje' },
@@ -62,6 +67,8 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
   const [ate, setAte] = useState('');
   const [vendedor, setVendedor] = useState('');
   const [forma, setForma] = useState<FormaPagamento | ''>('');
+  /** '' = todos; SEM_CLIENTE = vendas sem cliente identificado; ou o id do cliente. */
+  const [cliente, setCliente] = useState('');
 
   const { estado } = usarCarga(() => api.listarVendas({ de: de || null, ate: ate || null }), [api, de, ate]);
   const doPeriodo = useMemo(() => (estado.tipo === 'pronto' ? estado.dados : []), [estado]);
@@ -73,10 +80,23 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
     return [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
   }, [doPeriodo]);
 
+  // Clientes também saem das vendas do período (com o nome da hora da venda).
+  const clientes = useMemo(() => {
+    const m = new Map<string, string>();
+    doPeriodo.forEach((v) => v.cliente && m.set(v.cliente.id, v.cliente.nome));
+    return [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+  }, [doPeriodo]);
+
   const vendas = doPeriodo.filter(
-    (v) => (!vendedor || v.vendedor.id === vendedor) && (!forma || v.pagamentos.some((p) => p.forma === forma)),
+    (v) =>
+      (!vendedor || v.vendedor.id === vendedor) &&
+      (!forma || v.pagamentos.some((p) => p.forma === forma)) &&
+      (!cliente || (cliente === SEM_CLIENTE ? !v.cliente : v.cliente?.id === cliente)),
   );
   const r = resumirVendas(vendas);
+  const { estado: estadoRec } = usarCarga(() => (api.listarRecebiveis ? api.listarRecebiveis() : Promise.resolve([])), [api]);
+  const taxas =
+    estadoRec.tipo === 'pronto' ? taxasDasVendas(estadoRec.dados, new Set(vendas.filter((v) => v.status === 'finalizada').map((v) => v.id))) : 0;
   const { estado: estadoDev } = usarCarga(() => api.listarDevolucoes({ de: de || null, ate: ate || null }), [api, de, ate]);
   const dev = resumirDevolucoes(estadoDev.tipo === 'pronto' ? estadoDev.dados : []);
   const atalhoAtivo = ATALHOS.find((a) => {
@@ -89,7 +109,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
       <header className="vg-topo">
         <div>
           <h1>Relatórios</h1>
-          <p className="suave">Todas as vendas da loja, de todos os dias, com quem vendeu.</p>
+          <p className="suave">Todas as vendas da loja, de todos os dias, com quem vendeu e o cliente.</p>
         </div>
       </header>
 
@@ -132,6 +152,18 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
             </select>
           </div>
           <div className="campo">
+            <label htmlFor="rel-cliente">Cliente</label>
+            <select id="rel-cliente" value={cliente} onChange={(e) => setCliente(e.target.value)}>
+              <option value="">Todos</option>
+              <option value={SEM_CLIENTE}>Sem cliente identificado</option>
+              {clientes.map(([id, nome]) => (
+                <option key={id} value={id}>
+                  {nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="campo">
             <label htmlFor="rel-forma">Pagamento</label>
             <select id="rel-forma" value={forma} onChange={(e) => setForma(e.target.value as FormaPagamento | '')}>
               <option value="">Todas</option>
@@ -157,12 +189,13 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
             <Cartao rotulo="Ticket médio" valor={formatarCentavos(r.ticketMedioCentavos)} />
             <Cartao rotulo="Itens vendidos" valor={String(r.itensVendidos)} />
           </section>
-          {(r.descontoCentavos > 0 || dev.quantidade > 0 || r.canceladas > 0) && (
+          {(r.descontoCentavos > 0 || dev.quantidade > 0 || r.canceladas > 0 || taxas > 0) && (
             <p className="rel-extra suave" data-testid="rel-extra">
               {[
                 r.descontoCentavos > 0 ? `Descontos dados: ${formatarCentavos(r.descontoCentavos)}` : null,
                 dev.quantidade > 0 ? `Devoluções no período: ${formatarCentavos(dev.totalCentavos)} (${plural(dev.quantidade, 'devolução', 'devoluções')})` : null,
                 r.canceladas > 0 ? `${plural(r.canceladas, 'venda cancelada', 'vendas canceladas')} (fora dos totais)` : null,
+                taxas > 0 ? `Taxas de cartão: ${formatarCentavos(taxas)}` : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -224,6 +257,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                       <th>Hora</th>
                       <th>Venda</th>
                       <th>Vendido por</th>
+                      <th>Cliente</th>
                       <th>Itens</th>
                       <th>Pagamento</th>
                       <th className="numero">Total</th>
@@ -244,6 +278,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                           {v.devolucoes.length > 0 && <small className="vg-tag-desc"> com devolução</small>}
                         </td>
                         <td data-rotulo="Vendido por">{v.vendedor.nome}</td>
+                        <td data-rotulo="Cliente">{v.cliente?.nome ?? '—'}</td>
                         <td data-rotulo="Itens" className="itens-venda">
                           <details>
                             <summary>{plural(totalItens(v), 'item', 'itens')}</summary>

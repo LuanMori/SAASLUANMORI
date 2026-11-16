@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiPainel } from '../api';
-import { criarApiLocal } from '../demo/apiLocal';
+import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -25,6 +25,7 @@ async function criarLoja(operador: OperadorComPapel = BRUNO, agora?: () => Date)
   const racao = await base.criarProduto({ nome: 'Ração Gatos 3 kg', codigoBarras: '7891000200209', precoCentavos: 7990 });
   const petisco = await base.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
   await base.criarProduto({ nome: 'Petisco Ossinho', codigoBarras: null, precoCentavos: 500 });
+  reporEstoqueDemo('pdv', ANA, 100); // produto novo começa sem estoque
   return { base, racao, petisco };
 }
 
@@ -351,7 +352,7 @@ describe('Frente de caixa · devolução e cancelamento', () => {
     await userEvent.click(await within(janela()).findByRole('button', { name: /#00001/ }));
     expect(within(janela()).getByRole('heading').textContent).toBe('Venda #00001');
     await userEvent.click(within(janela()).getByLabelText('Cancelar a venda inteira'));
-    expect(txt(within(janela()).getByText(/Volta tudo/).textContent)).toBe('Volta tudo para o cliente: Pix R$ 15,00.');
+    expect(txt(within(janela()).getByText(/Volta tudo/).textContent)).toBe('Volta tudo para o cliente: Pix R$ 15,00. Todos os itens voltam ao estoque.');
     expect(within(janela()).queryByLabelText('Senha')).toBeNull(); // Dono não precisa de autorização
     await userEvent.type(within(janela()).getByLabelText('Motivo'), 'cliente desistiu');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Cancelar a venda' }));
@@ -403,5 +404,119 @@ describe('Frente de caixa · devolução e cancelamento', () => {
     await within(janela()).findByRole('heading', { name: 'Venda #00001' });
     expect(within(janela()).queryByLabelText('Cancelar a venda inteira')).toBeNull();
     expect(within(janela()).getByText(/Cancelar a venda inteira só no mesmo dia/)).toBeTruthy();
+  });
+});
+
+describe('Frente de caixa · estoque', () => {
+  it('não passa do estoque: leitor e + avisam o disponível; a busca mostra o saldo', async () => {
+    const api = criarApiLocal({ lojaId: 'est', operador: BRUNO, exemplos: false, atrasoMs: 0 });
+    await api.criarProduto({ nome: 'Coleira M', codigoBarras: '789100', precoCentavos: 2990 });
+    reporEstoqueDemo('est', ANA, 2);
+    await abrir(api, BRUNO, null);
+    await bipar('3*789100');
+    expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 2 un.');
+    expect(screen.queryByRole('table')).toBeNull();
+    await bipar('2*789100');
+    expect(linhas()).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Aumentar Coleira M' }));
+    expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 2 un.');
+    expect((screen.getByLabelText('Quantidade de Coleira M', { selector: 'input' }) as HTMLInputElement).value).toBe('2');
+    await userEvent.type(screen.getByLabelText('Buscar produto'), 'coleira');
+    expect(within(screen.getByRole('list', { name: 'Produtos encontrados' })).getByText('saldo 2')).toBeTruthy();
+  });
+
+  it('a venda dá baixa na hora: vendido tudo, o produto não passa mais', async () => {
+    const api = criarApiLocal({ lojaId: 'est', operador: BRUNO, exemplos: false, atrasoMs: 0 });
+    await api.criarProduto({ nome: 'Coleira M', codigoBarras: '789100', precoCentavos: 2990 });
+    reporEstoqueDemo('est', ANA, 2);
+    await abrir(api, BRUNO, null);
+    await bipar('2*789100');
+    await finalizar();
+    await screen.findByText(/finalizada/);
+    await userEvent.type(screen.getByLabelText('Buscar produto'), 'coleira');
+    await within(screen.getByRole('list', { name: 'Produtos encontrados' })).findByText('saldo 0');
+    await userEvent.keyboard('{Escape}');
+    await bipar('789100');
+    expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 0 un.');
+  });
+
+  it('devolução: o item marcado volta ao estoque; desmarcado (avaria) não volta', async () => {
+    const loja = await criarLoja(ANA);
+    await loja.base.criarVenda({ itens: [{ produtoId: loja.petisco.id, quantidade: 3 }], pagamentos: [{ forma: 'pix', valorCentavos: 2250 }] });
+    const { api } = await abrir(loja.base, ANA, null);
+    await userEvent.click(screen.getByRole('button', { name: 'Devolução / cancelamento' }));
+    await userEvent.click(await within(janela()).findByRole('button', { name: /#00001/ }));
+    await userEvent.clear(within(janela()).getByLabelText('Quantidade a devolver de Petisco Bifinho'));
+    await userEvent.type(within(janela()).getByLabelText('Quantidade a devolver de Petisco Bifinho'), '2');
+    const volta = within(janela()).getByLabelText('Petisco Bifinho volta ao estoque') as HTMLInputElement;
+    expect(volta.checked).toBe(true); // vem marcado, como no DaniPets
+    await userEvent.click(volta);
+    expect(txt(within(janela()).getByText(/Volta para o cliente/).textContent)).toBe(
+      'Volta para o cliente: R$ 15,00 (Pix R$ 15,00). Não volta ao estoque (avaria ou vencido): 2× Petisco Bifinho.',
+    );
+    await userEvent.type(within(janela()).getByLabelText('Motivo'), 'avaria');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Confirmar devolução' }));
+    await screen.findByText(/Devolução registrada/);
+    expect((await api.listarEstoque()).find((e) => e.produtoId === loja.petisco.id)?.saldo).toBe(97); // 100 − 3 vendidos; a avaria não volta
+  });
+});
+
+describe('Frente de caixa · cliente (F6)', () => {
+  const faixa = () => screen.getByRole('group', { name: 'Cliente da venda' });
+
+  it('F6 acha o cliente pelo nome; a venda leva o cliente e a faixa volta para "Não identificado"', async () => {
+    const loja = await criarLoja(BRUNO);
+    const maria = await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const { api } = await abrir(loja.base, BRUNO, null);
+    expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
+    await userEvent.keyboard('{F6}');
+    expect(within(janela()).getByRole('heading').textContent).toBe('Identificar cliente');
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');
+    await userEvent.click(await within(janela()).findByRole('button', { name: /Maria Souza/ }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(txt(faixa().textContent)).toMatch(/Maria Souza\s*CPF \*\*\*\.982\.247-\*\*/);
+    await bipar('7897000400403');
+    await finalizar();
+    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 7,50 em Pix. Cliente: Maria Souza.');
+    expect(api.criarVenda).toHaveBeenCalledWith(expect.objectContaining({ clienteId: maria.id }));
+    expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
+    expect((await api.historicoDoCliente(maria.id)).resumo).toMatchObject({ compras: 1, totalCentavos: 750 });
+  });
+
+  it('cliente novo: o CPF digitado na busca já vem no cadastro; dado inválido avisa no campo; × tira o cliente', async () => {
+    await montar();
+    await userEvent.click(screen.getByRole('button', { name: 'Identificar cliente · F6' }));
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), '529.982.247-25');
+    expect(within(janela()).getByText(/Nenhum cliente encontrado/)).toBeTruthy();
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Cadastrar novo cliente' }));
+    expect(within(janela()).getByRole('heading').textContent).toBe('Novo cliente');
+    expect((within(janela()).getByLabelText('CPF') as HTMLInputElement).value).toBe('52998224725');
+    await userEvent.type(within(janela()).getByLabelText('Nome completo'), 'Jo');
+    await userEvent.type(within(janela()).getByLabelText('Telefone com DDD'), '123');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Cadastrar e usar na venda' }));
+    expect(within(janela()).getByText(/pelo menos 3 letras/)).toBeTruthy();
+    expect(within(janela()).getByText(/Telefone inválido/)).toBeTruthy();
+    await userEvent.type(within(janela()).getByLabelText('Nome completo'), 'ão Lima');
+    await userEvent.clear(within(janela()).getByLabelText('Telefone com DDD'));
+    await userEvent.type(within(janela()).getByLabelText('Telefone com DDD'), '(41) 98888-7777');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Cadastrar e usar na venda' }));
+    expect(await screen.findByText('Cliente cadastrado: João Lima.')).toBeTruthy();
+    expect(txt(faixa().textContent)).toMatch(/João Lima/);
+    await userEvent.click(screen.getByRole('button', { name: 'Tirar o cliente da venda' }));
+    expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
+  });
+
+  it('o cliente fica no carrinho guardado (só nome e CPF mascarado)', async () => {
+    const loja = await criarLoja(BRUNO);
+    await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const { ui } = await abrir(loja.base, BRUNO, 'carrinho-cli');
+    await userEvent.keyboard('{F6}');
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), '8888');
+    await userEvent.keyboard('{Enter}'); // só um cliente na lista: Enter escolhe
+    expect(txt(faixa().textContent)).toMatch(/Maria Souza/);
+    expect(localStorage.getItem('carrinho-cli')).not.toContain('52998224725');
+    ui.unmount();
+    await abrir(loja.base, BRUNO, 'carrinho-cli');
+    expect(txt(faixa().textContent)).toMatch(/Maria Souza/);
   });
 });

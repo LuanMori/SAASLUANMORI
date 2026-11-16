@@ -50,6 +50,25 @@ motivo (Vendedor até 10%; acima disso, senha do Dono ou do Administrador; brind
 devolução de itens e cancelamento da venda (no mesmo dia), com o valor voltando pelas mesmas formas.
 Usuários de teste: `ana` (Dono), `caio` (Administrador), `bruno` (Vendedor), senha `demo1234`.
 As regras ficam em `packages/core/src/venda.ts`.
+
+Cada venda da Frente de caixa alimenta o resto do sistema, como no DaniPets:
+
+- **Estoque**: a venda dá baixa e é recusada sem estoque ("Estoque insuficiente para X. Disponível: N un.");
+  o cancelamento devolve tudo; na devolução, cada item volta para a prateleira ou não (avaria, vencido).
+  A busca (F3) mostra o saldo.
+- **Clientes**: F6 identifica o cliente (CPF, telefone ou nome) ou cadastra na hora (nome, telefone e CPF,
+  sem repetir CPF); a compra entra no histórico dele. Na tela, o CPF aparece mascarado.
+- **Financeiro**: Dinheiro entra no Caixa físico, Pix na Conta bancária e cartão vira "a receber", com a taxa
+  e o prazo da operadora (padrão: débito 1,5% em 1 dia, crédito 3% em 30 dias). Cancelamento e devolução
+  estornam pela mesma forma (devolução em dinheiro não passa do que há no caixa).
+- **Visão geral**: o card Saldo das contas (só Dono e Administrador) mostra Caixa + Banco e o que ainda cai de cartão.
+- **Relatórios**: coluna e filtro de cliente; taxas de cartão do período.
+
+As abas Produtos e estoque, Clientes e Financeiro ainda não têm tela (ficam em branco até a vez delas), mas o
+código está pronto: regras em `packages/core/src/estoque.ts`, `cliente.ts` e `financeiro.ts`; chamadas da API em
+`apps/web/src/api.ts` (`ApiEstoque`, `ApiClientes`, `ApiFinanceiro`), já funcionando na demonstração. Lojas usadas
+em versões anteriores da demonstração ganham o estoque e o financeiro montados a partir das vendas que já tinham.
+Para repor o estoque na demonstração: "Usuários de teste" → "Repor estoque desta loja".
 O card **Pendências** da Visão geral já existe, mas o que entra nele ainda está **a definir**
 (sugestões em `docs/PENDENCIAS.md`); na demonstração, "Usuários de teste" → "Mostrar pendências de exemplo".
 
@@ -119,7 +138,7 @@ substituído por um JWKS local — a verificação do token é o mesmo código d
 | `apps/api/test/codigos.spec.ts` | código interno 0001, 0002…, continua do maior, 9999 → 10000, pula código de barras, 25 cadastros simultâneos sem repetir nem pular; código de barras só números, repetido → 409 com o nome do produto, igual a código interno → 409; preço zero recusado pela API e pelo banco |
 | `apps/api/test/migracoes.spec.ts` | aplica tudo → reverte uma a uma (conferindo cada estado) → reaplica; migration 2 numera produtos antigos por loja; para sem apagar nada se houver código com letra |
 | `apps/api/test/scripts.spec.ts` | `db:usuario` cadastra, muda papel, desativa, reativa; recusa loja desconhecida, papel inválido e super_admin |
-| `packages/core/test/*` | validação de produto, formato do código interno e conversão de dinheiro (cobertura ≥ 80% obrigatória) |
+| `packages/core/test/*` | validação de produto, formato do código interno, conversão de dinheiro, venda, estoque, clientes e financeiro (cobertura ≥ 80% obrigatória) |
 | `apps/web/src/telas/*.test.tsx` | lista com códigos, cadastro sem campo de código interno, Enter do leitor vai para o preço, validação local, erro 409, bloqueio 403, queda de rede |
 
 ## Regras de produto já decididas (Luan, 11/11/2026 — iguais ao DaniPets V9.2)

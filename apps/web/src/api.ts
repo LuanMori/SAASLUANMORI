@@ -3,14 +3,27 @@
 // enviada pelo frontend em lugar nenhum — a API descobre pelo token.
 import type {
   AcaoAutorizada,
+  Cliente,
+  ContaId,
   Devolucao,
   DevolucaoComVenda,
   ErroCampo,
+  Lancamento,
+  MovimentoEstoque,
+  MovimentoManual,
   NovaVenda,
+  NovoCliente,
+  NovoLancamentoManual,
   NovoProduto,
   PapelDeLoja,
   PedidoCancelamento,
   PedidoDevolucao,
+  Recebivel,
+  ResumoAReceber,
+  ResumoCliente,
+  SituacaoEstoque,
+  SituacaoRecebivel,
+  TaxasCartao,
   Venda,
 } from '@saas/core';
 
@@ -119,5 +132,86 @@ export interface ApiVendas {
   listarDevolucoes(filtro?: FiltroVendas): Promise<DevolucaoComVenda[]>;
 }
 
-/** O que a área logada usa: produtos (para a Frente de caixa) e vendas. */
-export type ApiPainel = ApiProdutos & ApiVendas;
+// ---- Estoque (alimentado pelas vendas, cancelamentos e devoluções)
+// A aba Produtos e estoque ainda não tem tela: estas chamadas já ficam prontas para ela.
+
+export interface SaldoEstoque {
+  produtoId: string;
+  /** Soma dos movimentos (unidades). */
+  saldo: number;
+  /** null = sem aviso de estoque baixo. */
+  minimo: number | null;
+  situacao: SituacaoEstoque;
+}
+
+export interface FiltroMovimentosEstoque extends FiltroVendas {
+  produtoId?: string | null;
+}
+
+export interface ApiEstoque {
+  /** Saldo de cada produto (o que nunca teve movimento aparece com saldo 0). */
+  listarEstoque(): Promise<SaldoEstoque[]>;
+  /** Do mais novo para o mais antigo. */
+  listarMovimentosEstoque(filtro?: FiltroMovimentosEstoque): Promise<MovimentoEstoque[]>;
+  /** Entrada (compra) ou ajuste com motivo (perda, avaria, contagem). Só Dono e Administrador. */
+  lancarMovimentoEstoque(dados: MovimentoManual): Promise<SaldoEstoque>;
+  /** Estoque mínimo do produto (null ou 0 = sem aviso). Só Dono e Administrador. */
+  definirEstoqueMinimo(produtoId: string, minimo: number | null): Promise<SaldoEstoque>;
+}
+
+// ---- Clientes (identificados na Frente de caixa com F6)
+// A aba Clientes ainda não tem tela: estas chamadas já ficam prontas para ela.
+
+export interface HistoricoCliente {
+  cliente: Cliente;
+  resumo: ResumoCliente;
+  /** Compras do cliente, da mais nova para a mais antiga (canceladas aparecem, mas não somam). */
+  vendas: Venda[];
+}
+
+export interface ApiClientes {
+  /** Busca por nome, CPF ou telefone (F6); sem termo, todos os clientes ativos. */
+  listarClientes(termo?: string): Promise<Cliente[]>;
+  /** Nome, telefone e CPF obrigatórios; CPF não pode repetir. */
+  cadastrarCliente(dados: NovoCliente): Promise<Cliente>;
+  atualizarCliente(id: string, dados: NovoCliente): Promise<Cliente>;
+  historicoDoCliente(id: string): Promise<HistoricoCliente>;
+}
+
+// ---- Financeiro (só Dono e Administrador; Vendedor recebe 403)
+// A aba Financeiro ainda não tem tela; a Visão geral usa o resumo no card "Saldo das contas".
+
+export interface ResumoFinanceiro {
+  contas: { id: ContaId; nome: string; saldoCentavos: number }[];
+  /** Caixa físico + Conta bancária. */
+  totalCentavos: number;
+  /** Vendas no cartão que a operadora ainda vai depositar (líquido, já sem a taxa). */
+  aReceber: ResumoAReceber;
+}
+
+export interface FiltroLancamentos extends FiltroVendas {
+  conta?: ContaId | null;
+}
+
+export interface ApiFinanceiro {
+  resumoFinanceiro(): Promise<ResumoFinanceiro>;
+  /** Do mais novo para o mais antigo. */
+  listarLancamentos(filtro?: FiltroLancamentos): Promise<Lancamento[]>;
+  /** Do vencimento mais próximo para o mais distante. */
+  listarRecebiveis(filtro?: { situacao?: SituacaoRecebivel | null }): Promise<Recebivel[]>;
+  /** Confirma que a operadora depositou: o líquido entra na conta. */
+  receberRecebivel(id: string, conta: ContaId): Promise<Recebivel>;
+  /** Entrada, despesa, retirada do dono ou transferência entre contas. */
+  lancarNoFinanceiro(dados: NovoLancamentoManual): Promise<Lancamento[]>;
+  /** Uma vez por conta. */
+  definirSaldoInicial(dados: { conta: ContaId; valorCentavos: number }): Promise<Lancamento>;
+  lerTaxasCartao(): Promise<TaxasCartao>;
+  salvarTaxasCartao(taxas: TaxasCartao): Promise<TaxasCartao>;
+}
+
+/**
+ * O que a área logada usa. Cada venda da Frente de caixa alimenta o resto do sistema:
+ * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
+ * Visão geral e Relatórios.
+ */
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro;

@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarApiLocal } from '../demo/apiLocal';
+import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -26,6 +26,7 @@ async function preparar() {
   const comoAna = criarApiLocal({ lojaId: 'l', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
   const comoBruno = criarApiLocal({ lojaId: 'l', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
   const p = await comoAna.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
+  reporEstoqueDemo('l', { id: 'ana', nome: 'Ana' }, 50); // produto novo começa sem estoque
 
   mudar('2026-11-11T20:00:00Z'); // ontem, 17:00 em SP
   await comoAna.criarVenda({ itens: [{ produtoId: p.id, quantidade: 10 }], pagamentos: [{ forma: 'credito', valorCentavos: 24900 }] });
@@ -53,7 +54,7 @@ describe('TelaVisaoGeral · formato', () => {
   it('nenhuma informação a mais na tela: sem listas, tabelas nem resumos por pessoa ou forma', async () => {
     const { api, agora } = await preparar();
     render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} aoVerFinanceiro={vi.fn()} />);
-    await screen.findByText('R$ 74,70');
+    await waitFor(() => expect(txt(screen.getByTestId('vendido-hoje').textContent)).toBe('R$ 74,70'));
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Por quem vendeu' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Por forma de pagamento' })).toBeNull();
@@ -73,7 +74,9 @@ describe('TelaVisaoGeral · formato', () => {
     expect(produtos.getAttribute('title')).toBe('Abrir Produtos e estoque');
     const saldo = screen.getByRole('button', { name: /Saldo das contas/ });
     expect(saldo.getAttribute('title')).toBe('Abrir Financeiro');
-    expect(saldo.textContent).toMatch(/Financeiro ainda não configurado/);
+    // saldo real: dinheiro de hoje (R$ 49,80) + Pix de hoje (R$ 24,90); o crédito de ontem ainda vai cair (sem a taxa de 3%)
+    await waitFor(() => expect(txt(saldo.querySelector('.vg-atalho-valor')?.textContent)).toBe('R$ 74,70'));
+    expect(txt(saldo.querySelector('.vg-atalho-nota')?.textContent)).toBe('+ R$ 241,53 a receber no cartão');
 
     await userEvent.click(produtos);
     expect(aoVerProdutos).toHaveBeenCalledOnce();
@@ -149,9 +152,9 @@ describe('TelaVisaoGeral · relatório do card grande', () => {
     expect(within(porForma!).getAllByRole('row').slice(1).map((r) => txt(r.textContent))).toEqual(['Dinheiro1R$ 49,8067%', 'Pix1R$ 24,9033%']);
     expect(within(porQuem!).getAllByRole('row').slice(1).map((r) => txt(r.textContent))).toEqual(['Bruno1R$ 49,8067%', 'Ana1R$ 24,9033%']);
     const linhas = within(vendaPorVenda!).getAllByRole('row').slice(1);
-    expect(linhas.map((l) => celulas(l, 0, 1, 3, 4, 5))).toEqual([
-      ['#00003', '11:30', 'Bruno', 'Dinheiro', 'R$ 49,80'],
-      ['#00002', '10:05', 'Ana', 'Pix', 'R$ 24,90'],
+    expect(linhas.map((l) => celulas(l, 0, 1, 3, 4, 5, 6))).toEqual([
+      ['#00003', '11:30', '—', 'Bruno', 'Dinheiro', 'R$ 49,80'],
+      ['#00002', '10:05', '—', 'Ana', 'Pix', 'R$ 24,90'],
     ]);
     expect(txt(linhas[0]!.textContent)).toMatch(/2× Areia 4 kg R\$ 24,90 cada · R\$ 49,80/);
     expect(txt(painel.querySelector('.vg-soma')?.textContent)).toBe('Total: R$ 74,70 em 2 vendas · 3 produtos vendidos');
@@ -264,6 +267,7 @@ describe('TelaVisaoGeral · cancelamento, devolução, desconto e pagamento divi
     const relogio = new Date('2026-11-12T15:00:00Z');
     const api = criarApiLocal({ lojaId: 'd', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora: () => relogio });
     const p = await api.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
+    reporEstoqueDemo('d', { id: 'ana', nome: 'Ana' }, 50);
     await api.criarVenda({
       itens: [{ produtoId: p.id, quantidade: 1, desconto: { precoFinalCentavos: 2000, motivo: 'avaria' } }],
       pagamentos: [
@@ -279,7 +283,7 @@ describe('TelaVisaoGeral · cancelamento, devolução, desconto e pagamento divi
     const [porForma, , vendaPorVenda] = within(painel).getAllByRole('table');
     expect(within(porForma!).getAllByRole('row').slice(1).map((r) => txt(r.textContent))).toEqual(['Dinheiro1R$ 10,0050%', 'Pix1R$ 10,0050%']);
     const linha = within(vendaPorVenda!).getAllByRole('row')[1]!;
-    expect(celulas(linha, 4)).toEqual(['Dinheiro R$ 10,00 + Pix R$ 10,00']);
+    expect(celulas(linha, 5)).toEqual(['Dinheiro R$ 10,00 + Pix R$ 10,00']);
     expect(txt(linha.textContent)).toMatch(/desconto R\$ 4,90 · avaria · Ana/);
     expect(txt(painel.querySelector('.vg-soma')?.textContent)).toBe('Total: R$ 20,00 em 1 venda · 1 produto vendido · descontos R$ 4,90');
   });

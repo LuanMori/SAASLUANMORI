@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarApiLocal } from '../demo/apiLocal';
+import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
 import { TelaRelatorios } from './TelaRelatorios';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -19,6 +19,7 @@ async function preparar() {
   const ana = criarApiLocal({ lojaId: 'r', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
   const bruno = criarApiLocal({ lojaId: 'r', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
   const p = await ana.criarProduto({ nome: 'Coleira M', codigoBarras: null, precoCentavos: 2990 });
+  reporEstoqueDemo('r', { id: 'ana', nome: 'Ana' }, 50); // produto novo começa sem estoque
   relogio = new Date('2026-10-20T15:00:00Z');
   await ana.criarVenda({ itens: [{ produtoId: p.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 2990 }] });
   relogio = new Date('2026-11-11T18:00:00Z');
@@ -33,7 +34,7 @@ const linhas = () =>
   within(screen.getByRole('table'))
     .getAllByRole('row')
     .slice(1)
-    .map((l) => [txt((l as HTMLTableRowElement).cells[0]?.textContent), txt((l as HTMLTableRowElement).cells[3]?.textContent), txt((l as HTMLTableRowElement).cells[6]?.textContent)]);
+    .map((l) => [txt((l as HTMLTableRowElement).cells[0]?.textContent), txt((l as HTMLTableRowElement).cells[3]?.textContent), txt((l as HTMLTableRowElement).cells[7]?.textContent)]);
 
 describe('TelaRelatorios', () => {
   it('mostra TODAS as vendas, de todos os dias, com quem vendeu', async () => {
@@ -116,5 +117,28 @@ describe('TelaRelatorios · canceladas, devoluções e pagamento dividido', () =
     await userEvent.selectOptions(screen.getByLabelText('Pagamento'), 'Dinheiro');
     expect(linhas()).toHaveLength(2);
     expect(txt(screen.getByTestId('rel-extra').textContent)).toBe('Devoluções no período: R$ 29,90 (1 devolução)');
+  });
+});
+
+describe('TelaRelatorios · cliente e taxas', () => {
+  it('coluna e filtro de cliente (com "Sem cliente identificado"); taxas de cartão do período no resumo', async () => {
+    const { api, agora } = await preparar();
+    const [produto] = await api.listarProdutos();
+    const maria = await api.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    await api.criarVenda({ itens: [{ produtoId: produto!.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 2990 }], clienteId: maria.id });
+    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await screen.findByRole('table');
+    const clientes = () =>
+      within(screen.getByRole('table'))
+        .getAllByRole('row')
+        .slice(1)
+        .map((l) => txt((l as HTMLTableRowElement).cells[4]?.textContent));
+    expect(clientes()).toEqual(['Maria Souza', '—', '—', '—']);
+    await userEvent.selectOptions(screen.getByLabelText('Cliente'), 'Maria Souza');
+    expect(clientes()).toEqual(['Maria Souza']);
+    await userEvent.selectOptions(screen.getByLabelText('Cliente'), 'Sem cliente identificado');
+    expect(clientes()).toEqual(['—', '—', '—']);
+    // crédito de R$ 89,70 com a taxa padrão de 3%
+    await waitFor(() => expect(txt(screen.getByTestId('rel-extra').textContent)).toMatch(/Taxas de cartão: R\$ 2,69/));
   });
 });

@@ -6,6 +6,7 @@ import {
   autorizacaoNecessaria,
   centavosParaTexto,
   contaDoPagamento,
+  disponivelParaVenda,
   lerCarrinhoSalvo,
   lerEntrada,
   type LinhaCarrinho,
@@ -109,6 +110,20 @@ describe('pagamento', () => {
       recebidoDinheiroCentavos: 2000,
     });
     expect(montarPedido(linhas, contaDoPagamento({ ...pagamentoInicial('pix'), recebidoTexto: '20' }, 1400)).recebidoDinheiroCentavos).toBeNull();
+    // com cliente identificado (F6): vai só o id
+    expect(montarPedido(linhas, conta, { id: 'c1', nome: 'Maria', cpfMascarado: '***' }).clienteId).toBe('c1');
+  });
+
+  it('disponível para venda: estoque menos o que já está no carrinho (nunca negativo)', () => {
+    const saldos = new Map([
+      ['r', 5],
+      ['p', 1],
+    ]);
+    const noCarrinho: LinhaCarrinho[] = [{ produtoId: 'r', quantidade: 2, desconto: null }];
+    expect(disponivelParaVenda(saldos, noCarrinho, 'r')).toBe(3);
+    expect(disponivelParaVenda(saldos, noCarrinho, 'p')).toBe(1);
+    expect(disponivelParaVenda(saldos, [{ produtoId: 'p', quantidade: 3, desconto: null }], 'p')).toBe(0);
+    expect(disponivelParaVenda(saldos, noCarrinho, 'x')).toBe(0);
   });
 
   it('proximaForma e centavosParaTexto', () => {
@@ -127,13 +142,22 @@ describe('carrinho salvo', () => {
     expect(lerCarrinhoSalvo('k')).toEqual({
       linhas: [{ produtoId: 'r', quantidade: 1, desconto: { precoFinalCentavos: 15000, motivo: 'x', responsavelNome: 'Ana', autorizacao: null } }],
       pagamento: { dividido: false, forma: 'debito', partes: [], recebidoTexto: '' },
+      cliente: null,
     });
+  });
+
+  it('guarda o cliente identificado (só id, nome e CPF mascarado); cliente estranho é ignorado', () => {
+    const cliente = { id: 'c1', nome: 'Maria Oliveira', cpfMascarado: '***.000.001-**' };
+    salvarCarrinho('k', [], pagamentoInicial(), cliente);
+    expect(lerCarrinhoSalvo('k')?.cliente).toEqual(cliente);
+    localStorage.setItem('k', JSON.stringify({ v: 1, linhas: [], pagamento: {}, cliente: { id: '', nome: 'X' } }));
+    expect(lerCarrinhoSalvo('k')?.cliente).toBeNull();
   });
   it('dado estranho ou ausente não quebra a tela', () => {
     expect(lerCarrinhoSalvo('nada')).toBeNull();
     localStorage.setItem('k', '{quebrado');
     expect(lerCarrinhoSalvo('k')).toBeNull();
     localStorage.setItem('k', JSON.stringify({ v: 1, linhas: [{ produtoId: 'r', quantidade: -1 }, { produtoId: 'p', quantidade: 2 }], pagamento: { forma: 'cheque' } }));
-    expect(lerCarrinhoSalvo('k')).toEqual({ linhas: [{ produtoId: 'p', quantidade: 2, desconto: null }], pagamento: pagamentoInicial('pix') });
+    expect(lerCarrinhoSalvo('k')).toEqual({ linhas: [{ produtoId: 'p', quantidade: 2, desconto: null }], pagamento: pagamentoInicial('pix'), cliente: null });
   });
 });

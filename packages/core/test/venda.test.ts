@@ -45,7 +45,7 @@ describe('validarNovaVenda', () => {
   it('aceita pedido simples', () => {
     expect(validarNovaVenda({ itens: [{ produtoId: 'p1', quantidade: 2 }], pagamentos: pix })).toEqual({
       ok: true,
-      valor: { itens: [{ produtoId: 'p1', quantidade: 2, desconto: null }], pagamentos: [{ forma: 'pix', valorCentavos: 100 }], recebidoDinheiroCentavos: null },
+      valor: { clienteId: null, itens: [{ produtoId: 'p1', quantidade: 2, desconto: null }], pagamentos: [{ forma: 'pix', valorCentavos: 100 }], recebidoDinheiroCentavos: null },
     });
   });
 
@@ -232,6 +232,7 @@ describe('calcularVenda', () => {
       pagamentos: [{ forma: 'pix', valorCentavos: 21990 }],
       recebidoDinheiroCentavos: null,
       trocoCentavos: 0,
+      cliente: null,
       autorizacoesUsadas: [],
       itens: [
         { produtoId: 'p1', codigoInterno: '0001', nome: 'Ração', precoListaCentavos: 18990, precoCentavos: 18990, quantidade: 1, subtotalCentavos: 18990, desconto: null },
@@ -359,6 +360,7 @@ const vendaBase = (p: Partial<Venda> = {}): Venda => ({
   numero: 7,
   criadaEm: '2026-11-16T13:00:00Z', // 10:00 em Brasília, mesmo dia de AGORA
   vendedor: { id: 'bruno', nome: 'Bruno' },
+  cliente: null,
   itens: [
     { produtoId: 'p1', codigoInterno: '0001', nome: 'Ração', precoListaCentavos: 2000, precoCentavos: 1800, quantidade: 1, subtotalCentavos: 1800, desconto: null },
     { produtoId: 'p2', codigoInterno: '0002', nome: 'Petisco', precoListaCentavos: 600, precoCentavos: 600, quantidade: 2, subtotalCentavos: 1200, desconto: null },
@@ -380,7 +382,7 @@ const devolucaoFeita = {
   id: 'd1',
   numero: 1,
   criadaEm: AGORA.toISOString(),
-  itens: [{ linha: 1, produtoId: 'p2', nome: 'Petisco', quantidade: 1, valorCentavos: 600 }],
+  itens: [{ linha: 1, produtoId: 'p2', nome: 'Petisco', quantidade: 1, valorCentavos: 600, voltaAoEstoque: true }],
   totalCentavos: 600,
   estornos: [{ forma: 'pix' as const, valorCentavos: 600 }],
   motivo: 'x',
@@ -511,7 +513,11 @@ describe('devolução', () => {
         ],
         motivo: 'embalagem furada',
       }),
-    ).toEqual({ ok: true, valor: { itens: [{ linha: 1, quantidade: 2 }], motivo: 'embalagem furada', autorizacao: null } });
+    ).toEqual({ ok: true, valor: { itens: [{ linha: 1, quantidade: 2, voltaAoEstoque: true }], motivo: 'embalagem furada', autorizacao: null } });
+    // avaria ou vencido: não volta para a prateleira
+    const avaria = validarPedidoDevolucao({ itens: [{ linha: 0, quantidade: 1, voltaAoEstoque: false }], motivo: 'avaria' });
+    expect(avaria.ok && avaria.valor.itens).toEqual([{ linha: 0, quantidade: 1, voltaAoEstoque: false }]);
+    expect(campos(validarPedidoDevolucao({ itens: [{ linha: 0, quantidade: 1, voltaAoEstoque: 'sim' }], motivo: 'x' }))).toContain('itens.0.voltaAoEstoque');
   });
 });
 

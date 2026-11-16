@@ -7,7 +7,8 @@
 //   - card grande: abre logo abaixo o relatório das vendas de hoje (de onde vem
 //     o número, por forma de pagamento, por quem vendeu e venda por venda);
 //   - Produtos ativos: vai para a aba Produtos e estoque;
-//   - Saldo das contas: vai para a aba Financeiro (só Dono e Administrador).
+//   - Saldo das contas: vai para a aba Financeiro (só Dono e Administrador). Mostra o saldo do
+//     Caixa físico + Conta bancária, alimentado pelas vendas, e quanto ainda cai de cartão.
 // "Hoje" é o dia no fuso da loja: à meia-noite tudo volta a zero sozinho, sem
 // apagar nada (as vendas continuam nos Relatórios).
 import {
@@ -31,7 +32,8 @@ import type { Pendencia } from './pendencias';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'>;
+  /** resumoFinanceiro só é chamado para quem vê o Financeiro (aoVerFinanceiro). */
+  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'> & Partial<Pick<ApiPainel, 'resumoFinanceiro'>>;
   nome: string;
   fuso: string;
   agora?: () => Date;
@@ -77,6 +79,15 @@ export function TelaVisaoGeral({
   const devolucoes = estadoDev.tipo === 'pronto' ? estadoDev.dados.filter((d) => diaNoFuso(d.criadaEm, fuso) === hoje) : [];
   const dev = resumirDevolucoes(devolucoes);
   const [aberto, setAberto] = useState(false);
+
+  // Saldo das contas: só para quem vê o Financeiro (Dono e Administrador)
+  const comFinanceiro = Boolean(aoVerFinanceiro && api.resumoFinanceiro);
+  const { estado: estadoFin } = usarCarga(
+    () => (comFinanceiro && api.resumoFinanceiro ? api.resumoFinanceiro() : Promise.resolve(null)),
+    [api, comFinanceiro],
+    comFinanceiro ? intervaloMs : 0,
+  );
+  const financeiro = estadoFin.tipo === 'pronto' ? estadoFin.dados : null;
 
   const produtos = estadoProdutos.tipo === 'pronto' ? estadoProdutos.dados : null;
   const ativos = produtos ? produtos.filter((p) => p.ativo).length : 0;
@@ -165,8 +176,21 @@ export function TelaVisaoGeral({
                   />
                 )}
                 {aoVerFinanceiro && (
-                  // O Financeiro (contas, recebimentos, despesas) ainda não existe: sem saldo para mostrar.
-                  <Atalho rotulo="Saldo das contas" destino="Financeiro" onClick={aoVerFinanceiro} valor="—" nota="Financeiro ainda não configurado" />
+                  <Atalho
+                    rotulo="Saldo das contas"
+                    destino="Financeiro"
+                    onClick={aoVerFinanceiro}
+                    valor={financeiro ? formatarCentavos(financeiro.totalCentavos) : estadoFin.tipo === 'carregando' ? '…' : '—'}
+                    nota={
+                      financeiro
+                        ? financeiro.aReceber.totalCentavos > 0
+                          ? `+ ${formatarCentavos(financeiro.aReceber.totalCentavos)} a receber no cartão`
+                          : undefined
+                        : estadoFin.tipo === 'carregando'
+                          ? undefined
+                          : 'Não foi possível carregar o saldo'
+                    }
+                  />
                 )}
               </div>
             )}
@@ -255,7 +279,7 @@ function RelatorioVendasHoje({
       </div>
       <p className="vg-intro">
         Soma de todas as vendas finalizadas hoje ({hoje}) na Frente de caixa: o total por forma de pagamento, por quem vendeu e venda por
-        venda, com os produtos.
+        venda, com os produtos e o cliente.
       </p>
 
       {finalizadas.length === 0 ? (
@@ -390,6 +414,7 @@ function TabelaDetalhada({ vendas, fuso }: { vendas: Venda[]; fuso: string }) {
             <th>Venda</th>
             <th>Hora</th>
             <th>Produtos vendidos</th>
+            <th>Cliente</th>
             <th>Vendido por</th>
             <th>Pagamento</th>
             <th className="numero">Total</th>
@@ -423,6 +448,7 @@ function TabelaDetalhada({ vendas, fuso }: { vendas: Venda[]; fuso: string }) {
                   </div>
                 ))}
               </td>
+              <td data-rotulo="Cliente">{v.cliente?.nome ?? '—'}</td>
               <td data-rotulo="Vendido por">{v.vendedor.nome}</td>
               <td data-rotulo="Pagamento">{descreverPagamentos(v.pagamentos)}</td>
               <td data-rotulo="Total" className="numero">

@@ -16,6 +16,10 @@
 - Código: `apps/web/src/painel/pendencias.ts` (tipo `Pendencia`) e `apps/web/src/painel/CardPendencias.tsx`.
   Para ligar as pendências de verdade, cada uma vira uma regra que olha os dados da loja e devolve
   itens `Pendencia`, passados para `TelaPainel` em `pendencias`.
+- **Regras prontas, mas desligadas (16/11/2026)**: como a Frente de caixa agora alimenta o estoque e o
+  cartão a receber, as sugestões **6** (estoque baixo), **7** (estoque negativo) e **10** (cartão vencido sem
+  confirmar) já estão escritas e testadas em `apps/web/src/painel/regrasPendencias.ts`, com os textos do
+  DaniPets. Nada aparece no card até o Luan decidir: ligar é só passar o resultado para `pendencias`.
 
 ## Sugestões para escolher
 
@@ -30,12 +34,12 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | **Produtos e estoque / Compras** | | | | | |
 | 4 | Lote com validade **vencida** ainda no estoque | alta | todos (baixa só gestor) | Produtos e estoque | lote e validade na entrada de compras |
 | 5 | Lote vencendo em até 30 dias | média | todos | Produtos e estoque | lote e validade |
-| 6 | Estoque baixo (no mínimo ou abaixo) | média | todos | Compras ("Fazer pedido") | estoque e estoque mínimo |
-| 7 | Estoque negativo (vendeu mais do que tinha) | alta | gestor | Produtos e estoque ("Ajustar") | estoque |
+| 6 | Estoque baixo (no mínimo ou abaixo) | média | todos | Compras ("Fazer pedido") | **pronta, desligada** (falta a tela para definir o mínimo) |
+| 7 | Estoque negativo (vendeu mais do que tinha) | alta | gestor | Produtos e estoque ("Ajustar") | **pronta, desligada** |
 | **Financeiro** | | | | | |
 | 8 | Contas a pagar vencidas | alta | gestor | Financeiro | contas a pagar |
 | 9 | Contas a pagar vencendo hoje ou amanhã | média | gestor | Financeiro | contas a pagar |
-| 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | recebíveis de cartão |
+| 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada** (falta a tela do Financeiro para confirmar) |
 | **Clientes** | | | | | |
 | 11 | Fiado vencido | média | gestor | Clientes | fiado |
 | 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes | histórico e cashback |
@@ -55,5 +59,5 @@ automático do banco: a loja não precisa fazer nada. Sugestão: não incluir es
 ## Como decidir
 
 Para cada pendência: entra ou não? Gravidade? Quem vê? Para qual aba o botão leva?
-Sugestão de ordem: começar pelas que dependem das primeiras telas que vamos construir
-(Caixa do dia e Produtos e estoque): 1, 2, 4, 5 e 6.
+Sugestão de ordem: começar pelas que já estão prontas (6, 7 e 10) e pelas que dependem das próximas
+telas (Caixa do dia e Produtos e estoque): 1, 2, 4 e 5.

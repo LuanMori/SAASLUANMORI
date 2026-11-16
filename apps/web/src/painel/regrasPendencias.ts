@@ -1,0 +1,59 @@
+// apps/web/src/painel/regrasPendencias.ts
+// Regras de pendência que JÁ DÁ para calcular com os dados que a Frente de caixa alimenta
+// (estoque e cartão a receber). Iguais aos avisos do DaniPets V9.3.3.
+//
+// ⚠ PRONTAS, MAS DESLIGADAS: as pendências da Visão geral ainda estão "A DEFINIR"
+// (docs/PENDENCIAS.md). Nada aqui é passado para o card até o Luan escolher o que entra.
+// Para ligar: chamar estas funções com os dados da loja e passar o resultado para
+// `TelaPainel` em `pendencias`.
+//   - #6 estoque baixo (no mínimo ou abaixo) ........ média · todos · "Fazer pedido" (Compras)
+//   - #7 estoque negativo ............................ alta  · gestor · "Ajustar" (Produtos e estoque)
+//   - #10 recebimento de cartão vencido sem confirmar  média · gestor · "Confirmar" (Financeiro)
+import { formatarCentavos, liquidoAReceber, type Recebivel, recebiveisVencidos } from '@saas/core';
+import type { Produto, SaldoEstoque } from '../api';
+import { plural } from './formato';
+import type { Pendencia } from './pendencias';
+
+/** #6 e #7: estoque baixo (só produto ativo com mínimo definido) e estoque negativo. */
+export function pendenciasDeEstoque(produtos: readonly Produto[], saldos: readonly SaldoEstoque[]): Pendencia[] {
+  const porId = new Map(produtos.map((p) => [p.id, p]));
+  const baixos: Pendencia[] = [];
+  const negativos: Pendencia[] = [];
+  for (const s of saldos) {
+    const p = porId.get(s.produtoId);
+    if (!p) continue;
+    if (s.saldo < 0) {
+      negativos.push({
+        id: `estoque-negativo:${p.id}`,
+        gravidade: 'alta',
+        texto: `${p.nome}: saldo negativo (${s.saldo} un). Faça um ajuste de estoque ou confira as compras.`,
+        acao: { rotulo: 'Ajustar', secao: 'produtos-e-estoque' },
+        soGestor: true,
+      });
+    } else if (p.ativo && s.minimo && s.saldo <= s.minimo) {
+      baixos.push({
+        id: `estoque-baixo:${p.id}`,
+        gravidade: 'media',
+        texto: `${p.nome}: estoque baixo (${s.saldo} un; mínimo ${s.minimo} un).`,
+        acao: { rotulo: 'Fazer pedido', secao: 'compras' },
+      });
+    }
+  }
+  return [...negativos, ...baixos];
+}
+
+/** #10: recebimentos de cartão que já deviam ter caído e ninguém confirmou. */
+export function pendenciasDeCartao(recebiveis: readonly Recebivel[], hoje: string): Pendencia[] {
+  const vencidos = recebiveisVencidos(recebiveis, hoje);
+  if (vencidos.length === 0) return [];
+  const total = vencidos.reduce((s, r) => s + liquidoAReceber(r), 0);
+  return [
+    {
+      id: `cartao-vencido:${hoje}`,
+      gravidade: 'media',
+      texto: `${plural(vencidos.length, 'recebimento de cartão vencido', 'recebimentos de cartão vencidos')} aguardando confirmação (${formatarCentavos(total)}).`,
+      acao: { rotulo: 'Confirmar', secao: 'financeiro' },
+      soGestor: true,
+    },
+  ];
+}

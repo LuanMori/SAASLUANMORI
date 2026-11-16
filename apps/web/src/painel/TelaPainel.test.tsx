@@ -3,7 +3,7 @@ import type { PapelDeLoja } from '@saas/core';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarApiLocal } from '../demo/apiLocal';
+import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
 import { iniciais } from './BarraLateral';
 import { TelaPainel } from './TelaPainel';
 
@@ -124,6 +124,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
   it('a venda feita na Frente de caixa aparece na Visão geral e nos Relatórios com quem vendeu', async () => {
     const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
+    reporEstoqueDemo('loja-x', { id: 'ana', nome: 'Ana' }, 10); // produto novo começa sem estoque
     render(
       <TelaPainel
         api={api}

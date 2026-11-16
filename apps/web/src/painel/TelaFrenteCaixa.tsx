@@ -6,9 +6,12 @@
 //             F9 Débito, F10 Crédito), dinheiro com valor recebido e troco, dividir pagamento,
 //             FINALIZAR (F2);
 //   rodapé:   teclas, Devolução / cancelamento e Limpar venda.
+// Cliente (F6): identificar ou cadastrar na hora; venda sem cliente continua normal.
+// Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
 // O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
-// A tela manda só produto, quantidade, desconto pedido e pagamento: quem vendeu é quem está
-// logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
+// A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
+// quem está logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
+// Cada venda alimenta o estoque, o histórico do cliente, o financeiro, a Visão geral e os Relatórios.
 import {
   descreverPagamentos,
   type FormaPagamento,
@@ -16,6 +19,7 @@ import {
   formatarCentavos,
   formatarNumeroVenda,
   LIMITES_VENDA,
+  mascararCpf,
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
   type Venda,
@@ -26,7 +30,9 @@ import {
   acharPorCodigo,
   autorizacaoNecessaria,
   centavosParaTexto,
+  type ClienteNaVenda,
   contaDoPagamento,
+  disponivelParaVenda,
   type EstadoPagamento,
   lerCarrinhoSalvo,
   lerEntrada,
@@ -38,6 +44,7 @@ import {
   salvarCarrinho,
   totaisDoCarrinho,
 } from './caixa/carrinho';
+import { ModalCliente } from './caixa/ModalCliente';
 import { ModalDesconto } from './caixa/ModalDesconto';
 import { ModalDevolucao } from './caixa/ModalDevolucao';
 import { dataNoFuso } from './formato';
@@ -70,16 +77,21 @@ const normalizar = (t: string) =>
     .trim();
 
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
-type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | null;
+type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
 
 export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, aoVender }: Props) {
-  const { estado: carga } = usarCarga(() => api.listarProdutos(), [api]);
-  const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.filter((p) => p.ativo) : []), [carga]);
+  const { estado: carga, recarregar } = usarCarga(async () => {
+    const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
+    return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
+  }, [api]);
+  const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.produtos.filter((p) => p.ativo) : []), [carga]);
+  const saldos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.saldos : new Map<string, number>()), [carga]);
   const porId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
 
   const salvo = useMemo(() => (chaveCarrinho ? lerCarrinhoSalvo(chaveCarrinho) : null), [chaveCarrinho]);
   const [linhas, setLinhas] = useState<LinhaCarrinho[]>(salvo?.linhas ?? []);
   const [pag, setPag] = useState<EstadoPagamento>(salvo?.pagamento ?? pagamentoInicial());
+  const [cliente, setCliente] = useState<ClienteNaVenda | null>(salvo?.cliente ?? null);
   const [ultimo, setUltimo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso>(null);
   const [enviando, setEnviando] = useState(false);
@@ -95,8 +107,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     if (carga.tipo === 'pronto') setLinhas((ls) => ls.filter((l) => porId.has(l.produtoId)));
   }, [carga.tipo, porId]);
   useEffect(() => {
-    if (chaveCarrinho) salvarCarrinho(chaveCarrinho, linhas, pag);
-  }, [chaveCarrinho, linhas, pag]);
+    if (chaveCarrinho) salvarCarrinho(chaveCarrinho, linhas, pag, cliente);
+  }, [chaveCarrinho, linhas, pag, cliente]);
 
   const totais = totaisDoCarrinho(linhas, porId);
   const conta = contaDoPagamento(pag, totais.totalCentavos);
@@ -113,6 +125,12 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     const atual = linhas.find((l) => l.produtoId === p.id);
     if ((atual?.quantidade ?? 0) + quantidade > LIMITES_VENDA.quantidadeMax) {
       erro(`No máximo ${LIMITES_VENDA.quantidadeMax} unidades de ${p.nome} numa venda.`);
+      return;
+    }
+    // como no DaniPets: não passa do estoque (descontando o que já está no carrinho)
+    const disponivel = disponivelParaVenda(saldos, linhas, p.id);
+    if (quantidade > disponivel) {
+      erro(`Estoque insuficiente para ${p.nome}. Disponível: ${disponivel} un.`);
       return;
     }
     setLinhas((ls) =>
@@ -157,12 +175,19 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     erro(sugestoes.length === 0 ? `Nenhum produto encontrado para “${busca.trim()}”.` : 'Mais de um produto encontrado: escolha na lista.');
   }
 
-  const mudarQuantidade = (produtoId: string, quantidade: number) =>
+  function mudarQuantidade(produtoId: string, quantidade: number) {
+    const atual = linhas.find((l) => l.produtoId === produtoId)?.quantidade ?? 0;
+    const saldo = saldos.get(produtoId) ?? 0;
+    if (quantidade > atual && quantidade > saldo) {
+      erro(`Estoque insuficiente para ${porId.get(produtoId)?.nome ?? 'o produto'}. Disponível: ${Math.max(0, saldo)} un.`);
+      return;
+    }
     setLinhas((ls) =>
       quantidade <= 0
         ? ls.filter((l) => l.produtoId !== produtoId) // quantidade 0 tira o item (como no DaniPets)
         : ls.map((l) => (l.produtoId === produtoId ? { ...l, quantidade: Math.min(LIMITES_VENDA.quantidadeMax, quantidade) } : l)),
     );
+  }
   const remover = (produtoId: string) => setLinhas((ls) => ls.filter((l) => l.produtoId !== produtoId));
 
   function removerDesconto(p: Produto) {
@@ -218,18 +243,20 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     setEnviando(true);
     setAviso(null);
     try {
-      const venda = await api.criarVenda(montarPedido(linhas, conta));
+      const venda = await api.criarVenda(montarPedido(linhas, conta, cliente));
       setLinhas([]);
       setUltimo(null);
+      setCliente(null);
       // a forma usada fica marcada para a próxima venda (como no DaniPets)
       setPag((p) => pagamentoInicial(p.dividido ? (p.partes[0]?.forma ?? p.forma) : p.forma));
       setAviso({
         tipo: 'ok',
         texto: `Venda ${formatarNumeroVenda(venda.numero)} finalizada: ${
           venda.pagamentos.length ? `${formatarCentavos(venda.totalCentavos)} em ${descreverPagamentos(venda.pagamentos)}` : 'brinde, sem pagamento'
-        }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}`,
+        }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}${venda.cliente ? ` Cliente: ${venda.cliente.nome}.` : ''}`,
       });
       aoVender?.(venda);
+      void recarregar(); // estoque novo
       focarCodigo();
     } catch (e) {
       erro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
@@ -239,9 +266,10 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   }
 
   function limpar() {
-    if (linhas.length && !window.confirm('Limpar a venda atual?')) return;
+    if ((linhas.length || cliente) && !window.confirm('Limpar a venda atual?')) return;
     setLinhas([]);
     setUltimo(null);
+    setCliente(null);
     setPag((p) => pagamentoInicial(p.forma));
     setAviso(null);
     focarCodigo();
@@ -259,6 +287,9 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       } else if (e.key === 'F3') {
         e.preventDefault();
         refBusca.current?.focus();
+      } else if (e.key === 'F6') {
+        e.preventDefault();
+        setJanela({ tipo: 'cliente' });
       } else if (FORMA_DA_TECLA[e.key]) {
         e.preventDefault();
         acoes.current.definirForma(FORMA_DA_TECLA[e.key]!);
@@ -347,7 +378,10 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   <li key={p.id}>
                     <button type="button" onClick={() => escolher(p)}>
                       <span className="mono suave">{p.codigoInterno}</span>
-                      <span className="pdv-sug-nome">{p.nome}</span>
+                      <span className="pdv-sug-nome">
+                        {p.nome}
+                        <small className={(saldos.get(p.id) ?? 0) > 0 ? 'pdv-saldo' : 'pdv-saldo pdv-saldo-zero'}>saldo {Math.max(0, saldos.get(p.id) ?? 0)}</small>
+                      </span>
                       <span className="numero">{formatarCentavos(p.precoCentavos)}</span>
                     </button>
                   </li>
@@ -355,6 +389,28 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               </ul>
             )}
           </form>
+
+          <div className={cliente ? 'pdv-cliente pdv-cliente-on' : 'pdv-cliente'} aria-label="Cliente da venda" role="group">
+            <span className="pdv-rotulo">CLIENTE</span>
+            {cliente ? (
+              <>
+                <span className="pdv-cliente-id">
+                  <b>{cliente.nome}</b>
+                  <small>CPF {cliente.cpfMascarado}</small>
+                </span>
+                <button type="button" className="pdv-remover" onClick={() => setCliente(null)} aria-label="Tirar o cliente da venda" title="Tirar o cliente da venda">
+                  ×
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="pdv-cliente-nenhum">Não identificado</span>
+                <button type="button" className="pdv-link pdv-cliente-botao" onClick={() => setJanela({ tipo: 'cliente' })}>
+                  Identificar cliente · F6
+                </button>
+              </>
+            )}
+          </div>
 
           <div className="pdv-fita">
             {linhas.length === 0 ? (
@@ -390,6 +446,9 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                             {p.codigoBarras ?? `cód. ${p.codigoInterno}`}
                             {l.desconto && <span className="pdv-tag"> · com desconto</span>}
                             {semAutorizacao && <span className="pdv-tag pdv-tag-erro"> · autorize o desconto de novo</span>}
+                            {l.quantidade > (saldos.get(p.id) ?? 0) && (
+                              <span className="pdv-tag pdv-tag-erro"> · estoque: {Math.max(0, saldos.get(p.id) ?? 0)} un.</span>
+                            )}
                           </small>
                         </td>
                         <td className="numero">
@@ -573,6 +632,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ['F2', 'finalizar'],
           ['F3', 'buscar'],
           ['F4', 'dinheiro'],
+          ['F6', 'cliente'],
           ['F8', 'pix'],
           ['F9', 'débito'],
           ['F10', 'crédito'],
@@ -622,6 +682,18 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           agora={agora}
           aoConcluir={(texto) => {
             setAviso({ tipo: 'ok', texto });
+            void recarregar(); // o que voltou para a prateleira já pode ser vendido
+            fecharJanela();
+          }}
+          aoFechar={fecharJanela}
+        />
+      )}
+      {janela?.tipo === 'cliente' && (
+        <ModalCliente
+          api={api}
+          aoEscolher={(c, cadastradoAgora) => {
+            setCliente({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf) });
+            setAviso({ tipo: 'ok', texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.` });
             fecharJanela();
           }}
           aoFechar={fecharJanela}

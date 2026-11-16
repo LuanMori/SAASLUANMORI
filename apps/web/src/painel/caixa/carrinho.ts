@@ -30,6 +30,14 @@ export interface LinhaCarrinho {
   desconto: DescontoNaLinha | null;
 }
 
+/** Cliente identificado (F6). Só o que a tela mostra: o servidor confere no cadastro. */
+export interface ClienteNaVenda {
+  id: string;
+  nome: string;
+  /** "***.456.789-**" (o CPF inteiro não fica no carrinho guardado). */
+  cpfMascarado: string;
+}
+
 export interface ParteDividida {
   forma: FormaPagamento;
   valorTexto: string;
@@ -125,9 +133,10 @@ export function contaDoPagamento(estado: EstadoPagamento, totalCentavos: number)
   return { pagamentos, faltaCentavos: totalCentavos - pago, invalido, dinheiroCentavos: dinheiro, recebidoCentavos: recebido };
 }
 
-/** O pedido que vai para a API: só produto, quantidade, desconto pedido e pagamento. */
-export function montarPedido(linhas: readonly LinhaCarrinho[], conta: ContaPagamento): NovaVenda {
+/** O pedido que vai para a API: só produto, quantidade, desconto pedido, pagamento e o id do cliente. */
+export function montarPedido(linhas: readonly LinhaCarrinho[], conta: ContaPagamento, cliente: ClienteNaVenda | null = null): NovaVenda {
   return {
+    ...(cliente ? { clienteId: cliente.id } : {}),
     itens: linhas.map((l) => ({
       produtoId: l.produtoId,
       quantidade: l.quantidade,
@@ -136,6 +145,12 @@ export function montarPedido(linhas: readonly LinhaCarrinho[], conta: ContaPagam
     pagamentos: conta.pagamentos,
     recebidoDinheiroCentavos: conta.dinheiroCentavos > 0 ? conta.recebidoCentavos : null,
   };
+}
+
+/** Quanto ainda dá para pôr no carrinho, olhando o estoque e o que já está nele. */
+export function disponivelParaVenda(saldos: ReadonlyMap<string, number>, linhas: readonly LinhaCarrinho[], produtoId: string): number {
+  const noCarrinho = linhas.find((l) => l.produtoId === produtoId)?.quantidade ?? 0;
+  return Math.max(0, (saldos.get(produtoId) ?? 0) - noCarrinho);
 }
 
 /** Próxima forma ainda não usada no pagamento dividido (ou a primeira). */
@@ -150,9 +165,12 @@ interface CarrinhoSalvo {
   v: 1;
   linhas: LinhaCarrinho[];
   pagamento: EstadoPagamento;
+  cliente?: ClienteNaVenda | null;
 }
 
-export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; pagamento: EstadoPagamento } | null {
+const textoCurto = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max;
+
+export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; pagamento: EstadoPagamento; cliente: ClienteNaVenda | null } | null {
   try {
     const bruto = JSON.parse(localStorage.getItem(chave) ?? 'null') as CarrinhoSalvo | null;
     if (!bruto || bruto.v !== 1 || !Array.isArray(bruto.linhas)) return null;
@@ -162,17 +180,23 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
     const p = bruto.pagamento;
     const forma = FORMAS_PAGAMENTO.includes(p?.forma) ? p.forma : 'pix';
     const partes = Array.isArray(p?.partes) ? p.partes.filter((x) => FORMAS_PAGAMENTO.includes(x?.forma)).map((x) => ({ forma: x.forma, valorTexto: String(x.valorTexto ?? '') })) : [];
-    return { linhas, pagamento: { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') } };
+    const c = bruto.cliente;
+    const cliente =
+      c && textoCurto(c.id, LIMITES_VENDA.produtoIdMax) && textoCurto(c.nome, 120) && typeof c.cpfMascarado === 'string' && c.cpfMascarado.length <= 20
+        ? { id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado }
+        : null;
+    return { linhas, pagamento: { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') }, cliente };
   } catch {
     return null;
   }
 }
 
-export function salvarCarrinho(chave: string, linhas: readonly LinhaCarrinho[], pagamento: EstadoPagamento): void {
+export function salvarCarrinho(chave: string, linhas: readonly LinhaCarrinho[], pagamento: EstadoPagamento, cliente: ClienteNaVenda | null = null): void {
   const dado: CarrinhoSalvo = {
     v: 1,
     linhas: linhas.map((l) => ({ ...l, desconto: l.desconto ? { ...l.desconto, autorizacao: null } : null })),
     pagamento,
+    cliente,
   };
   try {
     localStorage.setItem(chave, JSON.stringify(dado));
