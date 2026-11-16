@@ -4,7 +4,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiPainel } from '../api';
-import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
+import { criarApiLocal } from '../demo/apiLocal';
+import { darEstoque } from '../testes/estoque';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -25,7 +26,7 @@ async function criarLoja(operador: OperadorComPapel = BRUNO, agora?: () => Date)
   const racao = await base.criarProduto({ nome: 'Ração Gatos 3 kg', codigoBarras: '7891000200209', precoCentavos: 7990 });
   const petisco = await base.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
   await base.criarProduto({ nome: 'Petisco Ossinho', codigoBarras: null, precoCentavos: 500 });
-  reporEstoqueDemo('pdv', ANA, 100); // produto novo começa sem estoque
+  await darEstoque('pdv', 100); // produto novo começa sem estoque
   return { base, racao, petisco };
 }
 
@@ -44,6 +45,8 @@ async function abrir(base: ApiPainel, operador: OperadorComPapel, chave: string 
   return { api, aoSair, ui, ...extra };
 }
 
+/** As vendas gravadas na loja dos testes, vistas pelo Dono (o Vendedor só recebe as de hoje). */
+const vendasDoPdv = () => criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 }).listarVendas();
 const leitor = () => screen.getByLabelText('Leitor de código de barras');
 const bipar = (codigo: string) => userEvent.type(leitor(), `${codigo}{Enter}`);
 const linhas = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
@@ -180,7 +183,7 @@ describe('Frente de caixa · pagamento e finalizar', () => {
       { forma: 'pix', valorCentavos: 4990 },
       { forma: 'dinheiro', valorCentavos: 3000 },
     ]);
-    expect((await api.listarVendas())[0]!.pagamentos).toEqual([
+    expect((await vendasDoPdv())[0]!.pagamentos).toEqual([
       { forma: 'dinheiro', valorCentavos: 3000 },
       { forma: 'pix', valorCentavos: 4990 },
     ]);
@@ -233,7 +236,7 @@ describe('Frente de caixa · desconto', () => {
     expect(total()).toBe('R$ 7,00');
     await finalizar();
     await screen.findByText(/finalizada/);
-    const venda = (await api.listarVendas())[0]!;
+    const venda = (await vendasDoPdv())[0]!;
     expect(venda.itens[0]!.desconto).toEqual({ motivo: 'embalagem amassada', responsavel: { id: 'bruno', nome: 'Bruno' }, autorizadoComSenha: false });
     expect(venda.descontoCentavos).toBe(50);
   });
@@ -255,7 +258,7 @@ describe('Frente de caixa · desconto', () => {
     expect(txt((await screen.findByText(/Desconto aplicado/)).textContent)).toBe('Desconto aplicado: R$ 9,90 por unidade (autorizado por Caio).');
     await finalizar();
     await screen.findByText(/finalizada/);
-    expect((await api.listarVendas())[0]!.itens[0]!.desconto).toEqual({
+    expect((await vendasDoPdv())[0]!.itens[0]!.desconto).toEqual({
       motivo: 'cliente antigo',
       responsavel: { id: 'caio', nome: 'Caio' },
       autorizadoComSenha: true,
@@ -357,7 +360,7 @@ describe('Frente de caixa · devolução e cancelamento', () => {
     await userEvent.type(within(janela()).getByLabelText('Motivo'), 'cliente desistiu');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Cancelar a venda' }));
     expect(txt((await screen.findByText(/cancelada\./)).textContent)).toBe('Venda #00001 cancelada. Devolvido: Pix R$ 15,00.');
-    const venda = (await api.listarVendas())[0]!;
+    const venda = (await vendasDoPdv())[0]!;
     expect(venda.status).toBe('cancelada');
     expect(venda.cancelamento).toMatchObject({ motivo: 'cliente desistiu', por: { id: 'ana', nome: 'Ana' }, autorizadoPor: null });
   });
@@ -385,7 +388,7 @@ describe('Frente de caixa · devolução e cancelamento', () => {
     await userEvent.type(within(janela()).getByLabelText('Senha'), 'demo1234');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Confirmar devolução' }));
     expect(txt((await screen.findByText(/Devolução registrada/)).textContent)).toBe('Devolução registrada na venda #00001: R$ 7,50 (Dinheiro R$ 7,50).');
-    const venda = (await api.listarVendas())[0]!;
+    const venda = (await vendasDoPdv())[0]!;
     expect(venda.devolucoes[0]).toMatchObject({ totalCentavos: 750, feitaPor: { id: 'bruno', nome: 'Bruno' }, autorizadaPor: { id: 'ana', nome: 'Ana' } });
   });
 
@@ -411,7 +414,7 @@ describe('Frente de caixa · estoque', () => {
   it('não passa do estoque: leitor e + avisam o disponível; a busca mostra o saldo', async () => {
     const api = criarApiLocal({ lojaId: 'est', operador: BRUNO, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Coleira M', codigoBarras: '789100', precoCentavos: 2990 });
-    reporEstoqueDemo('est', ANA, 2);
+    await darEstoque('est', 2);
     await abrir(api, BRUNO, null);
     await bipar('3*789100');
     expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 2 un.');
@@ -428,7 +431,7 @@ describe('Frente de caixa · estoque', () => {
   it('a venda dá baixa na hora: vendido tudo, o produto não passa mais', async () => {
     const api = criarApiLocal({ lojaId: 'est', operador: BRUNO, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Coleira M', codigoBarras: '789100', precoCentavos: 2990 });
-    reporEstoqueDemo('est', ANA, 2);
+    await darEstoque('est', 2);
     await abrir(api, BRUNO, null);
     await bipar('2*789100');
     await finalizar();
@@ -487,7 +490,7 @@ describe('Frente de caixa · cliente (F6)', () => {
     await montar();
     await userEvent.click(screen.getByRole('button', { name: 'Identificar cliente · F6' }));
     await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), '529.982.247-25');
-    expect(within(janela()).getByText(/Nenhum cliente encontrado/)).toBeTruthy();
+    expect(await within(janela()).findByText(/Nenhum cliente encontrado/)).toBeTruthy();
     await userEvent.click(within(janela()).getByRole('button', { name: 'Cadastrar novo cliente' }));
     expect(within(janela()).getByRole('heading').textContent).toBe('Novo cliente');
     expect((within(janela()).getByLabelText('CPF') as HTMLInputElement).value).toBe('52998224725');

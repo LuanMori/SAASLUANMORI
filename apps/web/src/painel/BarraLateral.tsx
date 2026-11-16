@@ -4,15 +4,9 @@
 //   Operação / Cadastros / Gestão / Sistema · pessoa (inicial, nome, papel,
 //   botão de tema, Trocar senha, Sair) · versão no rodapé.
 // Itens que o papel não pode ver somem; grupo sem item visível some junto.
-import type { PapelDeLoja } from '@saas/core';
+import { NOME_PAPEL, type PapelDeLoja } from '@saas/core';
 import { MARCA } from '../marca';
 import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from './menu';
-
-export const NOME_PAPEL: Record<PapelDeLoja, string> = {
-  dono: 'Dono',
-  administrador: 'Administrador',
-  vendedor: 'Vendedor',
-};
 
 export interface DadosBarra {
   loja: { nome: string; descricao?: string | null };

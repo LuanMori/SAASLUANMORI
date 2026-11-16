@@ -19,10 +19,9 @@ import {
   formatarCentavos,
   formatarNumeroVenda,
   LIMITES_VENDA,
-  mascararCpf,
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
-  type Venda,
+  semAcento,
 } from '@saas/core';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
@@ -61,29 +60,23 @@ interface Props {
   chaveCarrinho?: string | null;
   /** "← Painel": sai da Frente de caixa. */
   aoSair: () => void;
-  aoVender?: (venda: Venda) => void;
 }
+
+/** De quanto em quanto tempo o saldo de estoque é buscado de novo (outra pessoa pode ter vendido). */
+const ATUALIZAR_ESTOQUE_MS = 20_000;
 
 /** Teclas de forma de pagamento (iguais às do DaniPets). */
 const TECLA_FORMA: Record<FormaPagamento, string> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10' };
 const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F8: 'pix', F9: 'debito', F10: 'credito' };
 
-/** Sem acento e em minúsculas, para buscar "racao" e achar "Ração". */
-const normalizar = (t: string) =>
-  t
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
-
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
 type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
 
-export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, aoVender }: Props) {
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair }: Props) {
   const { estado: carga, recarregar } = usarCarga(async () => {
     const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
     return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
-  }, [api]);
+  }, [api], ATUALIZAR_ESTOQUE_MS);
   const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.produtos.filter((p) => p.ativo) : []), [carga]);
   const saldos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.saldos : new Map<string, number>()), [carga]);
   const porId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -155,9 +148,9 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     adicionar(p, e.quantidade);
   }
 
-  const termo = normalizar(busca);
+  const termo = semAcento(busca);
   const sugestoes = termo
-    ? produtos.filter((p) => normalizar(p.nome).includes(termo) || p.codigoInterno.startsWith(termo) || (p.codigoBarras ?? '').startsWith(termo)).slice(0, 8)
+    ? produtos.filter((p) => semAcento(p.nome).includes(termo) || p.codigoInterno.startsWith(termo) || (p.codigoBarras ?? '').startsWith(termo)).slice(0, 8)
     : [];
 
   function escolher(p: Produto) {
@@ -255,11 +248,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           venda.pagamentos.length ? `${formatarCentavos(venda.totalCentavos)} em ${descreverPagamentos(venda.pagamentos)}` : 'brinde, sem pagamento'
         }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}${venda.cliente ? ` Cliente: ${venda.cliente.nome}.` : ''}`,
       });
-      aoVender?.(venda);
       void recarregar(); // estoque novo
       focarCodigo();
     } catch (e) {
       erro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
+      void recarregar(); // a recusa pode ser falta de estoque: mostra o saldo de agora
     } finally {
       setEnviando(false);
     }
@@ -692,7 +685,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         <ModalCliente
           api={api}
           aoEscolher={(c, cadastradoAgora) => {
-            setCliente({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf) });
+            setCliente({ id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado });
             setAviso({ tipo: 'ok', texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.` });
             fecharJanela();
           }}

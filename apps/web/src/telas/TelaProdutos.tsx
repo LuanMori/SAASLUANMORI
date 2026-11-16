@@ -5,6 +5,7 @@
 import { type ErroCampo, formatarCentavos, reaisParaCentavos, validarNovoProduto } from '@saas/core';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { type ApiProdutos, ErroApi, type Produto } from '../api';
+import { iniciais } from '../painel/BarraLateral';
 import { usarIntervalo } from '../usarIntervalo';
 
 export interface Sessao {
@@ -62,7 +63,7 @@ export function TelaProdutos({ api, sessao, aoSair, intervaloMs = 5000 }: Props)
       <header className="topo">
         <div className="topo-marca">
           <span className="marca marca-pequena" aria-hidden="true">
-            SP
+            {iniciais(sessao.loja ?? 'Minha loja')}
           </span>
           <div>
             <strong>{sessao.loja ?? 'Minha loja'}</strong>
@@ -140,7 +141,8 @@ function ListaProdutos({ produtos }: { produtos: Produto[] }) {
   );
 }
 
-function FormNovoProduto({ api, aoCriar }: { api: ApiProdutos; aoCriar: (p: Produto) => void }) {
+/** Cadastro rápido de produto. Usado aqui e na aba Produtos e estoque do painel. */
+export function FormNovoProduto({ api, aoCriar }: { api: Pick<ApiProdutos, 'criarProduto'>; aoCriar: (p: Produto) => void }) {
   const [nome, setNome] = useState('');
   const [codigoBarras, setCodigoBarras] = useState('');
   const [preco, setPreco] = useState('');

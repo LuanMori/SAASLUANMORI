@@ -4,8 +4,10 @@
 //   - venda: sai a quantidade vendida;
 //   - cancelamento da venda: tudo volta;
 //   - devolução: volta o que foi marcado como "volta para a prateleira" (avaria e vencido não voltam);
-//   - entrada (compra/estoque inicial) e ajuste: lançados à mão, com motivo, pelo Dono ou Administrador.
+//   - entrada (compra, reposição) e ajuste (perda, avaria, contagem): lançados à mão pelo Dono ou
+//     pelo Administrador; o ajuste exige motivo e não pode deixar o saldo negativo.
 // A aba Produtos e estoque ainda não tem tela: estas regras já ficam prontas para ela.
+import { ehObjeto } from './interno';
 import type { ErroCampo, Resultado } from './resultado';
 import type { Devolucao, Operador, Venda } from './venda';
 
@@ -101,10 +103,8 @@ export interface MovimentoManual {
 
 /** Entrada e ajuste lançados à mão (para a aba Produtos e estoque). Ajuste precisa de motivo. */
 export function validarMovimentoManual(entrada: unknown): Resultado<MovimentoManual> {
-  if (typeof entrada !== 'object' || entrada === null || Array.isArray(entrada)) {
-    return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com o movimento.' }] };
-  }
-  const d = entrada as Record<string, unknown>;
+  if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com o movimento.' }] };
+  const d = entrada;
   const erros: ErroCampo[] = [];
   for (const k of Object.keys(d)) if (!['produtoId', 'tipo', 'quantidade', 'motivo'].includes(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
   const produtoId = typeof d.produtoId === 'string' ? d.produtoId.trim() : '';

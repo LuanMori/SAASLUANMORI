@@ -2,7 +2,10 @@
 // Relatórios: TODAS as vendas (de todos os dias), com quem vendeu e o cliente (F6).
 // Filtros: período (atalhos + datas), quem vendeu, cliente e forma de pagamento.
 // Vendas canceladas aparecem na lista (riscadas), mas ficam fora dos totais.
-// Do financeiro vem a taxa de cartão das vendas do período (o que fica com a operadora).
+// "Total vendido" é o bruto; quando há devolução no período aparece também o líquido
+// (bruto menos devoluções), como nos relatórios do DaniPets.
+// Os filtros de quem vendeu, cliente e pagamento valem também para as devoluções e para as
+// taxas de cartão (que vêm do financeiro: o que fica com a operadora).
 import {
   descreverPagamentos,
   diaNoFuso,
@@ -13,6 +16,7 @@ import {
   NOME_FORMA_PAGAMENTO,
   resumirDevolucoes,
   resumirVendas,
+  somarDias,
   taxasDasVendas,
 } from '@saas/core';
 import { useMemo, useState } from 'react';
@@ -28,13 +32,6 @@ interface Props {
 }
 
 type Atalho = 'tudo' | 'hoje' | 'ontem' | '7dias' | 'mes';
-
-/** Soma dias a um AAAA-MM-DD (meio-dia em UTC evita erro de horário de verão). */
-function somarDias(dia: string, n: number): string {
-  const d = new Date(`${dia}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 function periodoDo(atalho: Atalho, hoje: string): { de: string; ate: string } {
   switch (atalho) {
@@ -87,18 +84,26 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
     return [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
   }, [doPeriodo]);
 
+  const doCliente = (c: { id: string } | null) => !cliente || (cliente === SEM_CLIENTE ? !c : c?.id === cliente);
   const vendas = doPeriodo.filter(
-    (v) =>
-      (!vendedor || v.vendedor.id === vendedor) &&
-      (!forma || v.pagamentos.some((p) => p.forma === forma)) &&
-      (!cliente || (cliente === SEM_CLIENTE ? !v.cliente : v.cliente?.id === cliente)),
+    (v) => (!vendedor || v.vendedor.id === vendedor) && (!forma || v.pagamentos.some((p) => p.forma === forma)) && doCliente(v.cliente),
   );
   const r = resumirVendas(vendas);
   const { estado: estadoRec } = usarCarga(() => (api.listarRecebiveis ? api.listarRecebiveis() : Promise.resolve([])), [api]);
   const taxas =
-    estadoRec.tipo === 'pronto' ? taxasDasVendas(estadoRec.dados, new Set(vendas.filter((v) => v.status === 'finalizada').map((v) => v.id))) : 0;
+    estadoRec.tipo === 'pronto'
+      ? taxasDasVendas(
+          estadoRec.dados.filter((x) => !forma || x.forma === forma),
+          new Set(vendas.filter((v) => v.status === 'finalizada').map((v) => v.id)),
+        )
+      : 0;
   const { estado: estadoDev } = usarCarga(() => api.listarDevolucoes({ de: de || null, ate: ate || null }), [api, de, ate]);
-  const dev = resumirDevolucoes(estadoDev.tipo === 'pronto' ? estadoDev.dados : []);
+  // devoluções feitas no período, das vendas que passam nos mesmos filtros
+  const dev = resumirDevolucoes(
+    (estadoDev.tipo === 'pronto' ? estadoDev.dados : []).filter(
+      (d) => (!vendedor || d.vendaVendedor.id === vendedor) && (!forma || d.vendaFormas.includes(forma)) && doCliente(d.vendaCliente),
+    ),
+  );
   const atalhoAtivo = ATALHOS.find((a) => {
     const p = periodoDo(a.id, hoje);
     return p.de === de && p.ate === ate;
@@ -194,6 +199,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
               {[
                 r.descontoCentavos > 0 ? `Descontos dados: ${formatarCentavos(r.descontoCentavos)}` : null,
                 dev.quantidade > 0 ? `Devoluções no período: ${formatarCentavos(dev.totalCentavos)} (${plural(dev.quantidade, 'devolução', 'devoluções')})` : null,
+                dev.quantidade > 0 ? `Vendas líquidas (total vendido menos devoluções): ${formatarCentavos(r.totalCentavos - dev.totalCentavos)}` : null,
                 r.canceladas > 0 ? `${plural(r.canceladas, 'venda cancelada', 'vendas canceladas')} (fora dos totais)` : null,
                 taxas > 0 ? `Taxas de cartão: ${formatarCentavos(taxas)}` : null,
               ]

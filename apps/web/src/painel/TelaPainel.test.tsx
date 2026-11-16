@@ -1,9 +1,10 @@
 // apps/web/src/painel/TelaPainel.test.tsx
 import type { PapelDeLoja } from '@saas/core';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
+import { criarApiLocal } from '../demo/apiLocal';
+import { darEstoque } from '../testes/estoque';
 import { iniciais } from './BarraLateral';
 import { TelaPainel } from './TelaPainel';
 
@@ -81,7 +82,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Relatórios'];
+    const comTela = ['Visão geral', 'Frente de caixa', 'Produtos e estoque', 'Relatórios'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
@@ -122,20 +123,21 @@ describe('iniciais', () => {
 
 describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Relatórios', () => {
   it('a venda feita na Frente de caixa aparece na Visão geral e nos Relatórios com quem vendeu', async () => {
-    const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 });
+    // Dono: vende no caixa e também vê os Relatórios (o Vendedor só vê as vendas de hoje)
+    const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
-    reporEstoqueDemo('loja-x', { id: 'ana', nome: 'Ana' }, 10); // produto novo começa sem estoque
+    await darEstoque('loja-x', 10); // produto novo começa sem estoque
     render(
       <TelaPainel
         api={api}
         loja={{ nome: 'Loja X' }}
-        pessoa={{ nome: 'Bruno', papel: 'dono' }}
+        pessoa={{ nome: 'Ana', papel: 'dono' }}
         aoSair={vi.fn()}
         agora={() => new Date()}
       />,
     );
     // Visão geral começa zerada
-    expect(txt((await screen.findByTestId('vendido-hoje')).textContent)).toBe('R$ 0,00');
+    await waitFor(() => expect(txt(screen.getByTestId('vendido-hoje').textContent)).toBe('R$ 0,00'));
 
     // Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets)
     await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
@@ -150,13 +152,28 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     await screen.findByText('R$ 15,00', { selector: '[data-testid="vendido-hoje"]' });
     await userEvent.click(screen.getByRole('button', { name: /VENDAS DE HOJE/ }));
     const tabela = within(document.getElementById('vg-detalhe')!).getAllByRole('table').at(-1)!;
-    expect(within(tabela).getByText('Bruno')).toBeTruthy();
+    expect(within(tabela).getByText('Ana')).toBeTruthy();
     expect(txt(tabela.textContent)).toMatch(/2× Petisco Bifinho/);
 
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Relatórios' }));
     const linha = (await screen.findByText('#00001')).closest('tr')!;
-    expect(within(linha).getByText('Bruno')).toBeTruthy();
+    expect(within(linha).getByText('Ana')).toBeTruthy();
     expect(within(linha).getByText('R$ 15,00')).toBeTruthy();
+  });
+
+  it('a aba Produtos e estoque abre a tela de cadastro e saldo (para todos os papéis)', async () => {
+    render(
+      <TelaPainel
+        api={criarApiLocal({ lojaId: 'loja-pe', operador: { id: 'b', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 })}
+        loja={{ nome: 'Loja PE' }}
+        pessoa={{ nome: 'Bruno', papel: 'vendedor' }}
+        aoSair={vi.fn()}
+      />,
+    );
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Produtos e estoque' }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Produtos e estoque' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Novo produto' })).toBeTruthy();
+    expect(await screen.findByText(/Nenhum produto cadastrado ainda/)).toBeTruthy();
   });
 
   it('Visão geral: Produtos ativos leva para Produtos e estoque; Saldo das contas leva para o Financeiro', async () => {

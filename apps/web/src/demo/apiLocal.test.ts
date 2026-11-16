@@ -2,7 +2,8 @@
 // A venda da Frente de caixa alimenta o resto do sistema: estoque, clientes, financeiro.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ErroApi } from '../api';
-import { apagarDadosDemo, criarApiLocal, reporEstoqueDemo } from './apiLocal';
+import { darEstoque } from '../testes/estoque';
+import { apagarDadosDemo, criarApiLocal, instanteNoFuso } from './apiLocal';
 
 const ANA = { id: 'ana', nome: 'Ana', papel: 'dono' as const };
 const BRUNO = { id: 'bruno', nome: 'Bruno', papel: 'vendedor' as const };
@@ -61,7 +62,7 @@ describe('estoque', () => {
 
   it('venda dá baixa; cancelamento devolve tudo; devolução devolve só o que volta para a prateleira', async () => {
     const { ana, bruno, racao, petisco } = await loja();
-    reporEstoqueDemo('eco', ANA, 10);
+    await darEstoque('eco', 10);
     const v = await bruno.criarVenda({
       itens: [
         { produtoId: racao.id, quantidade: 2 },
@@ -103,7 +104,7 @@ describe('clientes', () => {
 
   it('Vendedor cadastra (CPF não repete), busca e vende para o cliente; o histórico soma as compras', async () => {
     const { ana, bruno, petisco } = await loja();
-    reporEstoqueDemo('eco', ANA, 10);
+    await darEstoque('eco', 10);
     const maria = await bruno.cadastrarCliente(MARIA);
     expect(maria).toMatchObject({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725', ativo: true });
     expect((await erro(ana.cadastrarCliente({ ...MARIA, nome: 'Outra' }))).message).toBe('Este CPF já está no cadastro de Maria Souza.');
@@ -133,7 +134,7 @@ describe('clientes', () => {
 describe('financeiro', () => {
   it('a venda alimenta Caixa, Banco e cartão a receber; só o Dono e o Administrador veem', async () => {
     const { ana, bruno, racao } = await loja();
-    reporEstoqueDemo('eco', ANA, 10);
+    await darEstoque('eco', 10);
     await bruno.criarVenda({
       itens: [{ produtoId: racao.id, quantidade: 3 }],
       pagamentos: [
@@ -170,7 +171,7 @@ describe('financeiro', () => {
 
   it('cancelamento estorna pela mesma forma (cartão pendente é cancelado) e a devolução em dinheiro não passa do caixa', async () => {
     const { ana, bruno, racao, petisco } = await loja();
-    reporEstoqueDemo('eco', ANA, 10);
+    await darEstoque('eco', 10);
     const v = await bruno.criarVenda({
       itens: [{ produtoId: racao.id, quantidade: 1 }],
       pagamentos: [
@@ -309,5 +310,79 @@ describe('exemplos e lojas antigas', () => {
     expect(await ana.listarProdutos()).toEqual([]);
     expect(await ana.listarClientes()).toEqual([]);
     expect((await ana.resumoFinanceiro()).totalCentavos).toBe(0);
+  });
+});
+
+describe('proteções do servidor (o que a tela não decide)', () => {
+  it('senha de autorização: 5 erradas seguidas bloqueiam por 1 minuto, como no login', async () => {
+    const { bruno, mudar } = await loja('trava2');
+    const pedido = (senha: string) => bruno.autorizar({ usuarioId: 'ana', senha, acao: { tipo: 'cancelamento', vendaId: 'v' } });
+    for (let i = 0; i < 4; i++) expect((await erro(pedido('errada'))).message).toBe('Senha incorreta.');
+    const quinta = await erro(pedido('errada'));
+    expect([quinta.status, quinta.message]).toEqual([429, 'Muitas senhas erradas. As autorizações desta pessoa ficaram bloqueadas por 1 minuto.']);
+    // bloqueada: nem a senha certa passa; o outro autorizador continua livre
+    expect((await erro(pedido('demo1234'))).message).toMatch(/Tente de novo em 60 s/);
+    expect((await bruno.autorizar({ usuarioId: 'caio', senha: 'demo1234', acao: { tipo: 'cancelamento', vendaId: 'v' } })).autorizador.nome).toBe('Caio');
+    mudar('2026-11-16T15:01:01Z');
+    expect((await pedido('demo1234')).autorizador.nome).toBe('Ana');
+    // acertar zera a contagem
+    for (let i = 0; i < 4; i++) await erro(pedido('errada'));
+    await pedido('demo1234');
+    expect((await erro(pedido('errada'))).status).toBe(403);
+  });
+
+  it('Vendedor só recebe as vendas de hoje; por número ele acha qualquer venda (para a devolução)', async () => {
+    const { ana, bruno, petisco, mudar } = await loja('hoje');
+    await darEstoque('hoje', 10);
+    mudar('2026-11-15T15:00:00Z');
+    await ana.criarVenda({ itens: [{ produtoId: petisco.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 1000 }] });
+    mudar('2026-11-16T15:00:00Z');
+    await bruno.criarVenda({ itens: [{ produtoId: petisco.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 1000 }] });
+    const hoje = { de: '2026-11-16', ate: '2026-11-16' };
+    expect((await bruno.listarVendas(hoje)).map((v) => v.numero)).toEqual([2]);
+    expect(await bruno.listarDevolucoes(hoje)).toEqual([]);
+    for (const pedido of [bruno.listarVendas(), bruno.listarVendas({ de: '2026-11-15', ate: '2026-11-16' }), bruno.listarDevolucoes()]) {
+      const e = await erro(pedido);
+      expect([e.status, e.message]).toEqual([403, 'Vendas de outros dias: só o Dono ou o Administrador (Relatórios).']);
+    }
+    expect((await ana.listarVendas()).length).toBe(2);
+    expect((await bruno.buscarVenda(1)).numero).toBe(1);
+    expect((await erro(bruno.buscarVenda(99))).status).toBe(404);
+    const semLogin = criarApiLocal({ lojaId: 'hoje', exemplos: false, atrasoMs: 0 });
+    expect((await erro(semLogin.listarVendas(hoje))).status).toBe(401);
+  });
+
+  it('busca de cliente do F6: feita no servidor, com o CPF já mascarado', async () => {
+    const { ana, bruno } = await loja('busca');
+    const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    expect(await bruno.buscarClientesParaVenda('maria')).toEqual([{ id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888' }]);
+    expect(JSON.stringify(await bruno.buscarClientesParaVenda('982.247'))).not.toContain('52998224725');
+    expect(await bruno.buscarClientesParaVenda('   ')).toEqual([]); // sem termo, não devolve a lista inteira
+  });
+
+  it('cliente desativado some da busca e não entra em venda nova; só o Dono ou o Administrador desativa', async () => {
+    const { ana, bruno, petisco } = await loja('ativo');
+    await darEstoque('ativo', 5);
+    const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    expect((await erro(bruno.definirClienteAtivo(maria.id, false))).status).toBe(403);
+    expect((await ana.definirClienteAtivo(maria.id, false)).ativo).toBe(false);
+    expect(await bruno.buscarClientesParaVenda('maria')).toEqual([]);
+    const venda = { itens: [{ produtoId: petisco.id, quantidade: 1 }], pagamentos: [{ forma: 'pix' as const, valorCentavos: 1000 }], clienteId: maria.id };
+    expect((await erro(bruno.criarVenda(venda))).message).toMatch(/Cliente não encontrado/);
+    // o CPF fica livre para outro cadastro; reativar a Maria com o CPF já usado é recusado
+    const outra = await ana.cadastrarCliente({ nome: 'Marta Lima', telefone: '41988887777', cpf: '52998224725' });
+    expect((await erro(ana.definirClienteAtivo(maria.id, true))).message).toBe('Este CPF já está no cadastro de Marta Lima.');
+    await ana.definirClienteAtivo(outra.id, false);
+    expect((await ana.definirClienteAtivo(maria.id, true)).ativo).toBe(true);
+    expect((await bruno.criarVenda(venda)).cliente?.nome).toBe('Maria Souza');
+    expect((await erro(ana.definirClienteAtivo('nao-existe', true))).status).toBe(404);
+  });
+
+  it('vendas de exemplo: dia e hora no fuso da loja, não no do navegador', async () => {
+    expect(instanteNoFuso('2026-11-14', 9, 32, 'America/Sao_Paulo').toISOString()).toBe('2026-11-14T12:32:00.000Z');
+    expect(instanteNoFuso('2026-07-01', 23, 5, 'Europe/Lisbon').toISOString()).toBe('2026-07-01T22:05:00.000Z');
+    const ana = criarApiLocal({ lojaId: 'fuso', operador: ANA, atrasoMs: 0, agora: () => AGORA });
+    const primeira = (await ana.listarVendas()).find((v) => v.numero === 1)!;
+    expect(primeira.criadaEm).toBe('2026-11-14T12:32:00.000Z'); // 2 dias antes, 09:32 em Brasília
   });
 });

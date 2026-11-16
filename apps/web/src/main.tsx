@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { configuracao, erroConfiguracao } from './configuracao';
 import './estilos.css';
+import { MARCA } from './marca';
+
+document.title = MARCA.nome;
 
 const raiz = createRoot(document.getElementById('raiz')!);
 

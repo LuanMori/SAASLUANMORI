@@ -14,6 +14,7 @@ import {
   estornavelPorForma,
   formatarCentavos,
   formatarNumeroVenda,
+  NOME_PAPEL,
   type PapelDeLoja,
   podeCancelarVenda,
   quemAutorizaEstorno,
@@ -27,7 +28,7 @@ import { dataNoFuso, horaNoFuso, pagamentosComValores } from '../formato';
 import { Modal } from './Modal';
 
 interface Props {
-  api: Pick<ApiPainel, 'listarVendas' | 'listarAutorizadores' | 'autorizar' | 'cancelarVenda' | 'devolverItens'>;
+  api: Pick<ApiPainel, 'listarVendas' | 'buscarVenda' | 'listarAutorizadores' | 'autorizar' | 'cancelarVenda' | 'devolverItens'>;
   operador: { nome: string; papel: PapelDeLoja };
   fuso: string;
   agora: () => Date;
@@ -73,17 +74,15 @@ function PassoEscolher({
       .listarVendas({ de: dia, ate: dia })
       .then((vs) => setHoje(vs.filter((v) => v.status === 'finalizada').slice(0, 8)))
       .catch(() => setHoje([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // só ao abrir a janela
   }, []);
 
   async function procurar(n: number) {
     setErro(null);
     setBuscando(true);
     try {
-      const todas = await api.listarVendas();
-      const v = todas.find((x) => x.numero === n);
-      if (!v) setErro('Venda não encontrada.');
-      else if (v.status === 'cancelada') setErro('Esta venda já foi cancelada.');
+      const v = await api.buscarVenda(n);
+      if (v.status === 'cancelada') setErro('Esta venda já foi cancelada.');
       else aoEscolher(v);
     } catch (e) {
       setErro(mensagemDe(e, 'Não foi possível buscar a venda.'));
@@ -177,7 +176,7 @@ function PassoVenda({
         if (lista[0]) setQuemId(lista[0].id);
       })
       .catch(() => setAutorizadores([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // só ao abrir a janela
   }, []);
 
   const itens = venda.itens
@@ -336,7 +335,7 @@ function PassoVenda({
                   {autorizadores === null && <option value="">Carregando…</option>}
                   {(autorizadores ?? []).map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.nome} · {a.papel === 'dono' ? 'Dono' : 'Administrador'}
+                      {a.nome} · {NOME_PAPEL[a.papel]}
                     </option>
                   ))}
                 </select>

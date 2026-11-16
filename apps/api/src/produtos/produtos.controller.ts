@@ -14,7 +14,7 @@ export class ProdutosController {
     return { itens: await this.produtos.listar(ctx) };
   }
 
-  /** POST /produtos { nome, codigo?, precoCentavos } -> Produto criado na loja do token. */
+  /** POST /produtos { nome, codigoBarras?, precoCentavos } -> Produto criado na loja do token (o código interno é gerado aqui). */
   @Post()
   @HttpCode(201)
   criar(@Contexto() ctx: ContextoRequisicao, @Body() corpo: unknown): Promise<ProdutoPublico> {

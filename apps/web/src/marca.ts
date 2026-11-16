@@ -1,5 +1,6 @@
 // apps/web/src/marca.ts — identidade do SaaS num lugar só.
-// Troque aqui quando o nome e a logo forem definidos (a logo fica em Logo.tsx).
+// Troque aqui quando o nome e a logo forem definidos (a logo fica em Logo.tsx). O título da aba
+// do navegador também sai daqui (main.tsx). "Sistema Padrão" é só o nome provisório do repositório.
 export const MARCA = {
   /** Nome do SaaS. Provisório: "Nome da empresa". */
   nome: 'Nome da empresa',

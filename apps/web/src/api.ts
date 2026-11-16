@@ -121,14 +121,17 @@ export interface PedidoAutorizacao {
 }
 
 export interface ApiVendas {
+  /** O Vendedor só recebe as vendas de HOJE (de = até = hoje); outros períodos são dos Relatórios (Dono e Administrador). */
   listarVendas(filtro?: FiltroVendas): Promise<Venda[]>;
+  /** Uma venda pelo número (para devolução ou cancelamento). 404 se não existir. */
+  buscarVenda(numero: number): Promise<Venda>;
   criarVenda(dados: NovaVenda): Promise<Venda>;
   listarAutorizadores(): Promise<Autorizador[]>;
-  /** Confere a senha de quem autoriza e devolve o identificador da autorização. */
+  /** Confere a senha de quem autoriza e devolve o identificador da autorização. 5 senhas erradas seguidas bloqueiam o autorizador por 1 minuto (429). */
   autorizar(pedido: PedidoAutorizacao): Promise<{ autorizacao: string; autorizador: Autorizador }>;
   cancelarVenda(vendaId: string, pedido: PedidoCancelamento): Promise<Venda>;
   devolverItens(vendaId: string, pedido: PedidoDevolucao): Promise<{ venda: Venda; devolucao: Devolucao }>;
-  /** Devoluções feitas no período (pela data da devolução, não da venda). */
+  /** Devoluções feitas no período (pela data da devolução, não da venda). Para o Vendedor, só as de hoje. */
   listarDevolucoes(filtro?: FiltroVendas): Promise<DevolucaoComVenda[]>;
 }
 
@@ -169,12 +172,26 @@ export interface HistoricoCliente {
   vendas: Venda[];
 }
 
+/** O que a busca da Frente de caixa (F6) recebe: o CPF já vem mascarado do servidor (LGPD). */
+export interface ClienteDaBusca {
+  id: string;
+  nome: string;
+  /** "***.456.789-**" */
+  cpfMascarado: string;
+  /** Só números, com DDD. */
+  telefone: string;
+}
+
 export interface ApiClientes {
-  /** Busca por nome, CPF ou telefone (F6); sem termo, todos os clientes ativos. */
+  /** Busca do F6, feita no servidor: até 8 clientes ativos por CPF, telefone ou nome. Sem termo, nada. */
+  buscarClientesParaVenda(termo: string): Promise<ClienteDaBusca[]>;
+  /** Cadastro completo (para a aba Clientes): busca por nome, CPF ou telefone; sem termo, todos os ativos. */
   listarClientes(termo?: string): Promise<Cliente[]>;
   /** Nome, telefone e CPF obrigatórios; CPF não pode repetir. */
   cadastrarCliente(dados: NovoCliente): Promise<Cliente>;
   atualizarCliente(id: string, dados: NovoCliente): Promise<Cliente>;
+  /** Desativa (some da busca e não entra em venda nova) ou reativa. Só Dono e Administrador. */
+  definirClienteAtivo(id: string, ativo: boolean): Promise<Cliente>;
   historicoDoCliente(id: string): Promise<HistoricoCliente>;
 }
 

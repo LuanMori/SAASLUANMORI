@@ -5,7 +5,7 @@
 import { useMemo, useState } from 'react';
 import { TelaPainel } from '../painel/TelaPainel';
 import { TelaEntrada } from '../telas/TelaEntrada';
-import { apagarDadosDemo, criarApiLocal, reporEstoqueDemo } from './apiLocal';
+import { apagarDadosDemo, criarApiLocal } from './apiLocal';
 import { entrarDemo, LOJAS_DEMO, SENHA_DEMO, type UsuarioDemo } from './contasDemo';
 import { pendenciasExemplo } from './pendenciasExemplo';
 
@@ -30,7 +30,6 @@ export function DemoApp() {
           setSessao(null);
         }}
         logado={sessao !== null}
-        lojaId={loja?.id ?? null}
         exemplos={exemplos}
         aoMudarExemplos={setExemplos}
       />
@@ -82,14 +81,12 @@ function FaixaDemo({
   subdominio,
   aoTrocar,
   logado,
-  lojaId,
   exemplos,
   aoMudarExemplos,
 }: {
   subdominio: string;
   aoTrocar: (s: string) => void;
   logado: boolean;
-  lojaId: string | null;
   exemplos: boolean;
   aoMudarExemplos: (v: boolean) => void;
 }) {
@@ -119,27 +116,13 @@ function FaixaDemo({
             Em qualquer loja: <code>ana</code> (Dono), <code>caio</code> (Administrador) e <code>bruno</code> (Vendedor), senha{' '}
             <code>{SENHA_DEMO}</code>.{' '}
             <code>carla</code> está desativada. 5 senhas erradas seguidas bloqueiam o usuário por 1 minuto. Cada loja já vem
-            com produtos (com estoque), clientes e algumas vendas de dias anteriores, de exemplo.
+            com produtos (com estoque), clientes e algumas vendas de dias anteriores, de exemplo. Produto novo e entrada de
+            estoque: aba Produtos e estoque.
           </p>
           <label className="demo-check">
             <input type="checkbox" checked={exemplos} onChange={(e) => aoMudarExemplos(e.target.checked)} />
             Mostrar pendências de exemplo (as de verdade ainda não foram definidas)
           </label>
-          {lojaId && (
-            // A aba Produtos e estoque ainda não tem tela: sem isto, não daria para repor depois de vender tudo.
-            <button
-              type="button"
-              className="demo-faixa-botao"
-              onClick={() => {
-                reporEstoqueDemo(lojaId, { id: 'demonstracao', nome: 'Demonstração' });
-                window.alert(
-                  `Estoque reposto: +20 unidades de cada produto.${logado ? ' Se a Frente de caixa estiver aberta, volte ao Painel e abra de novo.' : ''}`,
-                );
-              }}
-            >
-              Repor estoque desta loja (+20 de cada produto)
-            </button>
-          )}
           {!logado && (
             <button
               type="button"

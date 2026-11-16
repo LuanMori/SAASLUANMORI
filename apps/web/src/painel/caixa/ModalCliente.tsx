@@ -1,28 +1,19 @@
 // apps/web/src/painel/caixa/ModalCliente.tsx
 // Identificar o cliente na Frente de caixa (F6), como no DaniPets V9.3.3:
-//   - digita CPF, telefone ou nome: aparecem até 8 clientes (CPF mascarado);
+//   - digita CPF, telefone ou nome: aparecem até 8 clientes. A busca é feita no SERVIDOR, que já
+//     devolve o CPF mascarado: a lista de clientes não é baixada para o navegador (LGPD);
 //   - Enter escolhe quando só um cliente aparece;
 //   - "Cadastrar novo cliente": nome completo, telefone com DDD e CPF (obrigatórios); o que foi
 //     digitado na busca já preenche o campo certo.
 // Venda sem cliente continua normal. Quem decide se o cliente existe é o servidor (na venda).
-import {
-  buscarClientes,
-  type Cliente,
-  type ErroCampo,
-  formatarTelefone,
-  LIMITES_CLIENTE,
-  mascararCpf,
-  type NovoCliente,
-  sugestaoDeCadastro,
-  validarNovoCliente,
-} from '@saas/core';
-import { type FormEvent, useEffect, useState } from 'react';
-import { type ApiPainel, ErroApi } from '../../api';
+import { type ErroCampo, formatarTelefone, LIMITES_CLIENTE, mascararCpf, type NovoCliente, sugestaoDeCadastro, validarNovoCliente } from '@saas/core';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type ApiPainel, type ClienteDaBusca, ErroApi } from '../../api';
 import { Modal } from './Modal';
 
 interface Props {
-  api: Pick<ApiPainel, 'listarClientes' | 'cadastrarCliente'>;
-  aoEscolher: (cliente: Cliente, cadastradoAgora: boolean) => void;
+  api: Pick<ApiPainel, 'buscarClientesParaVenda' | 'cadastrarCliente'>;
+  aoEscolher: (cliente: ClienteDaBusca, cadastradoAgora: boolean) => void;
   aoFechar: () => void;
 }
 
@@ -47,30 +38,57 @@ function PassoBuscar({
   api: Props['api'];
   termo: string;
   setTermo: (t: string) => void;
-  aoEscolher: (c: Cliente) => void;
+  aoEscolher: (c: ClienteDaBusca) => void;
   aoNovo: () => void;
   aoFechar: () => void;
 }) {
-  const [clientes, setClientes] = useState<Cliente[] | null>(null);
+  const [achados, setAchados] = useState<ClienteDaBusca[]>([]);
+  const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const pedido = useRef(0);
+  const limpo = termo.trim();
 
+  // Busca no servidor um instante depois de parar de digitar; resposta atrasada não troca a mais nova.
   useEffect(() => {
-    api
-      .listarClientes()
-      .then(setClientes)
-      .catch((e: unknown) => {
-        setClientes([]);
-        setErro(e instanceof ErroApi ? e.message : 'Não foi possível carregar os clientes.');
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const meu = ++pedido.current;
+    if (!limpo) {
+      setAchados([]);
+      setBuscando(false);
+      return;
+    }
+    setBuscando(true);
+    const espera = setTimeout(() => {
+      api
+        .buscarClientesParaVenda(limpo)
+        .then((lista) => {
+          if (meu !== pedido.current) return;
+          setAchados(lista);
+          setBuscando(false);
+        })
+        .catch((e: unknown) => {
+          if (meu !== pedido.current) return;
+          setAchados([]);
+          setBuscando(false);
+          setErro(e instanceof ErroApi ? e.message : 'Não foi possível buscar os clientes.');
+        });
+    }, 200);
+    return () => clearTimeout(espera);
+  }, [api, limpo]);
 
-  const achados = termo.trim() && clientes ? buscarClientes(clientes, termo, LIMITES_CLIENTE.resultadosBusca) : [];
-
-  function usar(ev: FormEvent) {
+  async function usar(ev: FormEvent) {
     ev.preventDefault();
-    if (achados.length === 1) return aoEscolher(achados[0]!);
-    setErro(achados.length ? 'Escolha um cliente da lista.' : 'Nenhum cliente encontrado. Use “Cadastrar novo cliente”.');
+    if (!limpo) return setErro('Digite o CPF, o telefone ou o nome.');
+    let lista = achados;
+    if (buscando) {
+      // Enter antes de a lista chegar (leitor de CPF, digitação rápida): busca na hora
+      try {
+        lista = await api.buscarClientesParaVenda(limpo);
+      } catch (e) {
+        return setErro(e instanceof ErroApi ? e.message : 'Não foi possível buscar os clientes.');
+      }
+    }
+    if (lista.length === 1) return aoEscolher(lista[0]!);
+    setErro(lista.length ? 'Escolha um cliente da lista.' : 'Nenhum cliente encontrado. Use “Cadastrar novo cliente”.');
   }
 
   return (
@@ -90,19 +108,19 @@ function PassoBuscar({
           />
         </div>
         <div className="cli-lista" role="group" aria-label="Clientes encontrados">
-          {clientes === null ? (
-            <p className="modal-dica">Carregando clientes…</p>
-          ) : achados.length > 0 ? (
+          {achados.length > 0 ? (
             achados.map((c) => (
               <button key={c.id} type="button" className="cli-opcao" onClick={() => aoEscolher(c)}>
                 <b>{c.nome}</b>
                 <small>
-                  CPF {mascararCpf(c.cpf)} · {formatarTelefone(c.telefone) || 'sem telefone'}
+                  CPF {c.cpfMascarado} · {formatarTelefone(c.telefone)}
                 </small>
               </button>
             ))
           ) : (
-            <p className="modal-dica">{termo.trim() ? 'Nenhum cliente encontrado. Cadastre o cliente novo.' : 'Digite o CPF, o telefone ou o nome.'}</p>
+            <p className="modal-dica" role="status">
+              {!limpo ? 'Digite o CPF, o telefone ou o nome.' : buscando ? 'Buscando…' : 'Nenhum cliente encontrado. Cadastre o cliente novo.'}
+            </p>
           )}
         </div>
         {erro && (
@@ -137,7 +155,7 @@ function PassoNovo({
 }: {
   api: Props['api'];
   sugestao: Partial<NovoCliente>;
-  aoCadastrar: (c: Cliente) => void;
+  aoCadastrar: (c: ClienteDaBusca) => void;
   aoVoltar: () => void;
   aoFechar: () => void;
 }) {
@@ -157,7 +175,8 @@ function PassoNovo({
     setErros({});
     setEnviando(true);
     try {
-      aoCadastrar(await api.cadastrarCliente(local.valor));
+      const c = await api.cadastrarCliente(local.valor);
+      aoCadastrar({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf), telefone: c.telefone });
     } catch (e) {
       if (e instanceof ErroApi && e.erros.some((x) => x.campo in dados)) setErros(porCampo(e.erros));
       else setErro(e instanceof ErroApi ? e.message : 'Não foi possível cadastrar. Tente de novo.');

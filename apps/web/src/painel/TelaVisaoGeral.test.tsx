@@ -2,7 +2,8 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
+import { criarApiLocal } from '../demo/apiLocal';
+import { darEstoque } from '../testes/estoque';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -26,7 +27,7 @@ async function preparar() {
   const comoAna = criarApiLocal({ lojaId: 'l', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
   const comoBruno = criarApiLocal({ lojaId: 'l', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
   const p = await comoAna.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
-  reporEstoqueDemo('l', { id: 'ana', nome: 'Ana' }, 50); // produto novo começa sem estoque
+  await darEstoque('l', 50); // produto novo começa sem estoque
 
   mudar('2026-11-11T20:00:00Z'); // ontem, 17:00 em SP
   await comoAna.criarVenda({ itens: [{ produtoId: p.id, quantidade: 10 }], pagamentos: [{ forma: 'credito', valorCentavos: 24900 }] });
@@ -267,7 +268,7 @@ describe('TelaVisaoGeral · cancelamento, devolução, desconto e pagamento divi
     const relogio = new Date('2026-11-12T15:00:00Z');
     const api = criarApiLocal({ lojaId: 'd', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora: () => relogio });
     const p = await api.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
-    reporEstoqueDemo('d', { id: 'ana', nome: 'Ana' }, 50);
+    await darEstoque('d', 50);
     await api.criarVenda({
       itens: [{ produtoId: p.id, quantidade: 1, desconto: { precoFinalCentavos: 2000, motivo: 'avaria' } }],
       pagamentos: [

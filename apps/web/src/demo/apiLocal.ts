@@ -33,7 +33,7 @@ import {
   CONTAS,
   diaNoFuso,
   type Devolucao,
-  type DevolucaoComVenda,
+  devolucoesComVenda,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
   ehGestor,
@@ -41,6 +41,8 @@ import {
   FUSO_PADRAO,
   type Lancamento,
   lancamentosManuais,
+  LIMITES_CLIENTE,
+  mascararCpf,
   type MovimentoEstoque,
   movimentoManual,
   movimentosDaDevolucao,
@@ -59,6 +61,7 @@ import {
   saldosDasContas,
   saldosDeEstoque,
   situacaoEstoque,
+  somarDias,
   TAXAS_CARTAO_PADRAO,
   type TaxasCartao,
   validarEstoqueMinimo,
@@ -75,7 +78,7 @@ import {
   vendasNoPeriodo,
 } from '@saas/core';
 import { type ApiPainel, ErroApi, type FiltroVendas, type Produto, type SaldoEstoque } from '../api';
-import { conferirSenhaDemo, gestoresDemo } from './contasDemo';
+import { BLOQUEIO_MS, conferirSenhaDemo, gestoresDemo, TENTATIVAS_MAX } from './contasDemo';
 
 const CHAVES = {
   produtos: 'saas-demo:produtos:v1',
@@ -165,6 +168,8 @@ export function normalizarVenda(bruta: Venda & { formaPagamento?: Pagamento['for
 // ------------------------------------------------------------------ autorizações dadas com senha
 // Ficam só na memória desta aba (como no DaniPets): recarregar a página não cria autorização.
 const autorizacoes = new Map<string, Autorizacao & { lojaId: string }>();
+// Senhas erradas na autorização, por loja e autorizador: mesma regra do login (5 erradas = 1 minuto bloqueado).
+const falhasDeAutorizacao = new Map<string, { quantidade: number; bloqueadoAte: number }>();
 
 // ------------------------------------------------------------------ exemplos
 /** estoque = quanto o produto tem depois das vendas de exemplo; minimo = aviso de estoque baixo. */
@@ -228,7 +233,18 @@ function criarClientesExemplo(lojaId: string, criadoEm: string): Cliente[] {
   return clientes;
 }
 
-function criarExemplos(lojaId: string, agora: Date): void {
+/** Instante em que são hora:minuto do dia AAAA-MM-DD no fuso da loja (não no fuso do navegador). */
+export function instanteNoFuso(dia: string, hora: number, minuto: number, fuso: string): Date {
+  const [a, m, d] = dia.split('-').map(Number);
+  const palpite = Date.UTC(a!, m! - 1, d!, hora, minuto);
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: fuso, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(palpite))
+    .reduce<Record<string, number>>((acc, x) => ({ ...acc, [x.type]: Number(x.value) }), {});
+  const noFuso = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!);
+  return new Date(palpite - (noFuso - palpite));
+}
+
+function criarExemplos(lojaId: string, agora: Date, fuso: string): void {
   const feitos = ler<string[]>(CHAVES.exemplos, []);
   if (feitos.includes(lojaId)) return;
 
@@ -252,9 +268,8 @@ function criarExemplos(lojaId: string, agora: Date): void {
   const vendas: Venda[] = lerDaLoja<Venda>(CHAVES.vendas, lojaId);
   if (vendas.length === 0 && produtos.length >= PRODUTOS_EXEMPLO.length) {
     VENDAS_EXEMPLO.forEach((e, n) => {
-      const quando = new Date(agora);
-      quando.setDate(quando.getDate() - e.diasAtras);
-      quando.setHours(e.hora, e.minuto, 0, 0);
+      // dia e hora no fuso da loja, como todo o resto do sistema
+      const quando = instanteNoFuso(somarDias(diaNoFuso(agora, fuso), -e.diasAtras), e.hora, e.minuto, fuso);
       const itens = e.itens.map(([indice, quantidade, precoFinal]) => {
         const p = produtos[indice]!;
         const preco = precoFinal ?? p.precoCentavos;
@@ -365,14 +380,6 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
   gravar(CHAVES.ecossistema, [...feitos, lojaId]);
 }
 
-/** Só na demonstração (não há a aba Produtos e estoque ainda): +20 unidades de cada produto ativo. */
-export function reporEstoqueDemo(lojaId: string, por: Operador, quantidade = 20, agora = new Date()): void {
-  const novos = lerDaLoja<Produto>(CHAVES.produtos, lojaId)
-    .filter((p) => p.ativo)
-    .map((p) => comId(movimentoManual({ produtoId: p.id, tipo: 'entrada', quantidade, motivo: 'Reposição (demonstração)' }, { em: agora.toISOString(), por })));
-  gravarDaLoja(CHAVES.estoque, lojaId, [...lerDaLoja<MovimentoEstoque>(CHAVES.estoque, lojaId), ...novos]);
-}
-
 // ------------------------------------------------------------------ API local
 export interface OpcoesApiLocal {
   /** Loja ativa (no sistema real vem do token, nunca do cliente). */
@@ -402,7 +409,7 @@ export function criarApiLocal({
   const preparar = async (ms = atrasoMs) => {
     await esperar(ms);
     if (bloqueio) throw new ErroApi(403, bloqueio);
-    if (exemplos) criarExemplos(lojaId, agora());
+    if (exemplos) criarExemplos(lojaId, agora(), fuso);
     prepararEcossistema(lojaId, { fuso, exemplos });
   };
   const exigirOperador = (): OperadorComPapel => {
@@ -415,6 +422,14 @@ export function criarApiLocal({
     return quem;
   };
   const pessoa = (o: OperadorComPapel): Operador => ({ id: o.id, nome: o.nome });
+  /** O Vendedor só consulta o dia de hoje; outros períodos são dos Relatórios (Dono e Administrador). */
+  const exigirPeriodoPermitido = (filtro: FiltroVendas) => {
+    const quem = exigirOperador();
+    const hoje = diaNoFuso(agora(), fuso);
+    if (!ehGestor(quem.papel) && (filtro.de !== hoje || filtro.ate !== hoje)) {
+      throw new ErroApi(403, 'Vendas de outros dias: só o Dono ou o Administrador (Relatórios).');
+    }
+  };
 
   const produtosDaLoja = () => lerDaLoja<Produto>(CHAVES.produtos, lojaId);
   const vendasDaLoja = () => lerDaLoja<Venda>(CHAVES.vendas, lojaId).map(normalizarVenda);
@@ -517,7 +532,16 @@ export function criarApiLocal({
     // ---------------------------------------------------------------- vendas
     async listarVendas(filtro = {}) {
       await preparar();
+      exigirPeriodoPermitido(filtro);
       return vendasNoPeriodo(vendasDaLoja(), filtro, fuso).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm) || b.numero - a.numero);
+    },
+
+    async buscarVenda(numero) {
+      await preparar();
+      exigirOperador();
+      const venda = vendasDaLoja().find((v) => v.numero === numero);
+      if (!venda) throw new ErroApi(404, 'Venda não encontrada.');
+      return venda;
     },
 
     async criarVenda(dados) {
@@ -572,8 +596,22 @@ export function criarApiLocal({
     async autorizar({ usuarioId, senha, acao }) {
       await preparar(atrasoMs * 2);
       exigirOperador();
+      // mesma proteção do login: 5 senhas erradas seguidas bloqueiam o autorizador por 1 minuto
+      const chave = `${lojaId}:${usuarioId}`;
+      const falhas = falhasDeAutorizacao.get(chave);
+      const instante = agora().getTime();
+      if (falhas && falhas.bloqueadoAte > instante) {
+        throw new ErroApi(429, `Muitas senhas erradas. Tente de novo em ${Math.ceil((falhas.bloqueadoAte - instante) / 1000)} s.`);
+      }
       const g = conferirSenhaDemo(usuarioId, senha);
-      if (!g) throw new ErroApi(403, 'Senha incorreta.');
+      if (!g) {
+        const quantidade = (falhas?.quantidade ?? 0) + 1;
+        const bloqueia = quantidade >= TENTATIVAS_MAX;
+        falhasDeAutorizacao.set(chave, { quantidade: bloqueia ? 0 : quantidade, bloqueadoAte: bloqueia ? instante + BLOQUEIO_MS : 0 });
+        if (bloqueia) throw new ErroApi(429, 'Muitas senhas erradas. As autorizações desta pessoa ficaram bloqueadas por 1 minuto.');
+        throw new ErroApi(403, 'Senha incorreta.');
+      }
+      falhasDeAutorizacao.delete(chave);
       if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && g.papel !== 'dono') {
         throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
       }
@@ -643,8 +681,8 @@ export function criarApiLocal({
 
     async listarDevolucoes(filtro = {}) {
       await preparar();
-      const todas: DevolucaoComVenda[] = vendasDaLoja().flatMap((v) => v.devolucoes.map((d) => ({ ...d, vendaId: v.id, vendaNumero: v.numero })));
-      return vendasNoPeriodo(todas, filtro, fuso).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm));
+      exigirPeriodoPermitido(filtro);
+      return vendasNoPeriodo(devolucoesComVenda(vendasDaLoja()), filtro, fuso).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm));
     },
 
     // ---------------------------------------------------------------- estoque
@@ -695,6 +733,13 @@ export function criarApiLocal({
     },
 
     // ---------------------------------------------------------------- clientes
+    async buscarClientesParaVenda(termo) {
+      await preparar();
+      exigirOperador();
+      if (!String(termo ?? '').trim()) return [];
+      return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => ({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf), telefone: c.telefone }));
+    },
+
     async listarClientes(termo = '') {
       await preparar();
       exigirOperador();
@@ -726,6 +771,22 @@ export function criarApiLocal({
       const unico = conferirCpfUnico(validacao.valor.cpf, daLoja, id);
       if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
       const atualizado: Cliente = { ...daLoja[i]!, ...validacao.valor, atualizadoEm: agora().toISOString() };
+      daLoja[i] = atualizado;
+      gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
+      return atualizado;
+    },
+
+    async definirClienteAtivo(id, ativo) {
+      await preparar(atrasoMs * 2);
+      exigirGestor('Desativar ou reativar cliente');
+      const daLoja = clientesDaLoja();
+      const i = daLoja.findIndex((c) => c.id === id);
+      if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
+      if (ativo) {
+        const unico = conferirCpfUnico(daLoja[i]!.cpf, daLoja, id);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+      }
+      const atualizado: Cliente = { ...daLoja[i]!, ativo: ativo === true, atualizadoEm: agora().toISOString() };
       daLoja[i] = atualizado;
       gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
       return atualizado;

@@ -13,6 +13,7 @@
 // estoque, validade…) entra na Fase 5.1, com as regras vindas do DaniPets.
 
 import { CENTAVOS_MAX } from './dinheiro';
+import { CONTROLE } from './interno';
 import type { ErroCampo, Resultado } from './resultado';
 
 export interface NovoProduto {
@@ -32,9 +33,8 @@ export const LIMITES_PRODUTO = {
 } as const;
 
 const CAMPOS_PERMITIDOS = new Set(['nome', 'codigoBarras', 'precoCentavos']);
-// Caracteres de controle (inclui \n, \t, NUL). O leitor de código costuma mandar
-// \r\n no fim: o trim() remove nas pontas; no meio é recusado.
-const CONTROLE = /[\u0000-\u001f\u007f]/;
+// Caracteres de controle (CONTROLE): o leitor de código costuma mandar \r\n no fim;
+// o trim() remove nas pontas; no meio é recusado.
 const SO_DIGITOS = /^[0-9]+$/;
 
 export const MENSAGEM_PRECO_ZERO =

@@ -2,7 +2,8 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarApiLocal, reporEstoqueDemo } from '../demo/apiLocal';
+import { criarApiLocal } from '../demo/apiLocal';
+import { darEstoque } from '../testes/estoque';
 import { TelaRelatorios } from './TelaRelatorios';
 
 /** formatarCentavos usa espaço não separável depois de "R$"; nos testes comparamos com espaço comum. */
@@ -19,7 +20,7 @@ async function preparar() {
   const ana = criarApiLocal({ lojaId: 'r', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
   const bruno = criarApiLocal({ lojaId: 'r', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
   const p = await ana.criarProduto({ nome: 'Coleira M', codigoBarras: null, precoCentavos: 2990 });
-  reporEstoqueDemo('r', { id: 'ana', nome: 'Ana' }, 50); // produto novo começa sem estoque
+  await darEstoque('r', 50); // produto novo começa sem estoque
   relogio = new Date('2026-10-20T15:00:00Z');
   await ana.criarVenda({ itens: [{ produtoId: p.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 2990 }] });
   relogio = new Date('2026-11-11T18:00:00Z');
@@ -116,7 +117,15 @@ describe('TelaRelatorios · canceladas, devoluções e pagamento dividido', () =
     expect(txt(screen.getByText('#00004').closest('tr')!.textContent)).toMatch(/com devolução/);
     await userEvent.selectOptions(screen.getByLabelText('Pagamento'), 'Dinheiro');
     expect(linhas()).toHaveLength(2);
-    expect(txt(screen.getByTestId('rel-extra').textContent)).toBe('Devoluções no período: R$ 29,90 (1 devolução)');
+    expect(txt(screen.getByTestId('rel-extra').textContent)).toBe('Devoluções no período: R$ 29,90 (1 devolução) · Vendas líquidas (total vendido menos devoluções): R$ 59,80');
+    // os filtros valem também para as devoluções e para as taxas: a venda devolvida foi da Ana, sem cartão
+    await userEvent.selectOptions(screen.getByLabelText('Vendido por'), 'Bruno');
+    expect(screen.queryByTestId('rel-extra')).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText('Vendido por'), 'Todos');
+    await userEvent.selectOptions(screen.getByLabelText('Pagamento'), 'Cartão de crédito');
+    await waitFor(() => expect(txt(screen.getByTestId('rel-extra').textContent)).toBe('Taxas de cartão: R$ 2,69'));
+    await userEvent.selectOptions(screen.getByLabelText('Pagamento'), 'Pix');
+    expect(txt(screen.getByTestId('rel-extra').textContent)).not.toMatch(/Taxas/);
   });
 });
 

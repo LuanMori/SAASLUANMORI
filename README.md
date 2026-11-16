@@ -1,7 +1,21 @@
 # Sistema Padrão — SaaS multi-tenant de gestão de varejo
 
-> Nome provisório. Fase atual: **-1 (esqueleto)** — prova que banco + auth + multi-tenant
-> funcionam juntos antes de qualquer regra de negócio.
+> "Sistema Padrão" é o nome provisório do repositório; na tela aparece o que está em
+> `apps/web/src/marca.ts` (hoje "Nome da empresa").
+
+## Onde o projeto está (16/11/2026)
+
+| Parte | Estado |
+|---|---|
+| **Servidor** (`apps/api`) | Fase -1 (esqueleto): banco, Auth0, isolamento entre lojas e cadastro de produtos. **Ainda não tem** vendas, estoque, clientes nem financeiro. |
+| **App com servidor** (`apps/web/src/App.tsx`, o que o `teste-local.bat` abre) | Login pelo Auth0 e a tela de produtos. Mostra só o que o servidor já tem. |
+| **Demonstração** (`sistema-padrao-demo.html`) | O painel completo feito até agora (entrada com usuário e senha, Visão geral, Frente de caixa, Produtos e estoque, Relatórios), com os dados no navegador. É onde as telas e as regras são testadas antes de irem para o servidor. |
+| **Regras** (`packages/core`) | As mesmas para a demonstração e para o servidor: quando o servidor ganhar vendas, estoque, clientes e financeiro, usa estas funções. |
+
+**Decisão em aberto: o login de verdade.** A tela de entrada pedida pelo Luan é usuário e senha, com a loja
+vinda do subdomínio (`apps/web/src/telas/TelaEntrada.tsx`, `apps/web/src/subdominio.ts`). O servidor hoje
+autentica pelo Auth0 (`docs/AUTH0.md`). Falta decidir como juntar os dois (Auth0 com usuário e senha por loja,
+ou login próprio) antes de levar o painel para o servidor. Até lá, o app com servidor continua com o login do Auth0.
 
 ## Estrutura
 
@@ -32,11 +46,13 @@ navegador ── token Auth0 (org_id) ──▶ API
 
 ## Demonstração em um arquivo só (sem instalar nada)
 
-Abra **`sistema-padrao-demo.html`** no navegador (dois cliques). É a mesma tela de produtos e as
-mesmas regras do `@saas/core` (código interno 0001…, código de barras só números e sem repetir,
-preço maior que zero, Enter do leitor vai para o preço), mas **sem servidor**: o login é uma
-lista (Loja A/B; Dono, Vendedor ou pessoa não cadastrada, que vê o bloqueio) e os produtos ficam
-no `localStorage` do navegador, separados por loja.
+Abra **`sistema-padrao-demo.html`** no navegador (dois cliques). É o painel com as mesmas regras do
+`@saas/core`, mas **sem servidor**: a loja vem do "endereço simulado" da faixa amarela (Loja A ou Loja B),
+a entrada é com usuário e senha de teste, e os dados ficam no `localStorage` do navegador, separados por loja.
+
+Na aba **Produtos e estoque** dá para cadastrar produto (código interno 0001…, código de barras só números e
+sem repetir, preço maior que zero, Enter do leitor vai para o preço), ver o saldo de cada um e, como Dono ou
+Administrador, lançar entrada, ajuste com motivo e estoque mínimo. Produto novo começa com estoque 0.
 
 Já dá para testar o fluxo de vendas: **Frente de caixa** → **Visão geral** (cards com as vendas de
 HOJE, que voltam a zero à meia-noite) → **Relatórios** (todas as vendas, de todos os dias). Cada venda
@@ -55,20 +71,26 @@ Cada venda da Frente de caixa alimenta o resto do sistema, como no DaniPets:
 
 - **Estoque**: a venda dá baixa e é recusada sem estoque ("Estoque insuficiente para X. Disponível: N un.");
   o cancelamento devolve tudo; na devolução, cada item volta para a prateleira ou não (avaria, vencido).
-  A busca (F3) mostra o saldo.
+  A busca (F3) mostra o saldo, que é buscado de novo a cada 20 segundos e depois de cada venda.
 - **Clientes**: F6 identifica o cliente (CPF, telefone ou nome) ou cadastra na hora (nome, telefone e CPF,
-  sem repetir CPF); a compra entra no histórico dele. Na tela, o CPF aparece mascarado.
+  sem repetir CPF); a compra entra no histórico dele. A busca é feita no servidor, que devolve o CPF já
+  mascarado: a lista de clientes não vai para o navegador.
 - **Financeiro**: Dinheiro entra no Caixa físico, Pix na Conta bancária e cartão vira "a receber", com a taxa
   e o prazo da operadora (padrão: débito 1,5% em 1 dia, crédito 3% em 30 dias). Cancelamento e devolução
   estornam pela mesma forma (devolução em dinheiro não passa do que há no caixa).
 - **Visão geral**: o card Saldo das contas (só Dono e Administrador) mostra Caixa + Banco e o que ainda cai de cartão.
-- **Relatórios**: coluna e filtro de cliente; taxas de cartão do período.
+- **Relatórios**: coluna e filtro de cliente; taxas de cartão do período. "Total vendido" é o bruto; havendo
+  devolução no período aparece também "Vendas líquidas" (bruto menos devoluções), como no DaniPets. Os filtros
+  de quem vendeu, cliente e pagamento valem também para as devoluções e as taxas.
 
-As abas Produtos e estoque, Clientes e Financeiro ainda não têm tela (ficam em branco até a vez delas), mas o
-código está pronto: regras em `packages/core/src/estoque.ts`, `cliente.ts` e `financeiro.ts`; chamadas da API em
-`apps/web/src/api.ts` (`ApiEstoque`, `ApiClientes`, `ApiFinanceiro`), já funcionando na demonstração. Lojas usadas
-em versões anteriores da demonstração ganham o estoque e o financeiro montados a partir das vendas que já tinham.
-Para repor o estoque na demonstração: "Usuários de teste" → "Repor estoque desta loja".
+Proteções que o servidor terá e a demonstração já imita: o Vendedor só recebe as vendas de hoje (outros dias são
+dos Relatórios, do Dono e do Administrador; para devolver, ele busca a venda pelo número); 5 senhas erradas
+seguidas na autorização bloqueiam aquele autorizador por 1 minuto, como no login.
+
+As abas Clientes e Financeiro ainda não têm tela (ficam em branco até a vez delas), mas o código está pronto:
+regras em `packages/core/src/cliente.ts` e `financeiro.ts`; chamadas da API em `apps/web/src/api.ts`
+(`ApiClientes`, `ApiFinanceiro`), já funcionando na demonstração. Lojas usadas em versões anteriores da
+demonstração ganham o estoque e o financeiro montados a partir das vendas que já tinham.
 O card **Pendências** da Visão geral já existe, mas o que entra nele ainda está **a definir**
 (sugestões em `docs/PENDENCIAS.md`); na demonstração, "Usuários de teste" → "Mostrar pendências de exemplo".
 
@@ -139,7 +161,9 @@ substituído por um JWKS local — a verificação do token é o mesmo código d
 | `apps/api/test/migracoes.spec.ts` | aplica tudo → reverte uma a uma (conferindo cada estado) → reaplica; migration 2 numera produtos antigos por loja; para sem apagar nada se houver código com letra |
 | `apps/api/test/scripts.spec.ts` | `db:usuario` cadastra, muda papel, desativa, reativa; recusa loja desconhecida, papel inválido e super_admin |
 | `packages/core/test/*` | validação de produto, formato do código interno, conversão de dinheiro, venda, estoque, clientes e financeiro (cobertura ≥ 80% obrigatória) |
-| `apps/web/src/telas/*.test.tsx` | lista com códigos, cadastro sem campo de código interno, Enter do leitor vai para o preço, validação local, erro 409, bloqueio 403, queda de rede |
+| `apps/web/src/telas/*.test.tsx` | tela de entrada (usuário e senha, loja pelo subdomínio); produtos: lista com códigos, cadastro sem campo de código interno, Enter do leitor vai para o preço, validação local, erro 409, bloqueio 403, queda de rede |
+| `apps/web/src/painel/*.test.tsx` | barra lateral e permissões por papel, Visão geral, Frente de caixa (leitor, pagamento, desconto, estoque, cliente F6, devolução), Produtos e estoque, Relatórios, regras de pendência |
+| `apps/web/src/demo/apiLocal.test.ts` | a venda alimenta estoque, clientes e financeiro; cancelamento e devolução desfazem; loja de versão anterior é convertida; proteções (Vendedor só hoje, bloqueio da senha de autorização, CPF mascarado na busca) |
 
 ## Regras de produto já decididas (Luan, 11/11/2026 — iguais ao DaniPets V9.2)
 

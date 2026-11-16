@@ -34,7 +34,7 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | **Produtos e estoque / Compras** | | | | | |
 | 4 | Lote com validade **vencida** ainda no estoque | alta | todos (baixa só gestor) | Produtos e estoque | lote e validade na entrada de compras |
 | 5 | Lote vencendo em até 30 dias | média | todos | Produtos e estoque | lote e validade |
-| 6 | Estoque baixo (no mínimo ou abaixo) | média | todos | Compras ("Fazer pedido") | **pronta, desligada** (falta a tela para definir o mínimo) |
+| 6 | Estoque baixo (no mínimo ou abaixo) | média | todos | Compras ("Fazer pedido") | **pronta, desligada** (o mínimo já se define na aba Produtos e estoque) |
 | 7 | Estoque negativo (vendeu mais do que tinha) | alta | gestor | Produtos e estoque ("Ajustar") | **pronta, desligada** |
 | **Financeiro** | | | | | |
 | 8 | Contas a pagar vencidas | alta | gestor | Financeiro | contas a pagar |

@@ -7,7 +7,9 @@
 //   - CPF conferido pelos dígitos verificadores e único entre os clientes ativos da loja;
 //   - na busca (F6): 3 números ou mais procuram no CPF e no telefone; 2 letras ou mais, no nome (sem acento).
 // LGPD: as telas mostram o CPF mascarado (***.456.789-**); o número inteiro fica só no cadastro.
+import { CONTROLE, ehObjeto, soDigitos } from './interno';
 import type { ErroCampo, Resultado } from './resultado';
+import { semAcento } from './texto';
 import type { Venda } from './venda';
 
 export interface Cliente {
@@ -36,9 +38,6 @@ export interface ClienteParaVenda {
 }
 
 export const LIMITES_CLIENTE = { nomeMin: 3, nomeMax: 120, buscaMax: 80, resultadosBusca: 8 } as const;
-
-const CONTROLE = /[\u0000-\u001f\u007f]/;
-const soDigitos = (t: unknown) => String(t ?? '').replace(/\D/g, '');
 
 /** Confere os dois dígitos verificadores do CPF. */
 export function cpfValido(cpf: string): boolean {
@@ -75,17 +74,11 @@ export function mascararCpf(cpf: string | null | undefined): string {
   return d.length === 11 ? `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**` : '—';
 }
 
-/** Nome, telefone e CPF válidos (cadastros antigos ou importados podem não ter). */
-export const cadastroCompleto = (c: Pick<Cliente, 'nome' | 'telefone' | 'cpf'> | null | undefined): boolean =>
-  Boolean(c && c.nome && telefoneValido(c.telefone ?? '') && cpfValido(c.cpf ?? ''));
-
 const CAMPOS_CLIENTE = new Set(['nome', 'telefone', 'cpf']);
 
 export function validarNovoCliente(entrada: unknown): Resultado<NovoCliente> {
-  if (typeof entrada !== 'object' || entrada === null || Array.isArray(entrada)) {
-    return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os dados do cliente.' }] };
-  }
-  const d = entrada as Record<string, unknown>;
+  if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os dados do cliente.' }] };
+  const d = entrada;
   const erros: ErroCampo[] = [];
   for (const k of Object.keys(d)) if (!CAMPOS_CLIENTE.has(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
 
@@ -110,13 +103,6 @@ export function conferirCpfUnico(cpf: string, clientes: readonly Pick<Cliente, '
   const outro = clientes.find((c) => c.ativo && c.cpf === soDigitos(cpf) && c.id !== ignorarId);
   return outro ? { ok: false, erros: [{ campo: 'cpf', mensagem: `Este CPF já está no cadastro de ${outro.nome}.` }] } : { ok: true, valor: null };
 }
-
-const semAcento = (t: string) =>
-  t
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
 
 /**
  * Busca (F6): 3 números ou mais procuram no CPF e no telefone; 2 letras ou mais, no nome, sem acento.

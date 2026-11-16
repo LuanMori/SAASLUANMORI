@@ -3,7 +3,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../estilos.css';
 import './demo.css';
+import { MARCA } from '../marca';
 import { DemoApp } from './DemoApp';
+
+document.title = `${MARCA.nome} — demonstração`;
 
 createRoot(document.getElementById('raiz')!).render(
   <StrictMode>

@@ -2,7 +2,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   buscarClientes,
-  cadastroCompleto,
   calcularVenda,
   type Cliente,
   type ClienteParaVenda,
@@ -84,11 +83,6 @@ describe('cadastro', () => {
     expect(conferirCpfUnico('12345678909', lista).ok).toBe(true); // inativo não bloqueia
   });
 
-  it('cadastro completo', () => {
-    expect(cadastroCompleto(cliente({}))).toBe(true);
-    expect(cadastroCompleto(cliente({ cpf: '' }))).toBe(false);
-    expect(cadastroCompleto(null)).toBe(false);
-  });
 });
 
 describe('busca (F6)', () => {

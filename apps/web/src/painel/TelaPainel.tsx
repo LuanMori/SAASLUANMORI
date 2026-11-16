@@ -1,16 +1,17 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
-// Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa e Relatórios
-// (todas as vendas). As outras seções ficam em branco até chegar a vez delas.
+// Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Produtos e estoque e
+// Relatórios (todas as vendas). As outras seções ficam em branco até chegar a vez delas.
 // A Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets);
 // o botão "← Painel" volta para a Visão geral.
-import { FUSO_PADRAO } from '@saas/core';
+import { ehGestor, FUSO_PADRAO } from '@saas/core';
 import { useState } from 'react';
 import type { ApiPainel } from '../api';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
+import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
 
@@ -51,7 +52,7 @@ export function TelaPainel({
     return alvo ? podeVer(alvo, pessoa.papel) : false;
   };
   // Pendência "só gestor" some para o Vendedor; nas outras, o botão só aparece para quem pode abrir a aba de destino.
-  const gestor = pessoa.papel === 'dono' || pessoa.papel === 'administrador';
+  const gestor = ehGestor(pessoa.papel);
   const pendenciasVisiveis =
     pendencias
       ?.filter((p) => !p.soGestor || gestor)
@@ -93,6 +94,7 @@ export function TelaPainel({
             aoIrPara={setSecao}
           />
         )}
+        {permitido && secao === 'produtos-e-estoque' && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
         {permitido && secao === 'relatorios' && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
       </main>
     </div>

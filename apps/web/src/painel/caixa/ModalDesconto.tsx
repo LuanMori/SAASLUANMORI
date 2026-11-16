@@ -8,6 +8,7 @@ import {
   classificarDesconto,
   formatarCentavos,
   LIMITE_DESCONTO_VENDEDOR_PCT,
+  NOME_PAPEL,
   type PapelDeLoja,
   quemAutorizaDesconto,
   reaisParaCentavos,
@@ -109,7 +110,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
                   {autorizadores === null && <option value="">Carregando…</option>}
                   {opcoes.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.nome} · {a.papel === 'dono' ? 'Dono' : 'Administrador'}
+                      {a.nome} · {NOME_PAPEL[a.papel]}
                     </option>
                   ))}
                 </select>

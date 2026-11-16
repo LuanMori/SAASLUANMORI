@@ -1,7 +1,7 @@
 // apps/web/src/painel/menu.tsx — itens da barra lateral, copiados do DaniPets V9.3.3:
 // "Frente de caixa" em destaque acima do menu e os outros itens em grupos
 // (Operação, Cadastros, Gestão, Sistema). Para mudar a barra, mexa só nesta lista.
-import type { PapelDeLoja } from '@saas/core';
+import { ehGestor, type PapelDeLoja } from '@saas/core';
 import type { ReactNode } from 'react';
 
 export type IdSecao =
@@ -179,5 +179,5 @@ export const GRUPOS_MENU: readonly GrupoMenu[] = [
 export const ITENS_MENU: readonly ItemMenu[] = [ITEM_CAIXA, ...GRUPOS_MENU.flatMap((g) => g.itens)];
 
 export function podeVer(item: ItemMenu, papel: PapelDeLoja): boolean {
-  return !item.soGestor || papel === 'dono' || papel === 'administrador';
+  return !item.soGestor || ehGestor(papel);
 }

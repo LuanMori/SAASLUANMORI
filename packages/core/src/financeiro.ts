@@ -11,6 +11,7 @@
 //   - Lançamentos à mão (entrada, despesa, retirada do dono, transferência) e o saldo inicial (uma vez
 //     por conta) são só do Dono e do Administrador.
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
+import { CONTROLE, ehObjeto } from './interno';
 import type { ErroCampo, Resultado } from './resultado';
 import { diaNoFuso, formatarNumeroVenda, FUSO_PADRAO, NOME_FORMA_PAGAMENTO, type FormaPagamento, type Operador, type Pagamento, type Venda } from './venda';
 
@@ -325,8 +326,6 @@ export interface LancamentoManual {
 /** O que a tela envia (conta de destino e categoria são opcionais). */
 export type NovoLancamentoManual = Omit<LancamentoManual, 'contaDestino' | 'categoria'> & { contaDestino?: ContaId | null; categoria?: string | null };
 
-const CONTROLE = /[\u0000-\u001f\u007f]/;
-const ehObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const valorPositivo = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= CENTAVOS_MAX;
 
 function lerTexto(v: unknown, campo: string, max: number, erros: ErroCampo[], obrigatorio?: string): string {

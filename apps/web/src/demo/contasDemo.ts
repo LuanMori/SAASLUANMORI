@@ -4,7 +4,7 @@
 // usuário desativado, bloqueio após várias senhas erradas). Não é segurança:
 // tudo isto roda no navegador e qualquer pessoa pode ler.
 
-import type { PapelDeLoja } from '@saas/core';
+import { ehGestor, type PapelDeLoja } from '@saas/core';
 
 export const SENHA_DEMO = 'demo1234';
 export const TENTATIVAS_MAX = 5;
@@ -72,7 +72,7 @@ export async function entrarDemo(subdominio: string, usuario: string, senha: str
 
 /** Dono e Administrador ativos: quem pode autorizar desconto, brinde, cancelamento e devolução. */
 export function gestoresDemo(): { id: string; nome: string; papel: PapelDeLoja }[] {
-  return USUARIOS.filter((u) => u.ativo && (u.papel === 'dono' || u.papel === 'administrador')).map((u) => ({ id: u.usuario, nome: u.nome, papel: u.papel }));
+  return USUARIOS.filter((u) => u.ativo && ehGestor(u.papel)).map((u) => ({ id: u.usuario, nome: u.nome, papel: u.papel }));
 }
 
 /** Confere a senha de um gestor para uma autorização. null = senha errada ou pessoa sem permissão. */

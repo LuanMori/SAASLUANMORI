@@ -12,6 +12,12 @@ export const PAPEIS_DE_LOJA = ['dono', 'administrador', 'vendedor'] as const sat
 
 export type PapelDeLoja = (typeof PAPEIS_DE_LOJA)[number];
 
+/** Como a tela chama cada papel. */
+export const NOME_PAPEL: Record<PapelDeLoja, string> = { dono: 'Dono', administrador: 'Administrador', vendedor: 'Vendedor' };
+
+/** Dono e Administrador: tudo liberado (financeiro, relatórios, autorizações, estoque). */
+export const ehGestor = (papel: PapelDeLoja): boolean => papel === 'dono' || papel === 'administrador';
+
 export function ehPapel(valor: unknown): valor is Papel {
   return typeof valor === 'string' && (PAPEIS as readonly string[]).includes(valor);
 }

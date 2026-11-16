@@ -8,11 +8,14 @@ import {
   calcularVenda,
   classificarDesconto,
   descreverPagamentos,
+  devolucoesComVenda,
   diaNoFuso,
+  ehGestor,
   estornavelPorForma,
   formatarNumeroVenda,
   LIMITES_VENDA,
   NOME_FORMA_PAGAMENTO,
+  NOME_PAPEL,
   type NovaVenda,
   type OperadorComPapel,
   podeCancelarVenda,
@@ -23,6 +26,7 @@ import {
   restanteParaDevolver,
   resumirDevolucoes,
   resumirVendas,
+  semAcento,
   validarNovaVenda,
   validarPedidoCancelamento,
   validarPedidoDevolucao,
@@ -580,5 +584,24 @@ describe('resumirVendas e resumirDevolucoes', () => {
 
   it('devoluções: soma e conta', () => {
     expect(resumirDevolucoes([devolucaoFeita, { ...devolucaoFeita, id: 'd2', totalCentavos: 150 }])).toEqual({ totalCentavos: 750, quantidade: 2 });
+  });
+});
+
+describe('devoluções com a venda de origem', () => {
+  it('levam quem vendeu, o cliente e as formas de pagamento da venda (para filtrar nos Relatórios)', () => {
+    const venda = vendaBase({ cliente: { id: 'c1', nome: 'Maria' }, devolucoes: [devolucaoFeita] });
+    expect(devolucoesComVenda([venda, vendaBase({ id: 'v2' })])).toEqual([
+      { ...devolucaoFeita, vendaId: 'v1', vendaNumero: 7, vendaVendedor: { id: 'bruno', nome: 'Bruno' }, vendaCliente: { id: 'c1', nome: 'Maria' }, vendaFormas: ['dinheiro', 'pix'] },
+    ]);
+  });
+});
+
+describe('papéis e texto', () => {
+  it('Dono e Administrador são gestores; nomes como a tela mostra', () => {
+    expect([ehGestor('dono'), ehGestor('administrador'), ehGestor('vendedor')]).toEqual([true, true, false]);
+    expect(NOME_PAPEL).toEqual({ dono: 'Dono', administrador: 'Administrador', vendedor: 'Vendedor' });
+  });
+  it('semAcento: para buscar "racao" e achar "Ração"', () => {
+    expect(semAcento('  Ração Prêmium ÇÃES ')).toBe('racao premium caes');
   });
 });

@@ -21,7 +21,8 @@
 import type { ClienteParaVenda } from './cliente';
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import { conferirEstoque } from './estoque';
-import type { PapelDeLoja } from './papeis';
+import { CONTROLE, ehObjeto } from './interno';
+import { ehGestor, type PapelDeLoja } from './papeis';
 import type { ErroCampo, Resultado } from './resultado';
 
 export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito'] as const;
@@ -41,6 +42,7 @@ export const LIMITES_VENDA = {
   /** Unidades de um mesmo produto numa venda. */
   quantidadeMax: 9999,
   produtoIdMax: 64,
+  clienteIdMax: 64,
   /** Partes de um pagamento dividido. */
   pagamentosMax: 8,
   motivoMax: 200,
@@ -211,8 +213,6 @@ export function ehFormaPagamento(valor: unknown): valor is FormaPagamento {
   return typeof valor === 'string' && (FORMAS_PAGAMENTO as readonly string[]).includes(valor);
 }
 
-export const ehGestor = (papel: PapelDeLoja) => papel === 'dono' || papel === 'administrador';
-
 /** 12 -> "#00012" (como no DaniPets). */
 export function formatarNumeroVenda(numero: number): string {
   return `#${String(numero).padStart(5, '0')}`;
@@ -224,8 +224,6 @@ export function descreverPagamentos(pagamentos: readonly Pagamento[]): string {
   if (pagamentos.length === 1) return NOME_FORMA_PAGAMENTO[pagamentos[0]!.forma];
   return pagamentos.map((p) => `${NOME_FORMA_PAGAMENTO[p.forma]} ${formatarCentavos(p.valorCentavos)}`).join(' + ');
 }
-
-const CONTROLE = /[\u0000-\u001f\u007f]/;
 
 function lerMotivo(valor: unknown, campo: string, erros: ErroCampo[], obrigatorio = 'Informe o motivo.'): string {
   if (typeof valor !== 'string' || valor.trim() === '') {
@@ -246,8 +244,6 @@ function lerAutorizacao(valor: unknown, campo: string, erros: ErroCampo[]): stri
   }
   return valor;
 }
-
-const ehObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function camposDesconhecidos(dados: Record<string, unknown>, permitidos: ReadonlySet<string>, prefixo: string, erros: ErroCampo[], mensagem?: (chave: string) => string) {
   for (const chave of Object.keys(dados)) {
@@ -405,7 +401,7 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
   let clienteId: string | null = null;
   const c = entrada.clienteId;
   if (c !== undefined && c !== null && c !== '') {
-    if (typeof c !== 'string' || c.trim() === '' || c.length > LIMITES_VENDA.produtoIdMax || CONTROLE.test(c)) {
+    if (typeof c !== 'string' || c.trim() === '' || c.length > LIMITES_VENDA.clienteIdMax || CONTROLE.test(c)) {
       erros.push({ campo: 'clienteId', mensagem: 'Cliente inválido.' });
     } else clienteId = c.trim();
   }
@@ -829,10 +825,27 @@ export function resumirVendas(vendas: readonly Venda[]): ResumoVendas {
   };
 }
 
-/** Devolução com a venda de origem (para listar as devoluções de um período). */
+/** Devolução com a venda de origem (para listar e filtrar as devoluções de um período). */
 export interface DevolucaoComVenda extends Devolucao {
   vendaId: string;
   vendaNumero: number;
+  /** Quem fez a venda, o cliente e as formas de pagamento dela (para os filtros dos Relatórios). */
+  vendaVendedor: Operador;
+  vendaCliente: ClienteDaVenda | null;
+  vendaFormas: FormaPagamento[];
+}
+
+export function devolucoesComVenda(vendas: readonly Venda[]): DevolucaoComVenda[] {
+  return vendas.flatMap((v) =>
+    v.devolucoes.map((d) => ({
+      ...d,
+      vendaId: v.id,
+      vendaNumero: v.numero,
+      vendaVendedor: v.vendedor,
+      vendaCliente: v.cliente ?? null,
+      vendaFormas: FORMAS_PAGAMENTO.filter((f) => v.pagamentos.some((p) => p.forma === f)),
+    })),
+  );
 }
 
 export function resumirDevolucoes(devolucoes: readonly Devolucao[]): { totalCentavos: number; quantidade: number } {
