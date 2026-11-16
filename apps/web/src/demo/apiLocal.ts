@@ -2,8 +2,9 @@
 // SÓ PARA A DEMONSTRAÇÃO (sistema-padrao-demo.html): faz o papel da API, mas
 // guarda produtos e vendas no próprio navegador (localStorage), separados por loja.
 // Segue as mesmas regras da API/@saas/core: validação do produto e da venda,
-// código interno sequencial, preço vindo do cadastro e QUEM VENDEU = quem está
-// logado (o operador da sessão, nunca um campo enviado pela tela).
+// código interno sequencial, preço vindo do cadastro, QUEM VENDEU = quem está
+// logado (o operador da sessão, nunca um campo enviado pela tela), desconto e
+// estorno conferidos com as autorizações dadas com senha.
 //
 // Na primeira vez de cada loja, cria produtos de exemplo e algumas vendas de
 // dias anteriores (para os Relatórios terem o que mostrar; a Visão geral de
@@ -11,17 +12,27 @@
 //
 // NÃO é segurança: aqui não há Auth0, RLS nem servidor.
 import {
+  type AcaoAutorizada,
+  type Autorizacao,
+  calcularCancelamento,
+  calcularDevolucao,
   calcularVenda,
+  type Devolucao,
+  type DevolucaoComVenda,
   formatarCodigoInterno,
   FUSO_PADRAO,
-  type Operador,
+  type OperadorComPapel,
+  type Pagamento,
   type ProdutoParaVenda,
   validarNovaVenda,
   validarNovoProduto,
+  validarPedidoCancelamento,
+  validarPedidoDevolucao,
   type Venda,
   vendasNoPeriodo,
 } from '@saas/core';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
+import { conferirSenhaDemo, gestoresDemo } from './contasDemo';
 
 const CHAVES = {
   produtos: 'saas-demo:produtos:v1',
@@ -67,6 +78,31 @@ function novoId(): string {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Vendas gravadas por versões anteriores da demonstração (uma forma de pagamento só, sem
+ * desconto, sem cancelamento) passam para o formato atual na leitura. Nada se perde.
+ */
+export function normalizarVenda(bruta: Venda & { formaPagamento?: Pagamento['forma'] }): Venda {
+  const pagamentos =
+    Array.isArray(bruta.pagamentos) ? bruta.pagamentos : bruta.formaPagamento ? [{ forma: bruta.formaPagamento, valorCentavos: bruta.totalCentavos }] : [];
+  const { formaPagamento: _antiga, ...resto } = bruta;
+  return {
+    ...resto,
+    itens: bruta.itens.map((i) => ({ ...i, precoListaCentavos: i.precoListaCentavos ?? i.precoCentavos, desconto: i.desconto ?? null })),
+    descontoCentavos: bruta.descontoCentavos ?? 0,
+    pagamentos,
+    recebidoDinheiroCentavos: bruta.recebidoDinheiroCentavos ?? null,
+    trocoCentavos: bruta.trocoCentavos ?? 0,
+    status: bruta.status ?? 'finalizada',
+    cancelamento: bruta.cancelamento ?? null,
+    devolucoes: bruta.devolucoes ?? [],
+  };
+}
+
+// ------------------------------------------------------------------ autorizações dadas com senha
+// Ficam só na memória desta aba (como no DaniPets): recarregar a página não cria autorização.
+const autorizacoes = new Map<string, Autorizacao & { lojaId: string }>();
+
 // ------------------------------------------------------------------ exemplos
 const PRODUTOS_EXEMPLO: { nome: string; codigoBarras: string | null; precoCentavos: number }[] = [
   { nome: 'Ração Premium Cães Adultos 15 kg', codigoBarras: '7891000100103', precoCentavos: 18990 },
@@ -77,12 +113,33 @@ const PRODUTOS_EXEMPLO: { nome: string; codigoBarras: string | null; precoCentav
   { nome: 'Coleira Ajustável M', codigoBarras: null, precoCentavos: 2990 },
 ];
 
-const VENDAS_EXEMPLO: { diasAtras: number; hora: number; minuto: number; vendedor: Operador; itens: [number, number][]; forma: Venda['formaPagamento'] }[] = [
-  { diasAtras: 2, hora: 9, minuto: 32, vendedor: { id: 'ana', nome: 'Ana' }, itens: [[0, 1]], forma: 'credito' },
-  { diasAtras: 2, hora: 16, minuto: 18, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[3, 3], [2, 1]], forma: 'pix' },
-  { diasAtras: 1, hora: 10, minuto: 5, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[1, 2]], forma: 'debito' },
-  { diasAtras: 1, hora: 14, minuto: 41, vendedor: { id: 'ana', nome: 'Ana' }, itens: [[4, 1], [5, 1]], forma: 'dinheiro' },
-  { diasAtras: 1, hora: 17, minuto: 56, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[3, 6]], forma: 'pix' },
+type ExemploVenda = {
+  diasAtras: number;
+  hora: number;
+  minuto: number;
+  vendedor: { id: string; nome: string };
+  /** [índice do produto, quantidade, preço final (desconto) opcional] */
+  itens: [number, number, number?][];
+  /** Partes do pagamento; a última recebe o que faltar. */
+  pagamentos: [Pagamento['forma'], number?][];
+  recebido?: number;
+  motivoDesconto?: string;
+};
+
+const VENDAS_EXEMPLO: ExemploVenda[] = [
+  { diasAtras: 2, hora: 9, minuto: 32, vendedor: { id: 'ana', nome: 'Ana' }, itens: [[0, 1]], pagamentos: [['credito']] },
+  { diasAtras: 2, hora: 16, minuto: 18, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[3, 3], [2, 1]], pagamentos: [['pix']] },
+  { diasAtras: 1, hora: 10, minuto: 5, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[1, 2]], pagamentos: [['debito']] },
+  {
+    diasAtras: 1,
+    hora: 14,
+    minuto: 41,
+    vendedor: { id: 'ana', nome: 'Ana' },
+    itens: [[4, 1], [5, 1]],
+    pagamentos: [['dinheiro', 3000], ['pix']],
+    recebido: 5000,
+  },
+  { diasAtras: 1, hora: 17, minuto: 56, vendedor: { id: 'bruno', nome: 'Bruno' }, itens: [[3, 6, 700]], pagamentos: [['pix']], motivoDesconto: 'Leve 6, pague menos' },
 ];
 
 function criarExemplos(lojaId: string, agora: Date): void {
@@ -109,29 +166,46 @@ function criarExemplos(lojaId: string, agora: Date): void {
 
   const vendas: Venda[] = [...(vendasBanco[lojaId] ?? [])];
   if (vendas.length === 0 && produtos.length >= PRODUTOS_EXEMPLO.length) {
-    VENDAS_EXEMPLO.forEach((e, i) => {
+    VENDAS_EXEMPLO.forEach((e, n) => {
       const quando = new Date(agora);
       quando.setDate(quando.getDate() - e.diasAtras);
       quando.setHours(e.hora, e.minuto, 0, 0);
-      const itens = e.itens.map(([indice, quantidade]) => {
+      const itens = e.itens.map(([indice, quantidade, precoFinal]) => {
         const p = produtos[indice]!;
+        const preco = precoFinal ?? p.precoCentavos;
         return {
           produtoId: p.id,
           codigoInterno: p.codigoInterno,
           nome: p.nome,
-          precoCentavos: p.precoCentavos,
+          precoListaCentavos: p.precoCentavos,
+          precoCentavos: preco,
           quantidade,
-          subtotalCentavos: p.precoCentavos * quantidade,
+          subtotalCentavos: preco * quantidade,
+          desconto: precoFinal === undefined ? null : { motivo: e.motivoDesconto ?? 'Desconto', responsavel: e.vendedor, autorizadoComSenha: false },
         };
       });
+      const total = itens.reduce((s, it) => s + it.subtotalCentavos, 0);
+      let falta = total;
+      const pagamentos = e.pagamentos.map(([forma, valor], i) => {
+        const v = i === e.pagamentos.length - 1 ? falta : valor!;
+        falta -= v;
+        return { forma, valorCentavos: v };
+      });
+      const dinheiro = pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valorCentavos, 0);
       vendas.push({
         id: novoId(),
-        numero: i + 1,
+        numero: n + 1,
         criadaEm: quando.toISOString(),
         vendedor: e.vendedor,
         itens,
-        totalCentavos: itens.reduce((s, it) => s + it.subtotalCentavos, 0),
-        formaPagamento: e.forma,
+        totalCentavos: total,
+        descontoCentavos: itens.reduce((s, it) => s + (it.precoListaCentavos - it.precoCentavos) * it.quantidade, 0),
+        pagamentos,
+        recebidoDinheiroCentavos: dinheiro > 0 ? (e.recebido ?? dinheiro) : null,
+        trocoCentavos: dinheiro > 0 ? (e.recebido ?? dinheiro) - dinheiro : 0,
+        status: 'finalizada',
+        cancelamento: null,
+        devolucoes: [],
       });
     });
   }
@@ -146,7 +220,7 @@ export interface OpcoesApiLocal {
   /** Loja ativa (no sistema real vem do token, nunca do cliente). */
   lojaId: string;
   /** Quem está logado. É quem fica registrado como vendedor. */
-  operador?: Operador | null;
+  operador?: OperadorComPapel | null;
   /** Simula a pessoa sem acesso: a API responde 403. */
   bloqueio?: string | null;
   fuso?: string;
@@ -172,8 +246,19 @@ export function criarApiLocal({
     if (bloqueio) throw new ErroApi(403, bloqueio);
     if (exemplos) criarExemplos(lojaId, agora());
   };
+  const exigirOperador = (): OperadorComPapel => {
+    if (!operador) throw new ErroApi(401, 'Faça login para continuar.');
+    return operador;
+  };
   const produtosDaLoja = () => ler<PorLoja<Produto>>(CHAVES.produtos, {})[lojaId] ?? [];
-  const vendasDaLoja = () => ler<PorLoja<Venda>>(CHAVES.vendas, {})[lojaId] ?? [];
+  const vendasDaLoja = () => (ler<PorLoja<Venda>>(CHAVES.vendas, {})[lojaId] ?? []).map(normalizarVenda);
+  const gravarVendas = (vendas: Venda[]) => gravar(CHAVES.vendas, { ...ler<PorLoja<Venda>>(CHAVES.vendas, {}), [lojaId]: vendas });
+  const autorizacoesDaLoja = () => new Map([...autorizacoes].filter(([, a]) => a.lojaId === lojaId));
+  const acharVenda = (vendas: Venda[], vendaId: string) => {
+    const i = vendas.findIndex((v) => v.id === vendaId);
+    if (i < 0) throw new ErroApi(404, 'Venda não encontrada.');
+    return i;
+  };
 
   return {
     async listarProdutos() {
@@ -223,27 +308,116 @@ export function criarApiLocal({
 
     async criarVenda(dados) {
       await preparar(atrasoMs * 2);
-      if (!operador) throw new ErroApi(401, 'Faça login para vender.');
+      const quem = exigirOperador();
 
       const validacao = validarNovaVenda(dados);
       if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
 
       const catalogo = new Map<string, ProdutoParaVenda>(produtosDaLoja().map((p) => [p.id, p]));
-      const calculo = calcularVenda(validacao.valor, catalogo);
+      const calculo = calcularVenda(validacao.valor, catalogo, { operador: quem, autorizacoes: autorizacoesDaLoja(), agora: agora() });
       if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
+      calculo.valor.autorizacoesUsadas.forEach((id) => autorizacoes.delete(id)); // uso único
 
       const daLoja = vendasDaLoja();
       const venda: Venda = {
         id: novoId(),
         numero: daLoja.reduce((maior, v) => Math.max(maior, v.numero), 0) + 1,
         criadaEm: agora().toISOString(),
-        vendedor: { id: operador.id, nome: operador.nome },
+        vendedor: { id: quem.id, nome: quem.nome },
         itens: calculo.valor.itens,
         totalCentavos: calculo.valor.totalCentavos,
-        formaPagamento: validacao.valor.formaPagamento,
+        descontoCentavos: calculo.valor.descontoCentavos,
+        pagamentos: calculo.valor.pagamentos,
+        recebidoDinheiroCentavos: calculo.valor.recebidoDinheiroCentavos,
+        trocoCentavos: calculo.valor.trocoCentavos,
+        status: 'finalizada',
+        cancelamento: null,
+        devolucoes: [],
       };
-      gravar(CHAVES.vendas, { ...ler<PorLoja<Venda>>(CHAVES.vendas, {}), [lojaId]: [...daLoja, venda] });
+      gravarVendas([...daLoja, venda]);
       return venda;
+    },
+
+    async listarAutorizadores() {
+      await preparar();
+      exigirOperador();
+      return gestoresDemo();
+    },
+
+    async autorizar({ usuarioId, senha, acao }) {
+      await preparar(atrasoMs * 2);
+      exigirOperador();
+      const g = conferirSenhaDemo(usuarioId, senha);
+      if (!g) throw new ErroApi(403, 'Senha incorreta.');
+      if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && g.papel !== 'dono') {
+        throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
+      }
+      const id = novoId();
+      autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
+      return { autorizacao: id, autorizador: g };
+    },
+
+    async cancelarVenda(vendaId, pedido) {
+      await preparar(atrasoMs * 2);
+      const quem = exigirOperador();
+      const validacao = validarPedidoCancelamento(pedido);
+      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
+      const vendas = vendasDaLoja();
+      const i = acharVenda(vendas, vendaId);
+      const venda = vendas[i]!;
+      const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
+      const r = calcularCancelamento(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+      if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível cancelar.', r.erros);
+      if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
+      const cancelada: Venda = {
+        ...venda,
+        status: 'cancelada',
+        cancelamento: {
+          em: agora().toISOString(),
+          por: { id: quem.id, nome: quem.nome },
+          autorizadoPor: r.valor.autorizadoPor,
+          motivo: validacao.valor.motivo,
+          estornos: r.valor.estornos,
+        },
+      };
+      vendas[i] = cancelada;
+      gravarVendas(vendas);
+      return cancelada;
+    },
+
+    async devolverItens(vendaId, pedido) {
+      await preparar(atrasoMs * 2);
+      const quem = exigirOperador();
+      const validacao = validarPedidoDevolucao(pedido);
+      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
+      const vendas = vendasDaLoja();
+      const i = acharVenda(vendas, vendaId);
+      const venda = vendas[i]!;
+      const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
+      const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+      if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível registrar a devolução.', r.erros);
+      if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
+      const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
+      const devolucao: Devolucao = {
+        id: novoId(),
+        numero,
+        criadaEm: agora().toISOString(),
+        itens: r.valor.itens,
+        totalCentavos: r.valor.totalCentavos,
+        estornos: r.valor.estornos,
+        motivo: validacao.valor.motivo,
+        feitaPor: { id: quem.id, nome: quem.nome },
+        autorizadaPor: r.valor.autorizadoPor,
+      };
+      vendas[i] = { ...venda, devolucoes: [...venda.devolucoes, devolucao] };
+      gravarVendas(vendas);
+      return { venda: vendas[i]!, devolucao };
+    },
+
+    async listarDevolucoes(filtro = {}) {
+      await preparar();
+      const todas: DevolucaoComVenda[] = vendasDaLoja().flatMap((v) => v.devolucoes.map((d) => ({ ...d, vendaId: v.id, vendaNumero: v.numero })));
+      return vendasNoPeriodo(todas, filtro, fuso).sort((a, b) => b.criadaEm.localeCompare(a.criadaEm));
     },
   };
 }

@@ -1,5 +1,5 @@
 // apps/web/src/painel/formato.ts — datas e horas sempre no fuso da loja.
-import type { Venda } from '@saas/core';
+import { formatarCentavos, NOME_FORMA_PAGAMENTO, type Pagamento, type Venda } from '@saas/core';
 
 export const horaNoFuso = (iso: string | Date, fuso: string) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: fuso });
@@ -22,3 +22,7 @@ export const resumoItens = (venda: Venda) => venda.itens.map((i) => `${i.quantid
 export const totalItens = (venda: Venda) => venda.itens.reduce((s, i) => s + i.quantidade, 0);
 
 export const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/** "Dinheiro R$ 6,00 + Pix R$ 12,00" (sempre com os valores). */
+export const pagamentosComValores = (pagamentos: readonly Pagamento[]) =>
+  pagamentos.map((p) => `${NOME_FORMA_PAGAMENTO[p.forma]} ${formatarCentavos(p.valorCentavos)}`).join(' + ');

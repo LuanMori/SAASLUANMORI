@@ -1,12 +1,16 @@
 // apps/web/src/painel/TelaRelatorios.tsx
 // Relatórios: TODAS as vendas (de todos os dias), com quem vendeu.
 // Filtros: período (atalhos + datas), quem vendeu e forma de pagamento.
+// Vendas canceladas aparecem na lista (riscadas), mas ficam fora dos totais.
 import {
+  descreverPagamentos,
   diaNoFuso,
   type FormaPagamento,
   FORMAS_PAGAMENTO,
   formatarCentavos,
+  formatarNumeroVenda,
   NOME_FORMA_PAGAMENTO,
+  resumirDevolucoes,
   resumirVendas,
 } from '@saas/core';
 import { useMemo, useState } from 'react';
@@ -69,8 +73,12 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
     return [...m].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
   }, [doPeriodo]);
 
-  const vendas = doPeriodo.filter((v) => (!vendedor || v.vendedor.id === vendedor) && (!forma || v.formaPagamento === forma));
+  const vendas = doPeriodo.filter(
+    (v) => (!vendedor || v.vendedor.id === vendedor) && (!forma || v.pagamentos.some((p) => p.forma === forma)),
+  );
   const r = resumirVendas(vendas);
+  const { estado: estadoDev } = usarCarga(() => api.listarDevolucoes({ de: de || null, ate: ate || null }), [api, de, ate]);
+  const dev = resumirDevolucoes(estadoDev.tipo === 'pronto' ? estadoDev.dados : []);
   const atalhoAtivo = ATALHOS.find((a) => {
     const p = periodoDo(a.id, hoje);
     return p.de === de && p.ate === ate;
@@ -149,6 +157,17 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
             <Cartao rotulo="Ticket médio" valor={formatarCentavos(r.ticketMedioCentavos)} />
             <Cartao rotulo="Itens vendidos" valor={String(r.itensVendidos)} />
           </section>
+          {(r.descontoCentavos > 0 || dev.quantidade > 0 || r.canceladas > 0) && (
+            <p className="rel-extra suave" data-testid="rel-extra">
+              {[
+                r.descontoCentavos > 0 ? `Descontos dados: ${formatarCentavos(r.descontoCentavos)}` : null,
+                dev.quantidade > 0 ? `Devoluções no período: ${formatarCentavos(dev.totalCentavos)} (${plural(dev.quantidade, 'devolução', 'devoluções')})` : null,
+                r.canceladas > 0 ? `${plural(r.canceladas, 'venda cancelada', 'vendas canceladas')} (fora dos totais)` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
 
           <div className="vg-pares">
             <section className="card" aria-labelledby="rel-vendedor-titulo">
@@ -212,7 +231,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                   </thead>
                   <tbody>
                     {vendas.map((v) => (
-                      <tr key={v.id}>
+                      <tr key={v.id} className={v.status === 'cancelada' ? 'rel-cancelada' : undefined}>
                         <td data-rotulo="Data" className="mono">
                           {dataNoFuso(v.criadaEm, fuso)}
                         </td>
@@ -220,7 +239,9 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                           {horaNoFuso(v.criadaEm, fuso)}
                         </td>
                         <td data-rotulo="Venda" className="mono">
-                          nº {v.numero}
+                          {formatarNumeroVenda(v.numero)}
+                          {v.status === 'cancelada' && <span className="tag-cancelada">cancelada</span>}
+                          {v.devolucoes.length > 0 && <small className="vg-tag-desc"> com devolução</small>}
                         </td>
                         <td data-rotulo="Vendido por">{v.vendedor.nome}</td>
                         <td data-rotulo="Itens" className="itens-venda">
@@ -230,13 +251,19 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                               {v.itens.map((i) => (
                                 <li key={i.produtoId}>
                                   {i.quantidade}× {i.nome} <span className="suave">({formatarCentavos(i.precoCentavos)} cada)</span>
+                                  {i.desconto && (
+                                    <span className="vg-tag-desc">
+                                      {' '}
+                                      · desconto de {formatarCentavos(i.precoListaCentavos)} · {i.desconto.motivo} · {i.desconto.responsavel.nome}
+                                    </span>
+                                  )}
                                 </li>
                               ))}
                             </ul>
                           </details>
                         </td>
-                        <td data-rotulo="Pagamento">{NOME_FORMA_PAGAMENTO[v.formaPagamento]}</td>
-                        <td data-rotulo="Total" className="numero">
+                        <td data-rotulo="Pagamento">{descreverPagamentos(v.pagamentos)}</td>
+                        <td data-rotulo="Total" className={v.status === 'cancelada' ? 'numero vg-riscado' : 'numero'}>
                           {formatarCentavos(v.totalCentavos)}
                         </td>
                       </tr>

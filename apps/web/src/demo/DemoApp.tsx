@@ -62,8 +62,8 @@ function AreaLogada({
 }) {
   // O operador da API é quem entrou: é ele que fica registrado em cada venda.
   const api = useMemo(
-    () => criarApiLocal({ lojaId: loja.id, operador: { id: usuario.usuario, nome: usuario.nome } }),
-    [loja.id, usuario.usuario, usuario.nome],
+    () => criarApiLocal({ lojaId: loja.id, operador: { id: usuario.usuario, nome: usuario.nome, papel: usuario.papel } }),
+    [loja.id, usuario.usuario, usuario.nome, usuario.papel],
   );
   return (
     <TelaPainel
@@ -71,6 +71,7 @@ function AreaLogada({
       loja={{ nome: loja.nome, descricao: loja.descricao }}
       pessoa={{ nome: usuario.nome, papel: usuario.papel }}
       pendencias={exemplos ? pendenciasExemplo() : null}
+      chaveCarrinho={`saas-demo:pdv:${loja.id}:${usuario.usuario}`}
       aoSair={aoSair}
     />
   );
@@ -112,7 +113,8 @@ function FaixaDemo({
       {detalhes && (
         <div className="demo-detalhes">
           <p>
-            Em qualquer loja: <code>ana</code> (Dono) e <code>bruno</code> (Vendedor), senha <code>{SENHA_DEMO}</code>.{' '}
+            Em qualquer loja: <code>ana</code> (Dono), <code>caio</code> (Administrador) e <code>bruno</code> (Vendedor), senha{' '}
+            <code>{SENHA_DEMO}</code>.{' '}
             <code>carla</code> está desativada. 5 senhas erradas seguidas bloqueiam o usuário por 1 minuto. Cada loja já vem
             com produtos e algumas vendas de dias anteriores, de exemplo.
           </p>

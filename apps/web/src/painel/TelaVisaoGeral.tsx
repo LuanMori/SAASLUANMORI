@@ -10,18 +10,28 @@
 //   - Saldo das contas: vai para a aba Financeiro (só Dono e Administrador).
 // "Hoje" é o dia no fuso da loja: à meia-noite tudo volta a zero sozinho, sem
 // apagar nada (as vendas continuam nos Relatórios).
-import { diaNoFuso, formatarCentavos, NOME_FORMA_PAGAMENTO, resumirVendas, type Venda } from '@saas/core';
+import {
+  descreverPagamentos,
+  type DevolucaoComVenda,
+  diaNoFuso,
+  formatarCentavos,
+  formatarNumeroVenda,
+  NOME_FORMA_PAGAMENTO,
+  resumirDevolucoes,
+  resumirVendas,
+  type Venda,
+} from '@saas/core';
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
 import { CardPendencias } from './CardPendencias';
-import { dataNoFuso, dataPorExtenso, horaNoFuso, plural, saudacao } from './formato';
+import { dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, saudacao } from './formato';
 import type { IdSecao } from './menu';
 import type { Pendencia } from './pendencias';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos'>;
+  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'>;
   nome: string;
   fuso: string;
   agora?: () => Date;
@@ -61,7 +71,11 @@ export function TelaVisaoGeral({
   const { estado: estadoProdutos } = usarCarga(() => api.listarProdutos(), [api], aoVerProdutos ? intervaloMs : 0);
   // Filtra de novo pelo dia: à meia-noite zera na hora, mesmo antes da nova busca chegar (ou sem rede).
   const vendas = estado.tipo === 'pronto' ? estado.dados.filter((v) => diaNoFuso(v.criadaEm, fuso) === hoje) : [];
-  const r = resumirVendas(vendas);
+  const r = resumirVendas(vendas); // canceladas ficam fora
+  // Devoluções feitas hoje (mesmo de vendas de outros dias), como no DaniPets.
+  const { estado: estadoDev } = usarCarga(() => api.listarDevolucoes({ de: hoje, ate: hoje }), [api, hoje], intervaloMs);
+  const devolucoes = estadoDev.tipo === 'pronto' ? estadoDev.dados.filter((d) => diaNoFuso(d.criadaEm, fuso) === hoje) : [];
+  const dev = resumirDevolucoes(devolucoes);
   const [aberto, setAberto] = useState(false);
 
   const produtos = estadoProdutos.tipo === 'pronto' ? estadoProdutos.dados : null;
@@ -116,6 +130,14 @@ export function TelaVisaoGeral({
                         ·
                       </span>
                       <span>{plural(r.quantidadeVendas, 'venda', 'vendas')}</span>
+                      {dev.totalCentavos > 0 && (
+                        <>
+                          <span className="vg-ponto" aria-hidden="true">
+                            ·
+                          </span>
+                          <span>devoluções {formatarCentavos(dev.totalCentavos)}</span>
+                        </>
+                      )}
                     </>
                   )}
                 </span>
@@ -153,6 +175,7 @@ export function TelaVisaoGeral({
           {aberto && (
             <RelatorioVendasHoje
               vendas={vendas}
+              devolucoes={devolucoes}
               fuso={fuso}
               hoje={dataNoFuso(instante, fuso)}
               aoFechar={() => setAberto(false)}
@@ -199,12 +222,14 @@ function Atalho({
 // ------------------------------------------------------------------ relatório do card grande
 function RelatorioVendasHoje({
   vendas,
+  devolucoes,
   fuso,
   hoje,
   aoFechar,
   aoVerRelatorios,
 }: {
   vendas: Venda[];
+  devolucoes: DevolucaoComVenda[];
   fuso: string;
   hoje: string;
   aoFechar: () => void;
@@ -217,6 +242,8 @@ function RelatorioVendasHoje({
   }, []);
 
   const r = resumirVendas(vendas);
+  const finalizadas = vendas.filter((v) => v.status === 'finalizada');
+  const canceladas = vendas.filter((v) => v.status === 'cancelada');
 
   return (
     <section ref={ref} id={ID_DETALHE} className="card vg-detalhe" aria-labelledby="vg-detalhe-titulo" aria-live="polite">
@@ -231,20 +258,20 @@ function RelatorioVendasHoje({
         venda, com os produtos.
       </p>
 
-      {vendas.length === 0 ? (
+      {finalizadas.length === 0 ? (
         <p className="vazio">Nenhuma venda hoje ainda. Cada venda feita na Frente de caixa aparece aqui na hora.</p>
       ) : (
         <>
           <p className="vg-formula">
-            {vendas.length <= 6 ? (
-              [...vendas].reverse().map((v, i) => (
+            {finalizadas.length <= 6 ? (
+              [...finalizadas].reverse().map((v, i) => (
                 <span key={v.id}>
                   {i > 0 && <span className="vg-op"> + </span>}
-                  venda nº {v.numero} {formatarCentavos(v.totalCentavos)}
+                  venda {formatarNumeroVenda(v.numero)} {formatarCentavos(v.totalCentavos)}
                 </span>
               ))
             ) : (
-              <span>{plural(vendas.length, 'venda', 'vendas')} somadas</span>
+              <span>{plural(finalizadas.length, 'venda', 'vendas')} somadas</span>
             )}
             <span className="vg-op"> = </span>
             <b>{formatarCentavos(r.totalCentavos)}</b>
@@ -268,11 +295,40 @@ function RelatorioVendasHoje({
           />
 
           <h3 className="vg-sub">Venda por venda</h3>
-          <TabelaDetalhada vendas={vendas} fuso={fuso} />
+          <TabelaDetalhada vendas={finalizadas} fuso={fuso} />
           <p className="vg-soma">
-            Total: <b>{formatarCentavos(r.totalCentavos)}</b> em {plural(vendas.length, 'venda', 'vendas')} ·{' '}
+            Total: <b>{formatarCentavos(r.totalCentavos)}</b> em {plural(finalizadas.length, 'venda', 'vendas')} ·{' '}
             {plural(r.itensVendidos, 'produto vendido', 'produtos vendidos')}
+            {r.descontoCentavos > 0 && <> · descontos {formatarCentavos(r.descontoCentavos)}</>}
           </p>
+        </>
+      )}
+
+      {(canceladas.length > 0 || devolucoes.length > 0) && (
+        <>
+          <h3 className="vg-sub">Devoluções e cancelamentos de hoje</h3>
+          <TabelaSimples
+            colunas={['Registro', 'Venda', 'Valor', 'Como voltou', 'Motivo', 'Feito por']}
+            alinharDireita={[2]}
+            linhas={[
+              ...canceladas.map((v) => [
+                'Cancelamento',
+                formatarNumeroVenda(v.numero),
+                formatarCentavos(v.totalCentavos),
+                pagamentosComValores(v.cancelamento?.estornos ?? []),
+                v.cancelamento?.motivo ?? '—',
+                quemFez(v.cancelamento?.por.nome, v.cancelamento?.autorizadoPor?.nome),
+              ]),
+              ...devolucoes.map((d) => [
+                `Devolução nº ${d.numero}`,
+                formatarNumeroVenda(d.vendaNumero),
+                formatarCentavos(d.totalCentavos),
+                pagamentosComValores(d.estornos),
+                d.motivo,
+                quemFez(d.feitaPor.nome, d.autorizadaPor?.nome),
+              ]),
+            ]}
+          />
         </>
       )}
 
@@ -292,15 +348,17 @@ function RelatorioVendasHoje({
 }
 
 const pct = (parte: number, total: number) => (total > 0 ? `${Math.round((parte / total) * 100)}%` : '—');
+const quemFez = (por: string | undefined, autorizou: string | undefined) => `${por ?? '—'}${autorizou ? ` (autorizado por ${autorizou})` : ''}`;
 
-function TabelaSimples({ colunas, linhas }: { colunas: string[]; linhas: string[][] }) {
+function TabelaSimples({ colunas, linhas, alinharDireita }: { colunas: string[]; linhas: string[][]; alinharDireita?: number[] }) {
+  const direita = (i: number) => (alinharDireita ? alinharDireita.includes(i) : i > 0);
   return (
     <div className="tabela-caixa tabela-caixa-borda">
       <table className="tabela tabela-detalhe">
         <thead>
           <tr>
             {colunas.map((c, i) => (
-              <th key={c} className={i > 0 ? 'numero' : undefined}>
+              <th key={c} className={direita(i) ? 'numero' : undefined}>
                 {c}
               </th>
             ))}
@@ -310,7 +368,7 @@ function TabelaSimples({ colunas, linhas }: { colunas: string[]; linhas: string[
           {linhas.map((l) => (
             <tr key={l.join('|')}>
               {l.map((celula, i) => (
-                <td key={i} data-rotulo={colunas[i]} className={i > 0 ? 'numero' : undefined}>
+                <td key={i} data-rotulo={colunas[i]} className={direita(i) ? 'numero' : undefined}>
                   {celula}
                 </td>
               ))}
@@ -341,7 +399,8 @@ function TabelaDetalhada({ vendas, fuso }: { vendas: Venda[]; fuso: string }) {
           {vendas.map((v) => (
             <tr key={v.id}>
               <td data-rotulo="Venda" className="mono">
-                nº {v.numero}
+                {formatarNumeroVenda(v.numero)}
+                {v.devolucoes.length > 0 && <small className="vg-tag-desc"> com devolução</small>}
               </td>
               <td data-rotulo="Hora" className="mono">
                 {horaNoFuso(v.criadaEm, fuso)}
@@ -354,11 +413,18 @@ function TabelaDetalhada({ vendas, fuso }: { vendas: Venda[]; fuso: string }) {
                       {i.quantidade > 1 ? `${formatarCentavos(i.precoCentavos)} cada · ` : ''}
                       {formatarCentavos(i.subtotalCentavos)}
                     </span>
+                    {i.desconto && (
+                      <span className="vg-tag-desc" title={`Motivo: ${i.desconto.motivo}`}>
+                        {' '}
+                        desconto {formatarCentavos((i.precoListaCentavos - i.precoCentavos) * i.quantidade)} · {i.desconto.motivo} · {i.desconto.responsavel.nome}
+                        {i.desconto.autorizadoComSenha ? ' (autorizou com senha)' : ''}
+                      </span>
+                    )}
                   </div>
                 ))}
               </td>
               <td data-rotulo="Vendido por">{v.vendedor.nome}</td>
-              <td data-rotulo="Pagamento">{NOME_FORMA_PAGAMENTO[v.formaPagamento]}</td>
+              <td data-rotulo="Pagamento">{descreverPagamentos(v.pagamentos)}</td>
               <td data-rotulo="Total" className="numero">
                 <b>{formatarCentavos(v.totalCentavos)}</b>
               </td>

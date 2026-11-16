@@ -38,10 +38,18 @@ preço maior que zero, Enter do leitor vai para o preço), mas **sem servidor**:
 lista (Loja A/B; Dono, Vendedor ou pessoa não cadastrada, que vê o bloqueio) e os produtos ficam
 no `localStorage` do navegador, separados por loja.
 
-Já dá para testar o fluxo de vendas: **Frente de caixa** (leitor de código, código interno ou nome;
-forma de pagamento) → **Visão geral** (cards com as vendas de HOJE, que voltam a zero à meia-noite)
-→ **Relatórios** (todas as vendas, de todos os dias). Cada venda guarda quem vendeu: sempre a pessoa
-que entrou no sistema, nunca um campo da tela. As regras ficam em `packages/core/src/venda.ts`.
+Já dá para testar o fluxo de vendas: **Frente de caixa** → **Visão geral** (cards com as vendas de
+HOJE, que voltam a zero à meia-noite) → **Relatórios** (todas as vendas, de todos os dias). Cada venda
+guarda quem vendeu: sempre a pessoa que entrou no sistema, nunca um campo da tela.
+
+A Frente de caixa copia as funções da do DaniPets V9.3.3 que já cabem no SaaS: tela cheia; leitor
+com "3*código"; busca por nome (F3); fita com quantidade, desconto e remover; último item; formas de
+pagamento com atalho (F4 Dinheiro, F8 Pix, F9 Débito, F10 Crédito); dinheiro com valor recebido e
+troco; pagamento dividido; finalizar (F2); limpar venda; carrinho guardado por pessoa; desconto com
+motivo (Vendedor até 10%; acima disso, senha do Dono ou do Administrador; brinde só com o Dono);
+devolução de itens e cancelamento da venda (no mesmo dia), com o valor voltando pelas mesmas formas.
+Usuários de teste: `ana` (Dono), `caio` (Administrador), `bruno` (Vendedor), senha `demo1234`.
+As regras ficam em `packages/core/src/venda.ts`.
 O card **Pendências** da Visão geral já existe, mas o que entra nele ainda está **a definir**
 (sugestões em `docs/PENDENCIAS.md`); na demonstração, "Usuários de teste" → "Mostrar pendências de exemplo".
 

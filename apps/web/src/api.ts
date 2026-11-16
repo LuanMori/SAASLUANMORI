@@ -1,7 +1,18 @@
 // apps/web/src/api.ts
 // Cliente HTTP da API. O token do Auth0 vai no Authorization; a LOJA não é
 // enviada pelo frontend em lugar nenhum — a API descobre pelo token.
-import type { ErroCampo, NovaVenda, NovoProduto, Venda } from '@saas/core';
+import type {
+  AcaoAutorizada,
+  Devolucao,
+  DevolucaoComVenda,
+  ErroCampo,
+  NovaVenda,
+  NovoProduto,
+  PapelDeLoja,
+  PedidoCancelamento,
+  PedidoDevolucao,
+  Venda,
+} from '@saas/core';
 
 export interface Produto {
   id: string;
@@ -70,8 +81,9 @@ export function criarApi(urlBase: string, obterToken: () => Promise<string>): Ap
 }
 
 // ---- Vendas (Frente de caixa, Visão geral e Relatórios)
-// Quem vendeu e os preços não são enviados: a API usa a pessoa logada e o
-// cadastro de produtos (ver @saas/core/venda).
+// Quem vendeu e os preços de tabela não são enviados: a API usa a pessoa logada e o
+// cadastro de produtos (ver @saas/core/venda). Desconto acima do permitido, brinde,
+// cancelamento e devolução feitos pelo Vendedor levam uma autorização dada com senha.
 
 export interface FiltroVendas {
   /** Dia inicial (AAAA-MM-DD), inclusive, no fuso da loja. */
@@ -80,9 +92,31 @@ export interface FiltroVendas {
   ate?: string | null;
 }
 
+/** Quem pode autorizar (Dono ou Administrador ativo da loja). */
+export interface Autorizador {
+  id: string;
+  nome: string;
+  papel: PapelDeLoja;
+}
+
+export interface PedidoAutorizacao {
+  /** Quem autoriza (um dos autorizadores). */
+  usuarioId: string;
+  senha: string;
+  /** O que fica autorizado (uma vez só, por 4 horas). */
+  acao: AcaoAutorizada;
+}
+
 export interface ApiVendas {
   listarVendas(filtro?: FiltroVendas): Promise<Venda[]>;
   criarVenda(dados: NovaVenda): Promise<Venda>;
+  listarAutorizadores(): Promise<Autorizador[]>;
+  /** Confere a senha de quem autoriza e devolve o identificador da autorização. */
+  autorizar(pedido: PedidoAutorizacao): Promise<{ autorizacao: string; autorizador: Autorizador }>;
+  cancelarVenda(vendaId: string, pedido: PedidoCancelamento): Promise<Venda>;
+  devolverItens(vendaId: string, pedido: PedidoDevolucao): Promise<{ venda: Venda; devolucao: Devolucao }>;
+  /** Devoluções feitas no período (pela data da devolução, não da venda). */
+  listarDevolucoes(filtro?: FiltroVendas): Promise<DevolucaoComVenda[]>;
 }
 
 /** O que a área logada usa: produtos (para a Frente de caixa) e vendas. */

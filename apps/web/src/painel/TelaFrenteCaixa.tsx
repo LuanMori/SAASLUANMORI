@@ -1,32 +1,65 @@
 // apps/web/src/painel/TelaFrenteCaixa.tsx
-// Frente de caixa: busca o produto (leitor de código, código interno ou nome),
-// monta o carrinho, escolhe a forma de pagamento e finaliza.
-// A tela só manda produto + quantidade + forma de pagamento. Quem vendeu é a
-// pessoa logada (a API registra) e o preço sai do cadastro, nunca da tela.
+// Frente de caixa no formato do DaniPets V9.3.3 (tela cheia, sem a barra lateral):
+//   esquerda: CÓDIGO (leitor; "3*código" = 3 unidades), busca por nome (F3), fita de itens
+//             (quantidade, desconto, remover) e resumo (itens, produtos, descontos, total);
+//   direita:  ÚLTIMO ITEM, TOTAL A PAGAR, formas de pagamento com atalho (F4 Dinheiro, F8 Pix,
+//             F9 Débito, F10 Crédito), dinheiro com valor recebido e troco, dividir pagamento,
+//             FINALIZAR (F2);
+//   rodapé:   teclas, Devolução / cancelamento e Limpar venda.
+// O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
+// A tela manda só produto, quantidade, desconto pedido e pagamento: quem vendeu é quem está
+// logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
 import {
+  descreverPagamentos,
   type FormaPagamento,
   FORMAS_PAGAMENTO,
   formatarCentavos,
+  formatarNumeroVenda,
   LIMITES_VENDA,
   NOME_FORMA_PAGAMENTO,
+  type PapelDeLoja,
   type Venda,
 } from '@saas/core';
-import { type FormEvent, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
-import { plural } from './formato';
+import {
+  acharPorCodigo,
+  autorizacaoNecessaria,
+  centavosParaTexto,
+  contaDoPagamento,
+  type EstadoPagamento,
+  lerCarrinhoSalvo,
+  lerEntrada,
+  type LinhaCarrinho,
+  montarPedido,
+  pagamentoInicial,
+  precoDaLinha,
+  proximaForma,
+  salvarCarrinho,
+  totaisDoCarrinho,
+} from './caixa/carrinho';
+import { ModalDesconto } from './caixa/ModalDesconto';
+import { ModalDevolucao } from './caixa/ModalDevolucao';
+import { dataNoFuso } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
   api: ApiPainel;
-  /** Quem está operando (só para mostrar; quem registra é a API). */
-  operador: { nome: string; papel: string };
+  /** Quem está operando (para mostrar e para as regras de desconto; quem registra é a API). */
+  operador: { nome: string; papel: PapelDeLoja };
+  loja: { nome: string };
+  fuso: string;
+  agora?: () => Date;
+  /** Onde guardar o carrinho desta pessoa no navegador. null = não guarda. */
+  chaveCarrinho?: string | null;
+  /** "← Painel": sai da Frente de caixa. */
+  aoSair: () => void;
   aoVender?: (venda: Venda) => void;
 }
 
-interface Linha {
-  produto: Produto;
-  quantidade: number;
-}
+/** Teclas de forma de pagamento (iguais às do DaniPets). */
+const TECLA_FORMA: Record<FormaPagamento, string> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10' };
+const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F8: 'pix', F9: 'debito', F10: 'credito' };
 
 /** Sem acento e em minúsculas, para buscar "racao" e achar "Ração". */
 const normalizar = (t: string) =>
@@ -36,138 +69,283 @@ const normalizar = (t: string) =>
     .toLowerCase()
     .trim();
 
-export function TelaFrenteCaixa({ api, operador, aoVender }: Props) {
-  const { estado } = usarCarga(() => api.listarProdutos(), [api]);
-  const produtos = useMemo(() => (estado.tipo === 'pronto' ? estado.dados.filter((p) => p.ativo) : []), [estado]);
+type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
+type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | null;
 
-  const [busca, setBusca] = useState('');
-  const [aviso, setAviso] = useState<string | null>(null);
-  const [linhas, setLinhas] = useState<Linha[]>([]);
-  const [forma, setForma] = useState<FormaPagamento | null>(null);
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, aoVender }: Props) {
+  const { estado: carga } = usarCarga(() => api.listarProdutos(), [api]);
+  const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.filter((p) => p.ativo) : []), [carga]);
+  const porId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
+
+  const salvo = useMemo(() => (chaveCarrinho ? lerCarrinhoSalvo(chaveCarrinho) : null), [chaveCarrinho]);
+  const [linhas, setLinhas] = useState<LinhaCarrinho[]>(salvo?.linhas ?? []);
+  const [pag, setPag] = useState<EstadoPagamento>(salvo?.pagamento ?? pagamentoInicial());
+  const [ultimo, setUltimo] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<Aviso>(null);
   const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [ultima, setUltima] = useState<Venda | null>(null);
+  const [janela, setJanela] = useState<Janela>(null);
+  const [codigo, setCodigo] = useState('');
+  const [busca, setBusca] = useState('');
+  const refCodigo = useRef<HTMLInputElement>(null);
   const refBusca = useRef<HTMLInputElement>(null);
+  const refRecebido = useRef<HTMLInputElement>(null);
+
+  // Produto que saiu do cadastro (ou foi desativado) sai do carrinho guardado.
+  useEffect(() => {
+    if (carga.tipo === 'pronto') setLinhas((ls) => ls.filter((l) => porId.has(l.produtoId)));
+  }, [carga.tipo, porId]);
+  useEffect(() => {
+    if (chaveCarrinho) salvarCarrinho(chaveCarrinho, linhas, pag);
+  }, [chaveCarrinho, linhas, pag]);
+
+  const totais = totaisDoCarrinho(linhas, porId);
+  const conta = contaDoPagamento(pag, totais.totalCentavos);
+  const temDinheiro = conta.dinheiroCentavos > 0;
+  const troco = conta.recebidoCentavos === null ? null : conta.recebidoCentavos - conta.dinheiroCentavos;
+  const ultimaLinha = linhas.find((l) => l.produtoId === ultimo) ?? linhas[linhas.length - 1];
+  const ultimoProduto = ultimaLinha ? porId.get(ultimaLinha.produtoId) : undefined;
+
+  const focarCodigo = () => refCodigo.current?.focus();
+  const erro = (texto: string) => setAviso({ tipo: 'erro', texto });
+
+  // ------------------------------------------------------------------ itens
+  function adicionar(p: Produto, quantidade: number) {
+    const atual = linhas.find((l) => l.produtoId === p.id);
+    if ((atual?.quantidade ?? 0) + quantidade > LIMITES_VENDA.quantidadeMax) {
+      erro(`No máximo ${LIMITES_VENDA.quantidadeMax} unidades de ${p.nome} numa venda.`);
+      return;
+    }
+    setLinhas((ls) =>
+      ls.some((l) => l.produtoId === p.id)
+        ? ls.map((l) => (l.produtoId === p.id ? { ...l, quantidade: l.quantidade + quantidade } : l))
+        : [...ls, { produtoId: p.id, quantidade, desconto: null }],
+    );
+    setUltimo(p.id);
+    setAviso(null);
+  }
+
+  function lerCodigo(ev: FormEvent) {
+    ev.preventDefault();
+    const bruto = codigo;
+    setCodigo(''); // sempre limpa, mesmo com erro (leitura encadeada do leitor)
+    focarCodigo();
+    if (!bruto.trim()) return;
+    const e = lerEntrada(bruto);
+    if ('erro' in e) return erro(e.erro);
+    const p = acharPorCodigo(produtos, e.codigo);
+    if (!p) return erro(`Código "${e.codigo}" não encontrado (ou produto inativo).`);
+    adicionar(p, e.quantidade);
+  }
 
   const termo = normalizar(busca);
   const sugestoes = termo
-    ? produtos
-        .filter((p) => p.codigoInterno === termo || p.codigoBarras === termo || normalizar(p.nome).includes(termo) || p.codigoInterno.startsWith(termo))
-        .slice(0, 8)
+    ? produtos.filter((p) => normalizar(p.nome).includes(termo) || p.codigoInterno.startsWith(termo) || (p.codigoBarras ?? '').startsWith(termo)).slice(0, 8)
     : [];
 
-  const total = linhas.reduce((s, l) => s + l.produto.precoCentavos * l.quantidade, 0);
-  const unidades = linhas.reduce((s, l) => s + l.quantidade, 0);
-
-  function adicionar(produto: Produto) {
-    setUltima(null);
-    setErro(null);
-    setLinhas((atual) => {
-      const existe = atual.find((l) => l.produto.id === produto.id);
-      if (existe) {
-        return atual.map((l) =>
-          l.produto.id === produto.id ? { ...l, quantidade: Math.min(l.quantidade + 1, LIMITES_VENDA.quantidadeMax) } : l,
-        );
-      }
-      return [...atual, { produto, quantidade: 1 }];
-    });
+  function escolher(p: Produto) {
+    adicionar(p, 1);
     setBusca('');
-    setAviso(null);
-    refBusca.current?.focus();
+    focarCodigo();
   }
 
-  function aoBuscar(ev: FormEvent) {
+  function buscar(ev: FormEvent) {
     ev.preventDefault();
     if (!termo) return;
-    // Código exato (leitor manda o código + Enter) tem prioridade.
-    const exato = produtos.find((p) => p.codigoBarras === termo || p.codigoInterno === termo);
-    if (exato) return adicionar(exato);
-    if (sugestoes.length === 1) return adicionar(sugestoes[0]!);
-    setAviso(sugestoes.length === 0 ? `Nenhum produto encontrado para “${busca.trim()}”.` : 'Mais de um produto encontrado: escolha na lista.');
+    const exato = acharPorCodigo(produtos, busca);
+    if (exato) return escolher(exato);
+    if (sugestoes.length === 1) return escolher(sugestoes[0]!);
+    erro(sugestoes.length === 0 ? `Nenhum produto encontrado para “${busca.trim()}”.` : 'Mais de um produto encontrado: escolha na lista.');
   }
 
-  const mudarQuantidade = (id: string, quantidade: number) =>
-    setLinhas((atual) =>
-      atual.map((l) => (l.produto.id === id ? { ...l, quantidade: Math.max(1, Math.min(LIMITES_VENDA.quantidadeMax, quantidade)) } : l)),
+  const mudarQuantidade = (produtoId: string, quantidade: number) =>
+    setLinhas((ls) =>
+      quantidade <= 0
+        ? ls.filter((l) => l.produtoId !== produtoId) // quantidade 0 tira o item (como no DaniPets)
+        : ls.map((l) => (l.produtoId === produtoId ? { ...l, quantidade: Math.min(LIMITES_VENDA.quantidadeMax, quantidade) } : l)),
     );
-  const remover = (id: string) => setLinhas((atual) => atual.filter((l) => l.produto.id !== id));
+  const remover = (produtoId: string) => setLinhas((ls) => ls.filter((l) => l.produtoId !== produtoId));
 
-  function cancelar() {
-    if (linhas.length && !window.confirm('Cancelar esta venda e limpar o carrinho?')) return;
-    setLinhas([]);
-    setForma(null);
-    setErro(null);
-    refBusca.current?.focus();
+  function removerDesconto(p: Produto) {
+    if (!window.confirm(`Remover o desconto de ${p.nome} e voltar ao preço de tabela de ${formatarCentavos(p.precoCentavos)}?`)) return;
+    setLinhas((ls) => ls.map((l) => (l.produtoId === p.id ? { ...l, desconto: null } : l)));
+    setAviso({ tipo: 'ok', texto: `Desconto removido: ${p.nome} voltou ao preço de tabela.` });
   }
 
+  // ------------------------------------------------------------------ pagamento
+  const definirForma = (forma: FormaPagamento) => {
+    setPag((p) => ({ ...p, dividido: false, forma, partes: [] }));
+    if (forma === 'dinheiro') setTimeout(() => refRecebido.current?.focus(), 0);
+  };
+
+  const dividir = () =>
+    setPag((p) => {
+      if (!p.dividido) {
+        return {
+          ...p,
+          dividido: true,
+          partes: [
+            { forma: p.forma, valorTexto: totais.totalCentavos ? centavosParaTexto(totais.totalCentavos) : '' },
+            { forma: proximaForma([p.forma]), valorTexto: '' },
+          ],
+        };
+      }
+      if (p.partes.length >= LIMITES_VENDA.pagamentosMax) return p;
+      return { ...p, partes: [...p.partes, { forma: proximaForma(p.partes.map((x) => x.forma)), valorTexto: '' }] };
+    });
+
+  const mudarParte = (i: number, mudanca: Partial<{ forma: FormaPagamento; valorTexto: string }>) =>
+    setPag((p) => ({ ...p, partes: p.partes.map((x, j) => (j === i ? { ...x, ...mudanca } : x)) }));
+
+  const removerParte = (i: number) =>
+    setPag((p) => {
+      const partes = p.partes.filter((_, j) => j !== i);
+      // ficou uma parte só: volta para uma forma de pagamento (que paga o total)
+      return partes.length <= 1 ? { ...p, dividido: false, forma: partes[0]?.forma ?? p.forma, partes: [] } : { ...p, partes };
+    });
+
+  // ------------------------------------------------------------------ finalizar e limpar
   async function finalizar() {
-    if (!forma || linhas.length === 0 || enviando) return;
+    if (enviando || linhas.length === 0) return;
+    if (pag.dividido && conta.invalido) return erro('Há um valor inválido no pagamento dividido (ex.: 12,50).');
+    if (conta.faltaCentavos !== 0 && totais.totalCentavos > 0) {
+      const pago = totais.totalCentavos - conta.faltaCentavos;
+      return erro(`Os pagamentos somam ${formatarCentavos(pago)}, e a venda é ${formatarCentavos(totais.totalCentavos)}.`);
+    }
+    if (temDinheiro && (conta.recebidoCentavos === null || conta.recebidoCentavos < conta.dinheiroCentavos)) {
+      refRecebido.current?.focus();
+      return erro(`Informe o valor recebido em dinheiro (igual ou maior que ${formatarCentavos(conta.dinheiroCentavos)}).`);
+    }
     setEnviando(true);
-    setErro(null);
+    setAviso(null);
     try {
-      const venda = await api.criarVenda({
-        itens: linhas.map((l) => ({ produtoId: l.produto.id, quantidade: l.quantidade })),
-        formaPagamento: forma,
-      });
-      setUltima(venda);
+      const venda = await api.criarVenda(montarPedido(linhas, conta));
       setLinhas([]);
-      setForma(null);
+      setUltimo(null);
+      // a forma usada fica marcada para a próxima venda (como no DaniPets)
+      setPag((p) => pagamentoInicial(p.dividido ? (p.partes[0]?.forma ?? p.forma) : p.forma));
+      setAviso({
+        tipo: 'ok',
+        texto: `Venda ${formatarNumeroVenda(venda.numero)} finalizada: ${
+          venda.pagamentos.length ? `${formatarCentavos(venda.totalCentavos)} em ${descreverPagamentos(venda.pagamentos)}` : 'brinde, sem pagamento'
+        }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}`,
+      });
       aoVender?.(venda);
-      refBusca.current?.focus();
+      focarCodigo();
     } catch (e) {
-      setErro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
+      erro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
     } finally {
       setEnviando(false);
     }
   }
 
-  if (estado.tipo === 'bloqueado' || estado.tipo === 'falhou') {
+  function limpar() {
+    if (linhas.length && !window.confirm('Limpar a venda atual?')) return;
+    setLinhas([]);
+    setUltimo(null);
+    setPag((p) => pagamentoInicial(p.forma));
+    setAviso(null);
+    focarCodigo();
+  }
+
+  // ------------------------------------------------------------------ teclas (como no DaniPets)
+  const acoes = useRef({ finalizar, definirForma });
+  acoes.current = { finalizar, definirForma };
+  useEffect(() => {
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (janela) return; // janela aberta: as teclas são dela
+      if (e.key === 'F2') {
+        e.preventDefault();
+        void acoes.current.finalizar();
+      } else if (e.key === 'F3') {
+        e.preventDefault();
+        refBusca.current?.focus();
+      } else if (FORMA_DA_TECLA[e.key]) {
+        e.preventDefault();
+        acoes.current.definirForma(FORMA_DA_TECLA[e.key]!);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setBusca('');
+        focarCodigo();
+      }
+    };
+    document.addEventListener('keydown', aoTeclar);
+    return () => document.removeEventListener('keydown', aoTeclar);
+  }, [janela]);
+
+  // ------------------------------------------------------------------ autorizações (para as janelas)
+  const carregarAutorizadores = useCallback(() => api.listarAutorizadores(), [api]);
+  const produtoDaJanela = janela?.tipo === 'desconto' ? porId.get(janela.produtoId) : undefined;
+  const linhaDaJanela = janela?.tipo === 'desconto' ? linhas.find((l) => l.produtoId === janela.produtoId) : undefined;
+  const fecharJanela = () => {
+    setJanela(null);
+    setTimeout(focarCodigo, 0);
+  };
+
+  if (carga.tipo === 'bloqueado' || carga.tipo === 'falhou') {
     return (
-      <p className="alerta alerta-erro" role="alert">
-        {estado.mensagem}
-      </p>
+      <div className="pdv pdv-erro">
+        <p className="alerta alerta-erro" role="alert">
+          {carga.mensagem}
+        </p>
+        <button type="button" className="botao" onClick={aoSair}>
+          ← Painel
+        </button>
+      </div>
     );
   }
 
   return (
     <div className="pdv">
+      <h1 className="sr-only">Frente de caixa</h1>
       <header className="pdv-topo">
-        <div>
-          <h1>Frente de caixa</h1>
-          <p className="suave">
-            Operador: <b className="pdv-operador">{operador.nome}</b> ({operador.papel})
-          </p>
+        <div className="pdv-marca">
+          <span className="pdv-marca-nome">{loja.nome}</span>
+          <small>CAIXA</small>
         </div>
+        <div className="pdv-info">
+          <span className="pdv-pilula">
+            Operador: <b>{operador.nome}</b>
+          </span>
+          <span className="pdv-pilula">{dataNoFuso(agora(), fuso)}</span>
+        </div>
+        <button type="button" className="pdv-sair" onClick={aoSair}>
+          ← Painel
+        </button>
       </header>
 
       <div className="pdv-corpo">
-        <section className="card pdv-carrinho" aria-labelledby="pdv-carrinho-titulo">
-          <form className="pdv-busca" onSubmit={aoBuscar} role="search">
-            <label htmlFor="pdv-busca">Código ou nome do produto</label>
+        <section className="pdv-esquerda" aria-label="Itens da venda">
+          <form className="pdv-leitor" onSubmit={lerCodigo} autoComplete="off">
+            <label htmlFor="pdv-codigo">CÓDIGO</label>
             <input
-              id="pdv-busca"
+              id="pdv-codigo"
+              ref={refCodigo}
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value)}
+              inputMode="numeric"
+              placeholder={carga.tipo === 'carregando' ? 'Carregando produtos…' : 'Bipe o código (3*código = 3 unidades)'}
+              aria-label="Leitor de código de barras"
+              autoFocus
+            />
+            <button type="submit" className="pdv-ok">
+              OK
+            </button>
+          </form>
+
+          <form className="pdv-busca" onSubmit={buscar} role="search" autoComplete="off">
+            <input
               ref={refBusca}
               value={busca}
-              onChange={(e) => {
-                setBusca(e.target.value);
-                setAviso(null);
-              }}
-              placeholder={estado.tipo === 'carregando' ? 'Carregando produtos…' : 'Leia o código de barras ou digite'}
-              autoComplete="off"
-              autoFocus
-              aria-describedby={aviso ? 'pdv-aviso' : undefined}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar produto por nome ou código (F3)"
+              aria-label="Buscar produto"
               aria-controls="pdv-sugestoes"
             />
-            {aviso && (
-              <p id="pdv-aviso" className="campo-erro" role="status">
-                {aviso}
-              </p>
-            )}
             {sugestoes.length > 0 && (
               <ul id="pdv-sugestoes" className="pdv-sugestoes" aria-label="Produtos encontrados">
                 {sugestoes.map((p) => (
                   <li key={p.id}>
-                    <button type="button" onClick={() => adicionar(p)}>
+                    <button type="button" onClick={() => escolher(p)}>
                       <span className="mono suave">{p.codigoInterno}</span>
                       <span className="pdv-sug-nome">{p.nome}</span>
                       <span className="numero">{formatarCentavos(p.precoCentavos)}</span>
@@ -178,97 +356,277 @@ export function TelaFrenteCaixa({ api, operador, aoVender }: Props) {
             )}
           </form>
 
-          <div className="card-cabeca">
-            <h2 id="pdv-carrinho-titulo">Itens da venda</h2>
-            <span className="suave">{plural(unidades, 'unidade', 'unidades')}</span>
+          <div className="pdv-fita">
+            {linhas.length === 0 ? (
+              <div className="pdv-vazio">
+                <span aria-hidden="true">▤</span>Bipe o primeiro produto
+              </div>
+            ) : (
+              <table className="pdv-tabela">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Produto</th>
+                    <th className="numero">Quantidade</th>
+                    <th className="numero">Preço</th>
+                    <th className="numero">Total</th>
+                    <th>
+                      <span className="sr-only">Remover</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map((l, i) => {
+                    const p = porId.get(l.produtoId);
+                    if (!p) return null;
+                    const preco = precoDaLinha(l, p);
+                    const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel) !== null && !l.desconto?.autorizacao;
+                    return (
+                      <tr key={l.produtoId} className={ultimaLinha?.produtoId === l.produtoId ? 'pdv-ultima' : undefined}>
+                        <td className="pdv-n">{i + 1}</td>
+                        <td className="pdv-nome">
+                          <b>{p.nome}</b>
+                          <small>
+                            {p.codigoBarras ?? `cód. ${p.codigoInterno}`}
+                            {l.desconto && <span className="pdv-tag"> · com desconto</span>}
+                            {semAutorizacao && <span className="pdv-tag pdv-tag-erro"> · autorize o desconto de novo</span>}
+                          </small>
+                        </td>
+                        <td className="numero">
+                          <span className="pdv-qtd" role="group" aria-label={`Quantidade de ${p.nome}`}>
+                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade - 1)} aria-label={`Diminuir ${p.nome}`}>
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={LIMITES_VENDA.quantidadeMax}
+                              value={l.quantidade}
+                              aria-label={`Quantidade de ${p.nome}`}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (Number.isFinite(n)) mudarQuantidade(p.id, n);
+                              }}
+                            />
+                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade + 1)} aria-label={`Aumentar ${p.nome}`}>
+                              +
+                            </button>
+                            <small>un</small>
+                          </span>
+                        </td>
+                        <td className="numero pdv-preco">
+                          <b>{formatarCentavos(preco)}</b>
+                          {l.desconto && (
+                            <small className="pdv-tag">
+                              de {formatarCentavos(p.precoCentavos)} · {l.desconto.responsavelNome}
+                            </small>
+                          )}
+                          <span className="pdv-desc-botoes">
+                            <button type="button" className="pdv-link" onClick={() => setJanela({ tipo: 'desconto', produtoId: p.id })}>
+                              {l.desconto ? 'Alterar desconto' : 'Aplicar desconto'}
+                            </button>
+                            {l.desconto && (
+                              <button type="button" className="pdv-link" onClick={() => removerDesconto(p)}>
+                                Remover desconto
+                              </button>
+                            )}
+                          </span>
+                        </td>
+                        <td className="numero pdv-sub">{formatarCentavos(preco * l.quantidade)}</td>
+                        <td>
+                          <button type="button" className="pdv-remover" onClick={() => remover(p.id)} aria-label={`Remover ${p.nome}`}>
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-          {linhas.length === 0 ? (
-            <p className="vazio">Nenhum item ainda. Leia o código de barras ou busque o produto acima.</p>
-          ) : (
-            <ul className="pdv-linhas" aria-label="Itens da venda">
-              {linhas.map((l) => (
-                <li key={l.produto.id} className="pdv-linha">
-                  <div className="pdv-linha-produto">
-                    <b>{l.produto.nome}</b>
-                    <small className="suave mono">
-                      {l.produto.codigoInterno} · {formatarCentavos(l.produto.precoCentavos)} cada
-                    </small>
-                  </div>
-                  <div className="pdv-qtd" role="group" aria-label={`Quantidade de ${l.produto.nome}`}>
-                    <button type="button" onClick={() => mudarQuantidade(l.produto.id, l.quantidade - 1)} disabled={l.quantidade <= 1} aria-label="Diminuir">
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      max={LIMITES_VENDA.quantidadeMax}
-                      value={l.quantidade}
-                      aria-label="Quantidade"
-                      onChange={(e) => {
-                        const n = Number.parseInt(e.target.value, 10);
-                        if (Number.isFinite(n)) mudarQuantidade(l.produto.id, n);
-                      }}
-                    />
-                    <button type="button" onClick={() => mudarQuantidade(l.produto.id, l.quantidade + 1)} aria-label="Aumentar">
-                      +
-                    </button>
-                  </div>
-                  <span className="numero pdv-subtotal">{formatarCentavos(l.produto.precoCentavos * l.quantidade)}</span>
-                  <button type="button" className="pdv-remover" onClick={() => remover(l.produto.id)} aria-label={`Remover ${l.produto.nome}`}>
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+
+          <div className="pdv-soma" aria-label="Resumo da venda">
+            <span>
+              Itens <b>{totais.itens}</b> · Produtos <b>{totais.produtos}</b>
+            </span>
+            <span>
+              Descontos <b>{formatarCentavos(totais.descontoCentavos)}</b>
+            </span>
+            <span>
+              Total <b>{formatarCentavos(totais.totalCentavos)}</b>
+            </span>
+          </div>
         </section>
 
-        <aside className="card pdv-pagamento" aria-labelledby="pdv-total-titulo">
-          <h2 id="pdv-total-titulo" className="pdv-total-rotulo">
-            Total
-          </h2>
-          <strong className="pdv-total" data-testid="pdv-total">
-            {formatarCentavos(total)}
-          </strong>
+        <aside className="pdv-direita" aria-label="Pagamento">
+          <div className="pdv-visor">
+            <div className="pdv-rotulo">ÚLTIMO ITEM</div>
+            <div className="pdv-visor-nome" data-testid="pdv-ultimo">
+              {ultimoProduto?.nome ?? '—'}
+            </div>
+            <div className="pdv-visor-conta">
+              {ultimaLinha && ultimoProduto
+                ? `${ultimaLinha.quantidade} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))} = ${formatarCentavos(
+                    precoDaLinha(ultimaLinha, ultimoProduto) * ultimaLinha.quantidade,
+                  )}`
+                : 'Aguardando leitura'}
+            </div>
+          </div>
 
-          <fieldset className="pdv-formas">
-            <legend>Forma de pagamento</legend>
-            {FORMAS_PAGAMENTO.map((f) => (
-              <label key={f} className={`pdv-forma${forma === f ? ' pdv-forma-on' : ''}`}>
-                <input type="radio" name="forma" value={f} checked={forma === f} onChange={() => setForma(f)} />
-                {NOME_FORMA_PAGAMENTO[f]}
-              </label>
-            ))}
-          </fieldset>
+          <div className="pdv-total">
+            <div className="pdv-rotulo">TOTAL A PAGAR</div>
+            <div className="pdv-total-valor" data-testid="pdv-total">
+              {formatarCentavos(totais.totalCentavos)}
+            </div>
+          </div>
 
-          {erro && (
-            <p className="alerta alerta-erro" role="alert">
-              {erro}
+          <div className="pdv-pagamento">
+            <div className="pdv-formas" role="group" aria-label="Forma de pagamento">
+              {FORMAS_PAGAMENTO.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={!pag.dividido && pag.forma === f ? 'pdv-forma pdv-forma-on' : 'pdv-forma'}
+                  aria-pressed={!pag.dividido && pag.forma === f}
+                  onClick={() => definirForma(f)}
+                >
+                  {NOME_FORMA_PAGAMENTO[f]}
+                  <small>{TECLA_FORMA[f]}</small>
+                </button>
+              ))}
+            </div>
+
+            {pag.dividido && (
+              <div className="pdv-dividido" role="group" aria-label="Pagamento dividido">
+                {pag.partes.map((parte, i) => (
+                  <div key={i} className="pdv-parte">
+                    <select value={parte.forma} onChange={(e) => mudarParte(i, { forma: e.target.value as FormaPagamento })} aria-label={`Forma da parte ${i + 1}`}>
+                      {FORMAS_PAGAMENTO.map((f) => (
+                        <option key={f} value={f}>
+                          {NOME_FORMA_PAGAMENTO[f]}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={parte.valorTexto}
+                      onChange={(e) => mudarParte(i, { valorTexto: e.target.value })}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      aria-label={`Valor da parte ${i + 1}`}
+                    />
+                    <button type="button" className="pdv-remover" onClick={() => removerParte(i)} aria-label={`Tirar a parte ${i + 1}`}>
+                      ×
+                    </button>
+                  </div>
+                ))}
+                <div className="pdv-falta" role="status">
+                  {conta.faltaCentavos >= 0 ? 'Falta pagar' : 'Passou do total'}: <b>{formatarCentavos(Math.abs(conta.faltaCentavos))}</b>
+                </div>
+              </div>
+            )}
+
+            {temDinheiro && (
+              <div className="pdv-dinheiro">
+                <div>
+                  <label className="pdv-rotulo" htmlFor="pdv-recebido">
+                    RECEBIDO EM DINHEIRO{pag.dividido ? ` · PARTE DE ${formatarCentavos(conta.dinheiroCentavos)}` : ''}
+                  </label>
+                  <input
+                    id="pdv-recebido"
+                    ref={refRecebido}
+                    value={pag.recebidoTexto}
+                    onChange={(e) => setPag((p) => ({ ...p, recebidoTexto: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="0,00"
+                  />
+                </div>
+                <div className="pdv-troco" role="status">
+                  <div className="pdv-rotulo">{troco !== null && troco < 0 ? 'VALOR INSUFICIENTE' : 'TROCO'}</div>
+                  <div className={troco !== null && troco < 0 ? 'pdv-troco-valor pdv-falta-dinheiro' : 'pdv-troco-valor'} data-testid="pdv-troco">
+                    {troco === null ? '—' : troco < 0 ? `Faltam ${formatarCentavos(-troco)}` : formatarCentavos(troco)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button type="button" className="botao pdv-dividir" onClick={dividir} disabled={pag.dividido && pag.partes.length >= LIMITES_VENDA.pagamentosMax}>
+              {pag.dividido ? '+ Outra forma' : 'Dividir pagamento'}
+            </button>
+          </div>
+
+          {aviso && (
+            <p className={aviso.tipo === 'erro' ? 'alerta alerta-erro pdv-aviso' : 'alerta pdv-aviso pdv-aviso-ok'} role={aviso.tipo === 'erro' ? 'alert' : 'status'}>
+              {aviso.texto}
             </p>
           )}
 
-          <button
-            type="button"
-            className="botao botao-primario botao-grande pdv-finalizar"
-            onClick={() => void finalizar()}
-            disabled={linhas.length === 0 || !forma || enviando}
-          >
-            {enviando ? 'Registrando…' : 'Finalizar venda'}
+          <button type="button" className="pdv-finalizar" onClick={() => void finalizar()} disabled={enviando || linhas.length === 0}>
+            {enviando ? 'GRAVANDO…' : 'FINALIZAR · F2'}
           </button>
-          {linhas.length > 0 && !forma && <p className="suave pdv-dica">Escolha a forma de pagamento para finalizar.</p>}
-          <button type="button" className="botao pdv-cancelar" onClick={cancelar} disabled={linhas.length === 0 || enviando}>
-            Cancelar venda
-          </button>
-
-          {ultima && (
-            <p className="alerta pdv-sucesso" role="status">
-              Venda nº {ultima.numero} registrada: <b>{formatarCentavos(ultima.totalCentavos)}</b> em{' '}
-              {NOME_FORMA_PAGAMENTO[ultima.formaPagamento]}, por {ultima.vendedor.nome}. Já aparece na Visão geral.
-            </p>
-          )}
         </aside>
       </div>
+
+      <footer className="pdv-rodape">
+        {[
+          ['F2', 'finalizar'],
+          ['F3', 'buscar'],
+          ['F4', 'dinheiro'],
+          ['F8', 'pix'],
+          ['F9', 'débito'],
+          ['F10', 'crédito'],
+          ['Esc', 'leitor'],
+        ].map(([k, t]) => (
+          <span key={k} className="pdv-tecla">
+            <kbd>{k}</kbd>
+            {t}
+          </span>
+        ))}
+        <span className="pdv-espaco" />
+        <button type="button" className="pdv-rodape-botao" onClick={() => setJanela({ tipo: 'devolucao' })}>
+          Devolução / cancelamento
+        </button>
+        <button type="button" className="pdv-rodape-botao pdv-perigo" onClick={limpar}>
+          Limpar venda
+        </button>
+      </footer>
+
+      {janela?.tipo === 'desconto' && produtoDaJanela && (
+        <ModalDesconto
+          produto={produtoDaJanela}
+          atual={linhaDaJanela?.desconto ?? null}
+          operador={operador}
+          carregarAutorizadores={carregarAutorizadores}
+          autorizar={(usuarioId, senha, precoFinalCentavos) =>
+            api.autorizar({ usuarioId, senha, acao: { tipo: 'desconto', produtoId: produtoDaJanela.id, precoFinalCentavos } })
+          }
+          aoAplicar={(desconto) => {
+            setLinhas((ls) => ls.map((l) => (l.produtoId === produtoDaJanela.id ? { ...l, desconto } : l)));
+            setAviso({
+              tipo: 'ok',
+              texto: `Desconto aplicado: ${formatarCentavos(produtoDaJanela.precoCentavos - desconto.precoFinalCentavos)} por unidade${
+                desconto.autorizacao ? ` (autorizado por ${desconto.responsavelNome})` : ''
+              }.`,
+            });
+            fecharJanela();
+          }}
+          aoFechar={fecharJanela}
+        />
+      )}
+      {janela?.tipo === 'devolucao' && (
+        <ModalDevolucao
+          api={api}
+          operador={operador}
+          fuso={fuso}
+          agora={agora}
+          aoConcluir={(texto) => {
+            setAviso({ tipo: 'ok', texto });
+            fecharJanela();
+          }}
+          aoFechar={fecharJanela}
+        />
+      )}
     </div>
   );
 }

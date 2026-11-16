@@ -2,10 +2,12 @@
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
 // Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa e Relatórios
 // (todas as vendas). As outras seções ficam em branco até chegar a vez delas.
+// A Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets);
+// o botão "← Painel" volta para a Visão geral.
 import { FUSO_PADRAO } from '@saas/core';
 import { useState } from 'react';
 import type { ApiPainel } from '../api';
-import { BarraLateral, type DadosBarra, NOME_PAPEL } from './BarraLateral';
+import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
@@ -24,6 +26,8 @@ interface Props extends DadosBarra {
   intervaloMs?: number;
   /** Pendências da Visão geral. null = ainda não definidas (docs/PENDENCIAS.md). */
   pendencias?: readonly Pendencia[] | null;
+  /** Onde guardar o carrinho da Frente de caixa desta pessoa (loja + pessoa). null = não guarda. */
+  chaveCarrinho?: string | null;
 }
 
 export function TelaPainel({
@@ -36,6 +40,7 @@ export function TelaPainel({
   agora,
   intervaloMs,
   pendencias = null,
+  chaveCarrinho = null,
 }: Props) {
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
   const item = ITENS_MENU.find((i) => i.id === secao);
@@ -51,6 +56,24 @@ export function TelaPainel({
     pendencias
       ?.filter((p) => !p.soGestor || gestor)
       .map((p) => (p.acao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
+
+  if (permitido && secao === 'frente-de-caixa') {
+    return (
+      <div className="painel-app pdv-modo">
+        <main className="pdv-conteudo" aria-label="Frente de caixa">
+          <TelaFrenteCaixa
+            api={api}
+            operador={{ nome: pessoa.nome, papel: pessoa.papel }}
+            loja={loja}
+            fuso={fuso}
+            agora={agora}
+            chaveCarrinho={chaveCarrinho}
+            aoSair={() => setSecao('visao-geral')}
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="painel-app">
@@ -69,9 +92,6 @@ export function TelaPainel({
             pendencias={pendenciasVisiveis}
             aoIrPara={setSecao}
           />
-        )}
-        {permitido && secao === 'frente-de-caixa' && (
-          <TelaFrenteCaixa api={api} operador={{ nome: pessoa.nome, papel: NOME_PAPEL[pessoa.papel] }} />
         )}
         {permitido && secao === 'relatorios' && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
       </main>

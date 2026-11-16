@@ -24,6 +24,7 @@ export interface UsuarioDemo {
 
 const USUARIOS: UsuarioDemo[] = [
   { usuario: 'ana', nome: 'Ana', papel: 'dono', ativo: true },
+  { usuario: 'caio', nome: 'Caio', papel: 'administrador', ativo: true },
   { usuario: 'bruno', nome: 'Bruno', papel: 'vendedor', ativo: true },
   { usuario: 'carla', nome: 'Carla', papel: 'vendedor', ativo: false },
 ];
@@ -67,4 +68,15 @@ export async function entrarDemo(subdominio: string, usuario: string, senha: str
   falhas.delete(chave);
   if (!conta.ativo) return { ok: false, mensagem: 'Seu acesso a esta loja está desativado. Fale com o dono da loja.' };
   return { ok: true, lojaId: loja.id, usuario: conta };
+}
+
+/** Dono e Administrador ativos: quem pode autorizar desconto, brinde, cancelamento e devolução. */
+export function gestoresDemo(): { id: string; nome: string; papel: PapelDeLoja }[] {
+  return USUARIOS.filter((u) => u.ativo && (u.papel === 'dono' || u.papel === 'administrador')).map((u) => ({ id: u.usuario, nome: u.nome, papel: u.papel }));
+}
+
+/** Confere a senha de um gestor para uma autorização. null = senha errada ou pessoa sem permissão. */
+export function conferirSenhaDemo(usuarioId: string, senha: string): { id: string; nome: string; papel: PapelDeLoja } | null {
+  const g = gestoresDemo().find((u) => u.id === usuarioId);
+  return g && senha === SENHA_DEMO ? g : null;
 }

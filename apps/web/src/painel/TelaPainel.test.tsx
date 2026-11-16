@@ -27,7 +27,7 @@ function montar(papel: PapelDeLoja = 'dono', aoSair = vi.fn()) {
       loja={{ nome: 'Loja A', descricao: 'Rações, petiscos e acessórios' }}
       pessoa={{ nome: 'Ana', papel }}
       aoSair={aoSair}
-      api={criarApiLocal({ lojaId: 'loja-teste', operador: { id: 'ana', nome: 'Ana' }, exemplos: false, atrasoMs: 0 })}
+      api={criarApiLocal({ lojaId: 'loja-teste', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 })}
       agora={() => new Date('2026-11-12T12:00:00Z')}
     />,
   );
@@ -122,7 +122,7 @@ describe('iniciais', () => {
 
 describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Relatórios', () => {
   it('a venda feita na Frente de caixa aparece na Visão geral e nos Relatórios com quem vendeu', async () => {
-    const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'bruno', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 });
+    const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
     render(
       <TelaPainel
@@ -136,16 +136,16 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     // Visão geral começa zerada
     expect(txt((await screen.findByTestId('vendido-hoje')).textContent)).toBe('R$ 0,00');
 
+    // Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets)
     await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
-    const busca = await screen.findByLabelText('Código ou nome do produto');
-    await screen.findByPlaceholderText('Leia o código de barras ou digite');
-    await userEvent.type(busca, '7897000400403{Enter}');
-    await userEvent.type(busca, '7897000400403{Enter}');
-    await userEvent.click(screen.getByLabelText('Pix'));
-    await userEvent.click(screen.getByRole('button', { name: 'Finalizar venda' }));
-    expect(txt((await screen.findByText(/Venda nº 1 registrada/)).textContent)).toMatch(/R\$ 15,00.*Pix, por Bruno/);
+    await screen.findByPlaceholderText('Bipe o código (3*código = 3 unidades)');
+    expect(screen.queryByRole('navigation', { name: 'Menu principal' })).toBeNull();
+    const leitor = screen.getByLabelText('Leitor de código de barras');
+    await userEvent.type(leitor, '2*7897000400403{Enter}');
+    await userEvent.keyboard('{F2}');
+    expect(txt((await screen.findByText(/Venda #00001 finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 15,00 em Pix.');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Visão geral' }));
+    await userEvent.click(screen.getByRole('button', { name: '← Painel' }));
     await screen.findByText('R$ 15,00', { selector: '[data-testid="vendido-hoje"]' });
     await userEvent.click(screen.getByRole('button', { name: /VENDAS DE HOJE/ }));
     const tabela = within(document.getElementById('vg-detalhe')!).getAllByRole('table').at(-1)!;
@@ -153,7 +153,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     expect(txt(tabela.textContent)).toMatch(/2× Petisco Bifinho/);
 
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Relatórios' }));
-    const linha = (await screen.findByText('nº 1')).closest('tr')!;
+    const linha = (await screen.findByText('#00001')).closest('tr')!;
     expect(within(linha).getByText('Bruno')).toBeTruthy();
     expect(within(linha).getByText('R$ 15,00')).toBeTruthy();
   });
@@ -161,7 +161,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
   it('Visão geral: Produtos ativos leva para Produtos e estoque; Saldo das contas leva para o Financeiro', async () => {
     render(
       <TelaPainel
-        api={criarApiLocal({ lojaId: 'loja-z', operador: { id: 'a', nome: 'Ana' }, exemplos: false, atrasoMs: 0 })}
+        api={criarApiLocal({ lojaId: 'loja-z', operador: { id: 'a', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 })}
         loja={{ nome: 'Loja Z' }}
         pessoa={{ nome: 'Ana', papel: 'dono' }}
         aoSair={vi.fn()}
@@ -183,7 +183,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
       { id: 'estoque', gravidade: 'media' as const, texto: 'Estoque baixo.', acao: { rotulo: 'Fazer pedido', secao: 'compras' as const } },
       { id: 'conta', gravidade: 'alta' as const, texto: 'Conta vencida.', acao: { rotulo: 'Ver contas', secao: 'financeiro' as const }, soGestor: true },
     ];
-    const api = criarApiLocal({ lojaId: 'loja-p', operador: { id: 'b', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 });
+    const api = criarApiLocal({ lojaId: 'loja-p', operador: { id: 'b', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 });
     const { unmount } = render(
       <TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Bruno', papel: 'vendedor' }} aoSair={vi.fn()} pendencias={pendencias} />,
     );
@@ -208,7 +208,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
   it('Vendedor não chega aos Relatórios nem pelo link da Visão geral', async () => {
     render(
       <TelaPainel
-        api={criarApiLocal({ lojaId: 'loja-y', operador: { id: 'b', nome: 'Bruno' }, exemplos: false, atrasoMs: 0 })}
+        api={criarApiLocal({ lojaId: 'loja-y', operador: { id: 'b', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 })}
         loja={{ nome: 'Loja Y' }}
         pessoa={{ nome: 'Bruno', papel: 'vendedor' }}
         aoSair={vi.fn()}
