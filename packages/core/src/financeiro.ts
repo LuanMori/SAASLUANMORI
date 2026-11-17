@@ -4,16 +4,29 @@
 //   - Duas contas: Caixa físico e Conta bancária. O saldo é a soma dos lançamentos; nada é apagado.
 //   - Venda: Dinheiro entra no Caixa; Pix entra no Banco; cartão vira "a receber", com a taxa e o prazo
 //     da operadora (padrão: débito 1,5% em 1 dia, crédito 3% em 30 dias), e só entra no Banco quando o
-//     Dono ou o Administrador confirma que a operadora depositou.
+//     Dono ou o Administrador confirma que a operadora depositou. Fiado vira "a receber" na conta do
+//     cliente, sem taxa, com prazo de 30 dias (como no DaniPets), e entra no Caixa ou no Banco quando
+//     o cliente paga.
 //   - Estorno (cancelamento ou devolução), pela mesma forma: Dinheiro sai do Caixa (e não pode passar do
 //     que há nele); Pix sai do Banco; cartão abate do "a receber" com a taxa proporcional e, se a
-//     operadora já tinha depositado, o líquido sai da conta onde o dinheiro entrou.
+//     operadora já tinha depositado, o líquido sai da conta onde o dinheiro entrou. Fiado: abate do que
+//     o cliente deve; se ele já tinha pago, o valor sai da conta onde o pagamento entrou.
 //   - Lançamentos à mão (entrada, despesa, retirada do dono, transferência) e o saldo inicial (uma vez
 //     por conta) são só do Dono e do Administrador.
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import { CONTROLE, ehObjeto } from './interno';
 import type { ErroCampo, Resultado } from './resultado';
-import { diaNoFuso, formatarNumeroVenda, FUSO_PADRAO, NOME_FORMA_PAGAMENTO, type FormaPagamento, type Operador, type Pagamento, type Venda } from './venda';
+import {
+  type ClienteDaVenda,
+  diaNoFuso,
+  formatarNumeroVenda,
+  FUSO_PADRAO,
+  NOME_FORMA_PAGAMENTO,
+  type FormaPagamento,
+  type Operador,
+  type Pagamento,
+  type Venda,
+} from './venda';
 
 export const CONTAS = ['caixa', 'banco'] as const;
 export type ContaId = (typeof CONTAS)[number];
@@ -26,14 +39,22 @@ export const ehConta = (valor: unknown): valor is ContaId => typeof valor === 's
 export type FormaCartao = Extract<FormaPagamento, 'debito' | 'credito'>;
 export const ehCartao = (forma: FormaPagamento): forma is FormaCartao => forma === 'debito' || forma === 'credito';
 
-/** Onde cada forma de pagamento entra (o cartão, quando a operadora deposita). */
-export const CONTA_DA_FORMA: Record<FormaPagamento, ContaId> = { dinheiro: 'caixa', pix: 'banco', debito: 'banco', credito: 'banco' };
+/** Formas que viram "a receber": cartão (a operadora deposita) e fiado (o cliente paga). */
+export type FormaAPrazo = FormaCartao | 'fiado';
+export const ehAPrazo = (forma: FormaPagamento): forma is FormaAPrazo => ehCartao(forma) || forma === 'fiado';
+
+/** Onde entra o que é pago na hora (cartão e fiado entram quando são recebidos). */
+export const CONTA_DA_FORMA: Record<Exclude<FormaPagamento, FormaAPrazo>, ContaId> = { dinheiro: 'caixa', pix: 'banco' };
+
+/** Prazo para o cliente pagar o fiado, contado do dia da compra (padrão do DaniPets). */
+export const PRAZO_FIADO_PADRAO_DIAS = 30;
 
 export type TipoLancamento =
   | 'saldo_inicial'
   | 'venda'
   | 'estorno_venda'
   | 'recebimento_cartao'
+  | 'recebimento_fiado'
   | 'entrada'
   | 'despesa'
   | 'retirada'
@@ -45,6 +66,7 @@ export const NOME_LANCAMENTO: Record<TipoLancamento, string> = {
   venda: 'Venda recebida',
   estorno_venda: 'Estorno de venda',
   recebimento_cartao: 'Recebimento de cartão',
+  recebimento_fiado: 'Recebimento de fiado',
   entrada: 'Entrada',
   despesa: 'Despesa',
   retirada: 'Retirada do dono',
@@ -85,19 +107,21 @@ export const TAXAS_CARTAO_PADRAO: TaxasCartao = { taxaPct: { debito: 1.5, credit
 
 export type SituacaoRecebivel = 'pendente' | 'recebido' | 'cancelado';
 
-/** Venda no cartão esperando a operadora depositar. */
+/** Venda no cartão esperando a operadora depositar, ou no fiado esperando o cliente pagar. */
 export interface Recebivel {
   id: string;
-  forma: FormaCartao;
+  forma: FormaAPrazo;
+  /** No fiado, de quem é a conta. No cartão, null. */
+  cliente: ClienteDaVenda | null;
   vendaId: string;
   vendaNumero: number;
   /** ISO 8601. */
   criadoEm: string;
-  /** Dia (AAAA-MM-DD, no fuso da loja) em que a operadora deve depositar. */
+  /** Dia (AAAA-MM-DD, no fuso da loja) em que a operadora deve depositar (no fiado: em que o cliente deve pagar). */
   venceEm: string;
-  /** Valor passado no cartão. */
+  /** Valor passado no cartão (ou comprado no fiado). */
   brutoCentavos: number;
-  /** Taxa da operadora sobre o bruto. */
+  /** Taxa da operadora sobre o bruto (no fiado, 0). */
   taxaCentavos: number;
   /** Parte do bruto e da taxa já estornada (devolução ou cancelamento). */
   estornadoBrutoCentavos: number;
@@ -158,6 +182,19 @@ export function resumirAReceber(recebiveis: readonly Recebivel[], hoje: string):
   return { totalCentavos: soma(pendentes), quantidade: pendentes.length, vencidosCentavos: soma(vencidos), vencidos: vencidos.length };
 }
 
+/** Só os de cartão (o que a operadora vai depositar). */
+export const recebiveisDeCartao = <T extends Pick<Recebivel, 'forma'>>(lista: readonly T[]): T[] => lista.filter((r) => r.forma !== 'fiado');
+
+/** Só os de fiado (o que os clientes devem). */
+export const recebiveisDeFiado = <T extends Pick<Recebivel, 'forma'>>(lista: readonly T[]): T[] => lista.filter((r) => r.forma === 'fiado');
+
+/** Quanto um cliente deve no fiado (compras no fiado ainda não pagas, menos o que foi devolvido). */
+export function fiadoEmAberto(recebiveis: readonly Recebivel[], clienteId: string): number {
+  return recebiveisDeFiado(recebiveis)
+    .filter((r) => r.cliente?.id === clienteId)
+    .reduce((s, r) => s + liquidoAReceber(r), 0);
+}
+
 /** Recebimentos de cartão que já deviam ter caído (do mais antigo para o mais novo). */
 export function recebiveisVencidos(recebiveis: readonly Recebivel[], hoje: string): Recebivel[] {
   return recebiveis.filter((r) => liquidoAReceber(r) > 0 && r.venceEm <= hoje).sort((a, b) => a.venceEm.localeCompare(b.venceEm));
@@ -174,16 +211,35 @@ export interface EfeitosFinanceirosDaVenda {
   recebiveis: NovoRecebivel[];
 }
 
-/** O que a venda gera no financeiro: Dinheiro no Caixa, Pix no Banco e cartão "a receber". */
-export function efeitosFinanceirosDaVenda(venda: Venda, ctx: { taxas?: TaxasCartao; fuso?: string } = {}): EfeitosFinanceirosDaVenda {
+/** O que a venda gera no financeiro: Dinheiro no Caixa, Pix no Banco, cartão e fiado "a receber". */
+export function efeitosFinanceirosDaVenda(
+  venda: Venda,
+  ctx: { taxas?: TaxasCartao; fuso?: string; prazoFiadoDias?: number } = {},
+): EfeitosFinanceirosDaVenda {
   const taxas = ctx.taxas ?? TAXAS_CARTAO_PADRAO;
   const dia = diaNoFuso(venda.criadaEm, ctx.fuso ?? FUSO_PADRAO);
   const lancamentos: NovoLancamento[] = [];
   const recebiveis: NovoRecebivel[] = [];
   for (const p of venda.pagamentos) {
-    if (ehCartao(p.forma)) {
+    if (p.forma === 'fiado') {
+      recebiveis.push({
+        forma: 'fiado',
+        cliente: venda.cliente,
+        vendaId: venda.id,
+        vendaNumero: venda.numero,
+        criadoEm: venda.criadaEm,
+        venceEm: somarDias(dia, ctx.prazoFiadoDias ?? PRAZO_FIADO_PADRAO_DIAS),
+        brutoCentavos: p.valorCentavos,
+        taxaCentavos: 0,
+        estornadoBrutoCentavos: 0,
+        estornadoTaxaCentavos: 0,
+        situacao: 'pendente',
+        recebimento: null,
+      });
+    } else if (ehCartao(p.forma)) {
       recebiveis.push({
         forma: p.forma,
+        cliente: null,
         vendaId: venda.id,
         vendaNumero: venda.numero,
         criadoEm: venda.criadaEm,
@@ -225,7 +281,7 @@ export interface ContextoEstornoFinanceiro {
 
 export interface EfeitosFinanceirosDoEstorno {
   lancamentos: NovoLancamento[];
-  /** Os recebimentos de cartão da venda, já com o estorno abatido (o servidor grava por cima). */
+  /** Os recebimentos (cartão e fiado) da venda, já com o estorno abatido (o servidor grava por cima). */
   recebiveis: Recebivel[];
 }
 
@@ -244,7 +300,7 @@ export function efeitosFinanceirosDoEstorno(
 
   for (const e of estornos) {
     const nome = NOME_FORMA_PAGAMENTO[e.forma];
-    if (!ehCartao(e.forma)) {
+    if (!ehAPrazo(e.forma)) {
       if (e.forma === 'dinheiro' && ctx.saldoCaixaCentavos !== undefined && e.valorCentavos > ctx.saldoCaixaCentavos) {
         return {
           ok: false,
@@ -280,7 +336,7 @@ export function efeitosFinanceirosDoEstorno(
   return { ok: true, valor: { lancamentos, recebiveis } };
 }
 
-/** Confirma que a operadora depositou: o líquido entra na conta escolhida. */
+/** Confirma que a operadora depositou (cartão) ou que o cliente pagou (fiado): o valor entra na conta escolhida. */
 export function receberRecebivel(
   r: Recebivel,
   ctx: { conta: unknown; em: string; por: Operador },
@@ -295,9 +351,9 @@ export function receberRecebivel(
       recebivel: { ...r, situacao: 'recebido', recebimento: { em: ctx.em, conta: ctx.conta, valorCentavos: valor, por: ctx.por } },
       lancamento: {
         conta: ctx.conta,
-        tipo: 'recebimento_cartao',
+        tipo: r.forma === 'fiado' ? 'recebimento_fiado' : 'recebimento_cartao',
         valorCentavos: valor,
-        descricao: `${NOME_FORMA_PAGAMENTO[r.forma]} • venda ${formatarNumeroVenda(r.vendaNumero)}`,
+        descricao: `${NOME_FORMA_PAGAMENTO[r.forma]}${r.cliente ? ` • ${r.cliente.nome}` : ''} • venda ${formatarNumeroVenda(r.vendaNumero)}`,
         criadoEm: ctx.em,
         vendaId: r.vendaId,
         vendaNumero: r.vendaNumero,

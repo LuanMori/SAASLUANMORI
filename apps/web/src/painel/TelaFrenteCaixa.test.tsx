@@ -563,3 +563,66 @@ describe('Frente de caixa · cliente (F6)', () => {
     expect(txt(faixa().textContent)).toMatch(/Maria Souza/);
   });
 });
+
+describe('Frente de caixa · fiado (F7)', () => {
+  const faixa = () => screen.getByRole('group', { name: 'Cliente da venda' });
+  const botaoFiado = () => screen.getByRole('button', { name: /^Fiado/ });
+
+  it('sem cliente identificado não deixa: o botão fica bloqueado e F7 explica por quê', async () => {
+    const { api } = await montar();
+    await bipar('7897000400403');
+    expect(botaoFiado().getAttribute('aria-disabled')).toBe('true');
+    expect(botaoFiado().textContent).toMatch(/só com cliente identificado/);
+    await userEvent.keyboard('{F7}');
+    expect(screen.getByRole('alert').textContent).toBe('Venda no fiado precisa de cliente identificado. Identifique o cliente (F6).');
+    expect(botaoFiado().getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: /^Pix/ }).getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(botaoFiado());
+    expect(botaoFiado().getAttribute('aria-pressed')).toBe('false');
+    // no pagamento dividido o fiado nem aparece na lista sem cliente
+    await userEvent.click(screen.getByRole('button', { name: 'Dividir pagamento' }));
+    expect(within(screen.getByLabelText('Forma da parte 1')).queryByRole('option', { name: 'Fiado' })).toBeNull();
+    expect(api.criarVenda).not.toHaveBeenCalled();
+  });
+
+  it('com cliente: F7 escolhe o fiado, a venda vai para a conta do cliente e a próxima venda volta para Pix', async () => {
+    const loja = await criarLoja(BRUNO);
+    const maria = await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const { api } = await abrir(loja.base, BRUNO, null);
+    await userEvent.keyboard('{F6}');
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');
+    await userEvent.click(await within(janela()).findByRole('button', { name: /Maria Souza/ }));
+    await bipar('2*7897000400403');
+    expect(botaoFiado().getAttribute('aria-disabled')).toBeNull();
+    await userEvent.keyboard('{F7}');
+    expect(botaoFiado().getAttribute('aria-pressed')).toBe('true');
+    await finalizar();
+    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 15,00 em Fiado. Cliente: Maria Souza.');
+    expect(api.criarVenda).toHaveBeenCalledWith(expect.objectContaining({ clienteId: maria.id, pagamentos: [{ forma: 'fiado', valorCentavos: 1500 }] }));
+    expect(screen.getByRole('button', { name: /^Pix/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
+
+    // identificada de novo, a faixa mostra quanto ela deve no fiado
+    await userEvent.keyboard('{F6}');
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');
+    await userEvent.click(await within(janela()).findByRole('button', { name: /Maria Souza/ }));
+    expect(txt(faixa().textContent)).toMatch(/Fiado em aberto R\$ 15,00/);
+  });
+
+  it('tirar o cliente com o fiado escolhido tira o fiado do pagamento (volta para Pix e avisa)', async () => {
+    const loja = await criarLoja(BRUNO);
+    await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const { api } = await abrir(loja.base, BRUNO, null);
+    await userEvent.keyboard('{F6}');
+    await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');
+    await userEvent.click(await within(janela()).findByRole('button', { name: /Maria Souza/ }));
+    await bipar('7897000400403');
+    await userEvent.click(botaoFiado());
+    await userEvent.click(screen.getByRole('button', { name: 'Tirar o cliente da venda' }));
+    expect(screen.getByRole('alert').textContent).toMatch(/Sem cliente identificado não dá para vender no fiado: o fiado saiu do pagamento/);
+    expect(screen.getByRole('button', { name: /^Pix/ }).getAttribute('aria-pressed')).toBe('true');
+    await finalizar();
+    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 7,50 em Pix.');
+    expect(api.criarVenda.mock.calls[0]![0].pagamentos).toEqual([{ forma: 'pix', valorCentavos: 750 }]);
+  });
+});

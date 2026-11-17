@@ -4,11 +4,14 @@ import {
   conferirSaida,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
+  fiadoEmAberto,
   lancamentosManuais,
   liquidoAReceber,
   type NovoLancamento,
   type Recebivel,
   receberRecebivel,
+  recebiveisDeCartao,
+  recebiveisDeFiado,
   recebiveisVencidos,
   resumirAReceber,
   saldosDasContas,
@@ -98,6 +101,46 @@ describe('venda no financeiro', () => {
     expect(recebiveisVencidos(rs, '2026-12-20').map((r) => r.forma)).toEqual(['debito', 'credito']);
     expect(taxasDasVendas(rs, new Set(['v1']))).toBe(330);
     expect(taxasDasVendas(rs, new Set(['outra']))).toBe(0);
+  });
+});
+
+describe('fiado no financeiro', () => {
+  const vendaFiado: Venda = {
+    ...venda,
+    id: 'v9',
+    numero: 9,
+    cliente: { id: 'c1', nome: 'Maria Souza' },
+    totalCentavos: 8000,
+    pagamentos: [
+      { forma: 'dinheiro', valorCentavos: 3000 },
+      { forma: 'fiado', valorCentavos: 5000 },
+    ],
+  };
+  const [fiado] = efeitosFinanceirosDaVenda(vendaFiado).recebiveis.map((r, i) => comId(r, `f${i}`));
+
+  it('vira "a receber" na conta do cliente, sem taxa, com prazo de 30 dias; não entra no caixa nem no banco', () => {
+    const efeitos = efeitosFinanceirosDaVenda(vendaFiado);
+    expect(efeitos.lancamentos.map((l) => [l.conta, l.valorCentavos])).toEqual([['caixa', 3000]]);
+    expect(fiado).toMatchObject({ forma: 'fiado', cliente: { id: 'c1', nome: 'Maria Souza' }, brutoCentavos: 5000, taxaCentavos: 0, venceEm: '2026-12-16' });
+    expect(efeitosFinanceirosDaVenda(vendaFiado, { prazoFiadoDias: 7 }).recebiveis[0]!.venceEm).toBe('2026-11-23');
+    expect(fiadoEmAberto([fiado!], 'c1')).toBe(5000);
+    expect(fiadoEmAberto([fiado!], 'outro')).toBe(0);
+    // fiado não é "a receber do cartão" e não tem taxa
+    expect(recebiveisDeCartao([fiado!])).toEqual([]);
+    expect(recebiveisDeFiado([fiado!])).toHaveLength(1);
+    expect(taxasDasVendas([fiado!], new Set(['v9']))).toBe(0);
+  });
+
+  it('devolução abate do que o cliente deve; se ele já pagou, sai da conta onde o pagamento entrou', () => {
+    const r = efeitosFinanceirosDoEstorno(vendaFiado, [{ forma: 'fiado', valorCentavos: 2000 }], [fiado!], { rotulo: 'Devolução nº 1', em: 'x', por: ANA });
+    expect(r.ok && r.valor.lancamentos).toEqual([]);
+    expect(r.ok && fiadoEmAberto(r.valor.recebiveis, 'c1')).toBe(3000);
+    const pago = receberRecebivel(fiado!, { conta: 'caixa', em: 'x', por: ANA });
+    if (!pago.ok) throw new Error('falhou');
+    expect(pago.valor.lancamento).toMatchObject({ conta: 'caixa', tipo: 'recebimento_fiado', valorCentavos: 5000 });
+    expect(txt(pago.valor.lancamento.descricao)).toBe('Fiado • Maria Souza • venda #00009');
+    const depois = efeitosFinanceirosDoEstorno(vendaFiado, [{ forma: 'fiado', valorCentavos: 2000 }], [pago.valor.recebivel], { rotulo: 'Devolução nº 1', em: 'x', por: ANA });
+    expect(depois.ok && depois.valor.lancamentos.map((l) => [l.conta, l.valorCentavos])).toEqual([['caixa', -2000]]);
   });
 });
 

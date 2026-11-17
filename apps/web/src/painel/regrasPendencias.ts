@@ -9,7 +9,8 @@
 //   - #6 estoque baixo (no mínimo ou abaixo) ........ média · todos · "Fazer pedido" (Compras)
 //   - #7 estoque negativo ............................ alta  · gestor · "Ajustar" (Produtos e estoque)
 //   - #10 recebimento de cartão vencido sem confirmar  média · gestor · "Confirmar" (Financeiro)
-import { formatarCentavos, liquidoAReceber, type Recebivel, recebiveisVencidos } from '@saas/core';
+//   - #11 fiado vencido (passou do prazo de 30 dias) ... média · gestor · "Ver clientes" (Clientes)
+import { formatarCentavos, liquidoAReceber, type Recebivel, recebiveisDeCartao, recebiveisDeFiado, recebiveisVencidos } from '@saas/core';
 import type { Produto, SaldoEstoque } from '../api';
 import { plural } from './formato';
 import type { Pendencia } from './pendencias';
@@ -44,7 +45,7 @@ export function pendenciasDeEstoque(produtos: readonly Produto[], saldos: readon
 
 /** #10: recebimentos de cartão que já deviam ter caído e ninguém confirmou. */
 export function pendenciasDeCartao(recebiveis: readonly Recebivel[], hoje: string): Pendencia[] {
-  const vencidos = recebiveisVencidos(recebiveis, hoje);
+  const vencidos = recebiveisVencidos(recebiveisDeCartao(recebiveis), hoje);
   if (vencidos.length === 0) return [];
   const total = vencidos.reduce((s, r) => s + liquidoAReceber(r), 0);
   return [
@@ -53,6 +54,23 @@ export function pendenciasDeCartao(recebiveis: readonly Recebivel[], hoje: strin
       gravidade: 'media',
       texto: `${plural(vencidos.length, 'recebimento de cartão vencido', 'recebimentos de cartão vencidos')} aguardando confirmação (${formatarCentavos(total)}).`,
       acao: { rotulo: 'Confirmar', secao: 'financeiro' },
+      soGestor: true,
+    },
+  ];
+}
+
+/** #11: compras no fiado que passaram do prazo e o cliente ainda não pagou (no dia do vencimento ainda não). */
+export function pendenciasDeFiado(recebiveis: readonly Recebivel[], hoje: string): Pendencia[] {
+  const vencidos = recebiveisDeFiado(recebiveis).filter((r) => liquidoAReceber(r) > 0 && r.venceEm < hoje);
+  if (vencidos.length === 0) return [];
+  const clientes = new Set(vencidos.map((r) => r.cliente?.id ?? ''));
+  const total = vencidos.reduce((s, r) => s + liquidoAReceber(r), 0);
+  return [
+    {
+      id: `fiado-vencido:${hoje}`,
+      gravidade: 'media',
+      texto: `${plural(clientes.size, 'cliente', 'clientes')} com fiado vencido (${formatarCentavos(total)}).`,
+      acao: { rotulo: 'Ver clientes', secao: 'clientes' },
       soGestor: true,
     },
   ];

@@ -19,7 +19,7 @@
 - **Regras prontas, mas desligadas (16/11/2026)**: como a Frente de caixa agora alimenta o estoque e o
   cartão a receber, as sugestões **6** (estoque baixo), **7** (estoque negativo) e **10** (cartão vencido sem
   confirmar) já estão escritas e testadas em `apps/web/src/painel/regrasPendencias.ts`, com os textos do
-  DaniPets. Nada aparece no card até o Luan decidir: ligar é só passar o resultado para `pendencias`.
+  DaniPets. Em 17/11/2026 entrou a **11** (fiado vencido), junto com o fiado na Frente de caixa. Nada aparece no card até o Luan decidir: ligar é só passar o resultado para `pendencias`.
 
 ## Sugestões para escolher
 
@@ -41,7 +41,7 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | 9 | Contas a pagar vencendo hoje ou amanhã | média | gestor | Financeiro | contas a pagar |
 | 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada** (falta a tela do Financeiro para confirmar) |
 | **Clientes** | | | | | |
-| 11 | Fiado vencido | média | gestor | Clientes | fiado |
+| 11 | Fiado vencido | média | gestor | Clientes | **pronta, desligada** (o fiado já existe na Frente de caixa) |
 | 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes | histórico e cashback |
 | **Usuários e acesso (próprio do SaaS)** | | | | | |
 | 13 | Pessoa aguardando o Dono liberar o acesso | média | gestor | Usuários | tela de usuários (Fase 5.7) |

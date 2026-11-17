@@ -181,15 +181,7 @@ export function TelaVisaoGeral({
                     destino="Financeiro"
                     onClick={aoVerFinanceiro}
                     valor={financeiro ? formatarCentavos(financeiro.totalCentavos) : estadoFin.tipo === 'carregando' ? '…' : '—'}
-                    nota={
-                      financeiro
-                        ? financeiro.aReceber.totalCentavos > 0
-                          ? `+ ${formatarCentavos(financeiro.aReceber.totalCentavos)} a receber no cartão`
-                          : undefined
-                        : estadoFin.tipo === 'carregando'
-                          ? undefined
-                          : 'Não foi possível carregar o saldo'
-                    }
+                    nota={financeiro ? notaAReceber(financeiro.aReceber.totalCentavos, financeiro.fiado?.totalCentavos ?? 0) : estadoFin.tipo === 'carregando' ? undefined : 'Não foi possível carregar o saldo'}
                   />
                 )}
               </div>
@@ -369,6 +361,14 @@ function RelatorioVendasHoje({
       </p>
     </section>
   );
+}
+
+/** "+ R$ 341,60 a receber no cartão · R$ 50,00 no fiado" (só o que tiver valor). */
+function notaAReceber(cartao: number, fiado: number): string | undefined {
+  if (cartao > 0 && fiado > 0) return `+ ${formatarCentavos(cartao)} a receber no cartão · ${formatarCentavos(fiado)} no fiado`;
+  if (cartao > 0) return `+ ${formatarCentavos(cartao)} a receber no cartão`;
+  if (fiado > 0) return `+ ${formatarCentavos(fiado)} a receber no fiado`;
+  return undefined;
 }
 
 const pct = (parte: number, total: number) => (total > 0 ? `${Math.round((parte / total) * 100)}%` : '—');

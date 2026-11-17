@@ -176,7 +176,7 @@ function PassoNovo({
     setEnviando(true);
     try {
       const c = await api.cadastrarCliente(local.valor);
-      aoCadastrar({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf), telefone: c.telefone });
+      aoCadastrar({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf), telefone: c.telefone, fiadoEmAbertoCentavos: 0 });
     } catch (e) {
       if (e instanceof ErroApi && e.erros.some((x) => x.campo in dados)) setErros(porCampo(e.erros));
       else setErro(e instanceof ErroApi ? e.message : 'Não foi possível cadastrar. Tente de novo.');

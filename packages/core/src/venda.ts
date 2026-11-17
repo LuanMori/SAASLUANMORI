@@ -7,7 +7,8 @@
 //   - cancelamento da venda inteira (no mesmo dia e sem devolução) e devolução de itens, com o valor
 //     voltando pelas mesmas formas de pagamento da venda; o Vendedor precisa de autorização;
 //   - venda sem estoque é recusada ("Estoque insuficiente para X. Disponível: N un.");
-//   - cliente identificado (F6) opcional: vem do cadastro, nunca um nome digitado na tela.
+//   - cliente identificado (F6) opcional: vem do cadastro, nunca um nome digitado na tela;
+//   - fiado (F7): venda a prazo, SÓ para cliente identificado; sem cliente, a venda é recusada.
 //   Os efeitos no estoque, no financeiro e no histórico do cliente estão em estoque.ts, financeiro.ts e cliente.ts.
 //
 // Segurança (mesma ideia do cadastro de produto):
@@ -25,7 +26,7 @@ import { CONTROLE, ehObjeto } from './interno';
 import { ehGestor, type PapelDeLoja } from './papeis';
 import type { ErroCampo, Resultado } from './resultado';
 
-export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito'] as const;
+export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'fiado'] as const;
 export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
 
 /** Nomes iguais aos do DaniPets. */
@@ -34,7 +35,13 @@ export const NOME_FORMA_PAGAMENTO: Record<FormaPagamento, string> = {
   pix: 'Pix',
   debito: 'Cartão de débito',
   credito: 'Cartão de crédito',
+  fiado: 'Fiado',
 };
+
+/** Fiado é venda a prazo na conta do cliente: só com cliente identificado (F6). */
+export const formaPrecisaDeCliente = (forma: FormaPagamento): boolean => forma === 'fiado';
+
+export const MENSAGEM_FIADO_SEM_CLIENTE = 'Venda no fiado precisa de cliente identificado. Identifique o cliente (F6).';
 
 export const LIMITES_VENDA = {
   /** Produtos diferentes numa venda. */
@@ -532,6 +539,10 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       return { ok: false, erros: [{ campo: 'clienteId', mensagem: 'Cliente não encontrado. Identifique o cliente de novo (F6) ou tire o cliente da venda.' }] };
     }
     cliente = { id: c.id, nome: c.nome };
+  }
+  // fiado só na conta de um cliente identificado
+  if (!cliente && pedido.pagamentos.some((p) => formaPrecisaDeCliente(p.forma))) {
+    return { ok: false, erros: [{ campo: 'pagamentos', mensagem: MENSAGEM_FIADO_SEM_CLIENTE }] };
   }
 
   // pagamentos e troco

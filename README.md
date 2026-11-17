@@ -76,13 +76,19 @@ Cada venda da Frente de caixa alimenta o resto do sistema, como no DaniPets:
 - **Estoque**: a venda dá baixa e é recusada sem estoque ("Estoque insuficiente para X. Disponível: N un.");
   o cancelamento devolve tudo; na devolução, cada item volta para a prateleira ou não (avaria, vencido).
   A busca (F3) mostra o saldo, que é buscado de novo a cada 20 segundos e depois de cada venda.
+- **Fiado (F7)**: só para cliente identificado. Sem cliente, o botão fica bloqueado e o servidor recusa a
+  venda; tirar o cliente da venda tira o fiado do pagamento. Pode ser uma forma só ou parte de um pagamento
+  dividido. A compra vira "a receber" na conta do cliente, sem taxa e com prazo de 30 dias (como no DaniPets);
+  não entra no Caixa nem no Banco até o cliente pagar. Na devolução e no cancelamento, abate do que ele deve.
+  A faixa do cliente no caixa mostra quanto ele deve no fiado.
 - **Clientes**: F6 identifica o cliente (CPF, telefone ou nome) ou cadastra na hora (nome, telefone e CPF,
   sem repetir CPF); a compra entra no histórico dele. A busca é feita no servidor, que devolve o CPF já
   mascarado: a lista de clientes não vai para o navegador.
 - **Financeiro**: Dinheiro entra no Caixa físico, Pix na Conta bancária e cartão vira "a receber", com a taxa
   e o prazo da operadora (padrão: débito 1,5% em 1 dia, crédito 3% em 30 dias). Cancelamento e devolução
   estornam pela mesma forma (devolução em dinheiro não passa do que há no caixa).
-- **Visão geral**: o card Saldo das contas (só Dono e Administrador) mostra Caixa + Banco e o que ainda cai de cartão.
+- **Visão geral**: o card Saldo das contas (só Dono e Administrador) mostra Caixa + Banco e o que ainda vai
+  entrar (cartão e fiado).
 - **Relatórios**: coluna e filtro de cliente; taxas de cartão do período. "Total vendido" é o bruto; havendo
   devolução no período aparece também "Vendas líquidas" (bruto menos devoluções), como no DaniPets. Os filtros
   de quem vendeu, cliente e pagamento valem também para as devoluções e as taxas.

@@ -167,7 +167,40 @@ describe('validarNovaVenda', () => {
   });
 
   it('nomes das formas de pagamento iguais aos do DaniPets', () => {
-    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito']);
+    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito', 'Fiado']);
+  });
+});
+
+describe('fiado (F7)', () => {
+  const catalogo = new Map<string, ProdutoParaVenda>([['p1', { id: 'p1', codigoInterno: '0001', nome: 'Ração', precoCentavos: 5000, ativo: true }]]);
+  const clientes = new Map([['c1', { id: 'c1', nome: 'Maria Souza', ativo: true }]]);
+  const pedido = (p: Partial<NovaVenda>): NovaVenda => ({ itens: [{ produtoId: 'p1', quantidade: 1 }], pagamentos: [{ forma: 'fiado', valorCentavos: 5000 }], ...p });
+
+  it('só com cliente identificado: sem cliente, a venda é recusada', () => {
+    expect(calcularVenda(pedido({}), catalogo, { operador: BRUNO, clientes })).toEqual({
+      ok: false,
+      erros: [{ campo: 'pagamentos', mensagem: 'Venda no fiado precisa de cliente identificado. Identifique o cliente (F6).' }],
+    });
+    const r = calcularVenda(pedido({ clienteId: 'c1' }), catalogo, { operador: BRUNO, clientes });
+    expect(r.ok && [r.valor.cliente, r.valor.pagamentos]).toEqual([{ id: 'c1', nome: 'Maria Souza' }, [{ forma: 'fiado', valorCentavos: 5000 }]]);
+  });
+
+  it('pode ser parte de um pagamento dividido (o resto no dinheiro, com troco)', () => {
+    const v = validarNovaVenda({
+      itens: [{ produtoId: 'p1', quantidade: 1 }],
+      pagamentos: [
+        { forma: 'fiado', valorCentavos: 3000 },
+        { forma: 'dinheiro', valorCentavos: 2000 },
+      ],
+      recebidoDinheiroCentavos: 5000,
+      clienteId: 'c1',
+    });
+    expect(v.ok && v.valor.pagamentos.map((p) => p.forma)).toEqual(['dinheiro', 'fiado']);
+    const r = v.ok ? calcularVenda(v.valor, catalogo, { operador: BRUNO, clientes }) : null;
+    expect(r?.ok && r.valor.trocoCentavos).toBe(3000);
+    expect(descreverPagamentos([{ forma: 'dinheiro', valorCentavos: 2000 }, { forma: 'fiado', valorCentavos: 3000 }]).replace(/\u00a0/g, ' ')).toBe(
+      'Dinheiro R$ 20,00 + Fiado R$ 30,00',
+    );
   });
 });
 

@@ -170,6 +170,8 @@ export interface HistoricoCliente {
   resumo: ResumoCliente;
   /** Compras do cliente, da mais nova para a mais antiga (canceladas aparecem, mas não somam). */
   vendas: Venda[];
+  /** Quanto o cliente deve no fiado. */
+  fiadoEmAbertoCentavos: number;
 }
 
 /** O que a busca da Frente de caixa (F6) recebe: o CPF já vem mascarado do servidor (LGPD). */
@@ -180,6 +182,8 @@ export interface ClienteDaBusca {
   cpfMascarado: string;
   /** Só números, com DDD. */
   telefone: string;
+  /** Quanto deve no fiado (a Frente de caixa mostra na faixa do cliente, como no DaniPets). */
+  fiadoEmAbertoCentavos: number;
 }
 
 export interface ApiClientes {
@@ -204,6 +208,8 @@ export interface ResumoFinanceiro {
   totalCentavos: number;
   /** Vendas no cartão que a operadora ainda vai depositar (líquido, já sem a taxa). */
   aReceber: ResumoAReceber;
+  /** Compras no fiado que os clientes ainda vão pagar (vencidos = passou do prazo de 30 dias). */
+  fiado: ResumoAReceber;
 }
 
 export interface FiltroLancamentos extends FiltroVendas {

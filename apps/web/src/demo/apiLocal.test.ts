@@ -151,6 +151,7 @@ describe('financeiro', () => {
       ],
       totalCentavos: 5000,
       aReceber: { totalCentavos: 9700, quantidade: 1, vencidosCentavos: 0, vencidos: 0 },
+      fiado: { totalCentavos: 0, quantidade: 0, vencidosCentavos: 0, vencidos: 0 },
     });
     expect((await erro(bruno.resumoFinanceiro())).status).toBe(403);
     expect((await erro(bruno.listarLancamentos())).status).toBe(403);
@@ -355,7 +356,9 @@ describe('proteções do servidor (o que a tela não decide)', () => {
   it('busca de cliente do F6: feita no servidor, com o CPF já mascarado', async () => {
     const { ana, bruno } = await loja('busca');
     const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
-    expect(await bruno.buscarClientesParaVenda('maria')).toEqual([{ id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888' }]);
+    expect(await bruno.buscarClientesParaVenda('maria')).toEqual([
+      { id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888', fiadoEmAbertoCentavos: 0 },
+    ]);
     expect(JSON.stringify(await bruno.buscarClientesParaVenda('982.247'))).not.toContain('52998224725');
     expect(await bruno.buscarClientesParaVenda('   ')).toEqual([]); // sem termo, não devolve a lista inteira
   });
@@ -384,5 +387,50 @@ describe('proteções do servidor (o que a tela não decide)', () => {
     const ana = criarApiLocal({ lojaId: 'fuso', operador: ANA, atrasoMs: 0, agora: () => AGORA });
     const primeira = (await ana.listarVendas()).find((v) => v.numero === 1)!;
     expect(primeira.criadaEm).toBe('2026-11-14T12:32:00.000Z'); // 2 dias antes, 09:32 em Brasília
+  });
+});
+
+describe('fiado', () => {
+  it('só para cliente identificado; vira "a receber" na conta do cliente, aparece na busca do F6 e no resumo', async () => {
+    const { ana, bruno, petisco, mudar } = await loja('fiado');
+    await darEstoque('fiado', 10);
+    const semCliente = await erro(bruno.criarVenda({ itens: [{ produtoId: petisco.id, quantidade: 1 }], pagamentos: [{ forma: 'fiado', valorCentavos: 1000 }] }));
+    expect([semCliente.status, semCliente.message]).toEqual([409, 'Venda no fiado precisa de cliente identificado. Identifique o cliente (F6).']);
+    expect((await ana.listarVendas()).length).toBe(0); // nada foi gravado
+    expect((await ana.listarEstoque())[0]!.saldo + (await ana.listarEstoque())[1]!.saldo).toBe(20);
+
+    const maria = await bruno.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const v = await bruno.criarVenda({
+      itens: [{ produtoId: petisco.id, quantidade: 3 }],
+      pagamentos: [
+        { forma: 'dinheiro', valorCentavos: 1000 },
+        { forma: 'fiado', valorCentavos: 2000 },
+      ],
+      recebidoDinheiroCentavos: 1000,
+      clienteId: maria.id,
+    });
+    expect(v.pagamentos.map((p) => p.forma)).toEqual(['dinheiro', 'fiado']);
+    expect((await bruno.buscarClientesParaVenda('maria'))[0]!.fiadoEmAbertoCentavos).toBe(2000);
+    expect((await ana.historicoDoCliente(maria.id)).fiadoEmAbertoCentavos).toBe(2000);
+    const resumo = await ana.resumoFinanceiro();
+    expect(resumo.contas[0]!.saldoCentavos).toBe(1000); // só o dinheiro entrou; o fiado não
+    expect(resumo.fiado).toEqual({ totalCentavos: 2000, quantidade: 1, vencidosCentavos: 0, vencidos: 0 });
+    expect(resumo.aReceber.totalCentavos).toBe(0); // fiado não é cartão
+    const [f] = await ana.listarRecebiveis();
+    expect(f).toMatchObject({ forma: 'fiado', cliente: { id: maria.id, nome: 'Maria Souza' }, venceEm: '2026-12-16', taxaCentavos: 0 });
+
+    // devolução de 1 petisco (R$ 10): reparte entre dinheiro e fiado; o fiado abate do que ela deve
+    await ana.devolverItens(v.id, { itens: [{ linha: 0, quantidade: 1 }], motivo: 'troca' });
+    expect((await bruno.buscarClientesParaVenda('maria'))[0]!.fiadoEmAbertoCentavos).toBeLessThan(2000);
+
+    // passou do prazo: fiado vencido no resumo
+    mudar('2026-12-17T15:00:00Z');
+    expect((await ana.resumoFinanceiro()).fiado.vencidos).toBe(1);
+
+    // a cliente paga: o valor entra no caixa e a conta dela zera
+    const pago = await ana.receberRecebivel(f!.id, 'caixa');
+    expect(pago.situacao).toBe('recebido');
+    expect((await ana.historicoDoCliente(maria.id)).fiadoEmAbertoCentavos).toBe(0);
+    expect((await ana.listarLancamentos({ conta: 'caixa' })).find((l) => l.tipo === 'recebimento_fiado')?.descricao).toBe('Fiado • Maria Souza • venda #00001');
   });
 });

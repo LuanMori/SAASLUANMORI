@@ -79,11 +79,23 @@ describe('TelaVisaoGeral · formato', () => {
     await waitFor(() => expect(txt(saldo.querySelector('.vg-atalho-valor')?.textContent)).toBe('R$ 74,70'));
     expect(txt(saldo.querySelector('.vg-atalho-nota')?.textContent)).toBe('+ R$ 241,53 a receber no cartão');
 
+
     await userEvent.click(produtos);
     expect(aoVerProdutos).toHaveBeenCalledOnce();
     await userEvent.click(saldo);
     expect(aoVerFinanceiro).toHaveBeenCalledOnce();
     expect(detalhe()).toBeNull(); // os do lado não abrem relatório: mudam de aba
+  });
+
+  it('venda no fiado: não entra no saldo, aparece como "a receber no fiado" no card', async () => {
+    const { api, agora } = await preparar();
+    const [produto] = await api.listarProdutos();
+    const maria = await api.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    await api.criarVenda({ itens: [{ produtoId: produto!.id, quantidade: 1 }], pagamentos: [{ forma: 'fiado', valorCentavos: 2490 }], clienteId: maria.id });
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} aoVerFinanceiro={vi.fn()} />);
+    const saldo = await screen.findByRole('button', { name: /Saldo das contas/ });
+    await waitFor(() => expect(txt(saldo.querySelector('.vg-atalho-valor')?.textContent)).toBe('R$ 74,70'));
+    expect(txt(saldo.querySelector('.vg-atalho-nota')?.textContent)).toBe('+ R$ 241,53 a receber no cartão · R$ 24,90 no fiado');
   });
 
   it('Produtos ativos conta só os ativos e mostra os inativos ao lado', async () => {

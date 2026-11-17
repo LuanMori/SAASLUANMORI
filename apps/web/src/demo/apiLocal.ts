@@ -37,6 +37,7 @@ import {
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
   ehGestor,
+  fiadoEmAberto,
   formatarCodigoInterno,
   FUSO_PADRAO,
   type Lancamento,
@@ -53,9 +54,12 @@ import {
   type Operador,
   type OperadorComPapel,
   type Pagamento,
+  PRAZO_FIADO_PADRAO_DIAS,
   type ProdutoParaVenda,
   type Recebivel,
   receberRecebivel,
+  recebiveisDeCartao,
+  recebiveisDeFiado,
   resumirAReceber,
   resumirCliente,
   saldosDasContas,
@@ -346,7 +350,7 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
 
   for (const v of vendas) {
     movimentos.push(...movimentosDaVenda(v).map(comId));
-    const f = efeitosFinanceirosDaVenda(v, { taxas, fuso: opcoes.fuso });
+    const f = efeitosFinanceirosDaVenda(v, { taxas, fuso: opcoes.fuso, prazoFiadoDias: PRAZO_FIADO_PADRAO_DIAS });
     lancamentos.push(...f.lancamentos.map(comId));
     recebiveis.push(...f.recebiveis.map(comId));
     for (const d of [...v.devolucoes].sort((a, b) => a.criadaEm.localeCompare(b.criadaEm))) {
@@ -579,7 +583,7 @@ export function criarApiLocal({
         cancelamento: null,
         devolucoes: [],
       };
-      const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso });
+      const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: PRAZO_FIADO_PADRAO_DIAS });
       gravarVendas([...daLoja, venda]);
       juntarMovimentos(movimentosDaVenda(venda));
       juntarLancamentos(financeiro.lancamentos);
@@ -737,7 +741,14 @@ export function criarApiLocal({
       await preparar();
       exigirOperador();
       if (!String(termo ?? '').trim()) return [];
-      return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => ({ id: c.id, nome: c.nome, cpfMascarado: mascararCpf(c.cpf), telefone: c.telefone }));
+      const recebiveis = recebiveisDaLoja();
+      return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        cpfMascarado: mascararCpf(c.cpf),
+        telefone: c.telefone,
+        fiadoEmAbertoCentavos: fiadoEmAberto(recebiveis, c.id),
+      }));
     },
 
     async listarClientes(termo = '') {
@@ -800,7 +811,7 @@ export function criarApiLocal({
       const vendas = vendasDaLoja()
         .filter((v) => v.cliente?.id === id)
         .sort((a, b) => b.criadaEm.localeCompare(a.criadaEm));
-      return { cliente, resumo: resumirCliente(vendas, id), vendas };
+      return { cliente, resumo: resumirCliente(vendas, id), vendas, fiadoEmAbertoCentavos: fiadoEmAberto(recebiveisDaLoja(), id) };
     },
 
     // ---------------------------------------------------------------- financeiro
@@ -811,7 +822,9 @@ export function criarApiLocal({
       return {
         contas: CONTAS.map((id) => ({ id, nome: NOME_CONTA[id], saldoCentavos: saldos.porConta[id] })),
         totalCentavos: saldos.totalCentavos,
-        aReceber: resumirAReceber(recebiveisDaLoja(), diaNoFuso(agora(), fuso)),
+        aReceber: resumirAReceber(recebiveisDeCartao(recebiveisDaLoja()), diaNoFuso(agora(), fuso)),
+        // fiado vencido = passou do prazo (no dia do vencimento ainda não está atrasado)
+        fiado: resumirAReceber(recebiveisDeFiado(recebiveisDaLoja()), somarDias(diaNoFuso(agora(), fuso), -1)),
       };
     },
 

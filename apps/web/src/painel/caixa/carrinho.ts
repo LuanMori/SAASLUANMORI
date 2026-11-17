@@ -36,6 +36,8 @@ export interface ClienteNaVenda {
   nome: string;
   /** "***.456.789-**" (o CPF inteiro não fica no carrinho guardado). */
   cpfMascarado: string;
+  /** Quanto deve no fiado quando foi identificado (só para mostrar). */
+  fiadoEmAbertoCentavos?: number;
 }
 
 export interface ParteDividida {
@@ -163,9 +165,22 @@ export function sugestoesDeDinheiro(valorCentavos: number): number[] {
   return [...new Set(acima)].sort((a, b) => a - b).slice(0, 3);
 }
 
-/** Próxima forma ainda não usada no pagamento dividido (ou a primeira). */
+/** Próxima forma ainda não usada no pagamento dividido (ou a primeira). O fiado nunca vem sozinho: é escolhido. */
 export function proximaForma(usadas: readonly FormaPagamento[]): FormaPagamento {
-  return FORMAS_PAGAMENTO.find((f) => !usadas.includes(f)) ?? FORMAS_PAGAMENTO[0];
+  return FORMAS_PAGAMENTO.find((f) => f !== 'fiado' && !usadas.includes(f)) ?? FORMAS_PAGAMENTO[0];
+}
+
+/** O pagamento usa fiado (na forma única ou numa das partes)? */
+export const usaFiado = (p: EstadoPagamento): boolean => (p.dividido ? p.partes.some((x) => x.forma === 'fiado') : p.forma === 'fiado');
+
+/**
+ * Tira o fiado do pagamento (quando a venda fica sem cliente): forma única volta para Pix; no dividido,
+ * as partes no fiado saem e, se sobrar uma só, volta a ser uma forma.
+ */
+export function semFiado(p: EstadoPagamento): EstadoPagamento {
+  if (!p.dividido) return p.forma === 'fiado' ? { ...p, forma: 'pix' } : p;
+  const partes = p.partes.filter((x) => x.forma !== 'fiado');
+  return partes.length <= 1 ? { ...p, dividido: false, forma: partes[0]?.forma ?? 'pix', partes: [] } : { ...p, partes };
 }
 
 // ------------------------------------------------------------------ carrinho salvo (por pessoa)
@@ -193,9 +208,16 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
     const c = bruto.cliente;
     const cliente =
       c && textoCurto(c.id, LIMITES_VENDA.produtoIdMax) && textoCurto(c.nome, 120) && typeof c.cpfMascarado === 'string' && c.cpfMascarado.length <= 20
-        ? { id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado }
+        ? {
+            id: c.id,
+            nome: c.nome,
+            cpfMascarado: c.cpfMascarado,
+            ...(Number.isSafeInteger(c.fiadoEmAbertoCentavos) ? { fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos } : {}),
+          }
         : null;
-    return { linhas, pagamento: { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') }, cliente };
+    const pagamento: EstadoPagamento = { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') };
+    // sem cliente, o fiado guardado não vale
+    return { linhas, pagamento: cliente ? pagamento : semFiado(pagamento), cliente };
   } catch {
     return null;
   }

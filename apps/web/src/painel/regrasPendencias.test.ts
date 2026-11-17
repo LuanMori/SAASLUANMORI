@@ -3,7 +3,7 @@
 import type { Recebivel } from '@saas/core';
 import { describe, expect, it } from 'vitest';
 import type { Produto, SaldoEstoque } from '../api';
-import { pendenciasDeCartao, pendenciasDeEstoque } from './regrasPendencias';
+import { pendenciasDeCartao, pendenciasDeEstoque, pendenciasDeFiado } from './regrasPendencias';
 
 const produto = (id: string, nome: string, ativo = true): Produto => ({
   id,
@@ -39,6 +39,7 @@ describe('pendência de cartão (#10)', () => {
   const recebivel = (venceEm: string, situacao: Recebivel['situacao'] = 'pendente'): Recebivel => ({
     id: venceEm,
     forma: 'debito',
+    cliente: null,
     vendaId: 'v',
     vendaNumero: 1,
     criadoEm: '2026-11-10T12:00:00Z',
@@ -56,5 +57,32 @@ describe('pendência de cartão (#10)', () => {
     expect(p).toMatchObject({ gravidade: 'media', soGestor: true, acao: { rotulo: 'Confirmar', secao: 'financeiro' } });
     expect(txt(p!.texto)).toBe('2 recebimentos de cartão vencidos aguardando confirmação (R$ 197,00).');
     expect(pendenciasDeCartao([recebivel('2026-12-01')], '2026-11-16')).toEqual([]);
+  });
+});
+
+describe('pendência de fiado (#11)', () => {
+  const fiado = (id: string, cliente: string, venceEm: string, situacao: Recebivel['situacao'] = 'pendente'): Recebivel => ({
+    id,
+    forma: 'fiado',
+    cliente: { id: cliente, nome: cliente },
+    vendaId: id,
+    vendaNumero: 1,
+    criadoEm: '2026-10-10T12:00:00Z',
+    venceEm,
+    brutoCentavos: 5000,
+    taxaCentavos: 0,
+    estornadoBrutoCentavos: 0,
+    estornadoTaxaCentavos: 0,
+    situacao,
+    recebimento: null,
+  });
+
+  it('conta os clientes com fiado vencido (no dia do vencimento ainda não); pago não entra; fiado não vira pendência de cartão', () => {
+    const lista = [fiado('a', 'maria', '2026-11-10'), fiado('b', 'maria', '2026-11-12'), fiado('c', 'joao', '2026-11-15'), fiado('d', 'ana', '2026-11-16'), fiado('e', 'rui', '2026-11-01', 'recebido')];
+    const [p] = pendenciasDeFiado(lista, '2026-11-16');
+    expect(p).toMatchObject({ gravidade: 'media', soGestor: true, acao: { rotulo: 'Ver clientes', secao: 'clientes' } });
+    expect(txt(p!.texto)).toBe('2 clientes com fiado vencido (R$ 150,00).');
+    expect(pendenciasDeFiado([fiado('d', 'ana', '2026-11-16')], '2026-11-16')).toEqual([]);
+    expect(pendenciasDeCartao(lista, '2026-11-16')).toEqual([]);
   });
 });

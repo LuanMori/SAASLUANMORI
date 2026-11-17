@@ -10,6 +10,8 @@
 // sem rolar a página, e quem rola é só a lista de itens.
 //   rodapé:   teclas, Devolução / cancelamento e Limpar venda.
 // Cliente (F6): identificar ou cadastrar na hora; venda sem cliente continua normal.
+// Fiado (F7): só com cliente identificado; sem cliente a tela não deixa escolher e o servidor recusa.
+// Tirar o cliente da venda tira o fiado do pagamento.
 // Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
 // O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
@@ -21,7 +23,9 @@ import {
   FORMAS_PAGAMENTO,
   formatarCentavos,
   formatarNumeroVenda,
+  formaPrecisaDeCliente,
   LIMITES_VENDA,
+  MENSAGEM_FIADO_SEM_CLIENTE,
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
   semAcento,
@@ -44,7 +48,9 @@ import {
   precoDaLinha,
   proximaForma,
   salvarCarrinho,
+  semFiado,
   sugestoesDeDinheiro,
+  usaFiado,
   totaisDoCarrinho,
 } from './caixa/carrinho';
 import { ModalCliente } from './caixa/ModalCliente';
@@ -70,8 +76,10 @@ interface Props {
 const ATUALIZAR_ESTOQUE_MS = 20_000;
 
 /** Teclas de forma de pagamento (iguais às do DaniPets). */
-const TECLA_FORMA: Record<FormaPagamento, string> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10' };
-const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F8: 'pix', F9: 'debito', F10: 'credito' };
+const TECLA_FORMA: Record<FormaPagamento, string> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10', fiado: 'F7' };
+const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F7: 'fiado', F8: 'pix', F9: 'debito', F10: 'credito' };
+/** Depois de uma venda, a forma usada fica marcada para a próxima (como no DaniPets), menos o fiado. */
+const proximaVenda = (forma: FormaPagamento): FormaPagamento => (forma === 'fiado' ? 'pix' : forma);
 
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
 type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
@@ -203,6 +211,10 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   }, [partesDivididas, temDinheiro]);
 
   const definirForma = (forma: FormaPagamento) => {
+    if (formaPrecisaDeCliente(forma) && !cliente) {
+      erro(MENSAGEM_FIADO_SEM_CLIENTE);
+      return;
+    }
     setPag((p) => ({ ...p, dividido: false, forma, partes: [] }));
     if (forma === 'dinheiro') setTimeout(() => refRecebido.current?.focus(), 0);
   };
@@ -223,8 +235,22 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       return { ...p, partes: [...p.partes, { forma: proximaForma(p.partes.map((x) => x.forma)), valorTexto: '' }] };
     });
 
-  const mudarParte = (i: number, mudanca: Partial<{ forma: FormaPagamento; valorTexto: string }>) =>
+  const mudarParte = (i: number, mudanca: Partial<{ forma: FormaPagamento; valorTexto: string }>) => {
+    if (mudanca.forma && formaPrecisaDeCliente(mudanca.forma) && !cliente) {
+      erro(MENSAGEM_FIADO_SEM_CLIENTE);
+      return;
+    }
     setPag((p) => ({ ...p, partes: p.partes.map((x, j) => (j === i ? { ...x, ...mudanca } : x)) }));
+  };
+
+  /** Venda sem cliente não pode ficar no fiado: tirar o cliente tira o fiado do pagamento. */
+  function tirarCliente() {
+    setCliente(null);
+    if (usaFiado(pag)) {
+      setPag(semFiado(pag));
+      erro('Sem cliente identificado não dá para vender no fiado: o fiado saiu do pagamento. Escolha outra forma ou identifique o cliente (F6).');
+    }
+  }
 
   const removerParte = (i: number) =>
     setPag((p) => {
@@ -235,6 +261,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
   // ------------------------------------------------------------------ finalizar e limpar
   async function finalizar() {
+    if (usaFiado(pag) && !cliente) return erro(MENSAGEM_FIADO_SEM_CLIENTE);
     if (enviando || linhas.length === 0) return;
     if (pag.dividido && conta.invalido) return erro('Há um valor inválido no pagamento dividido (ex.: 12,50).');
     if (conta.faltaCentavos !== 0 && totais.totalCentavos > 0) {
@@ -253,7 +280,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       setUltimo(null);
       setCliente(null);
       // a forma usada fica marcada para a próxima venda (como no DaniPets)
-      setPag((p) => pagamentoInicial(p.dividido ? (p.partes[0]?.forma ?? p.forma) : p.forma));
+      setPag((p) => pagamentoInicial(proximaVenda(p.dividido ? (p.partes[0]?.forma ?? p.forma) : p.forma)));
       setAviso({
         tipo: 'ok',
         texto: `Venda ${formatarNumeroVenda(venda.numero)} finalizada: ${
@@ -275,7 +302,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     setLinhas([]);
     setUltimo(null);
     setCliente(null);
-    setPag((p) => pagamentoInicial(p.forma));
+    setPag((p) => pagamentoInicial(proximaVenda(p.forma)));
     setAviso(null);
     focarCodigo();
   }
@@ -403,7 +430,12 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   <b>{cliente.nome}</b>
                   <small>CPF {cliente.cpfMascarado}</small>
                 </span>
-                <button type="button" className="pdv-remover" onClick={() => setCliente(null)} aria-label="Tirar o cliente da venda" title="Tirar o cliente da venda">
+                {(cliente.fiadoEmAbertoCentavos ?? 0) > 0 && (
+                  <span className="pdv-chip" title="Compras no fiado ainda não pagas">
+                    Fiado em aberto {formatarCentavos(cliente.fiadoEmAbertoCentavos!)}
+                  </span>
+                )}
+                <button type="button" className="pdv-remover" onClick={tirarCliente} aria-label="Tirar o cliente da venda" title="Tirar o cliente da venda">
                   ×
                 </button>
               </>
@@ -548,15 +580,24 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
           <div className="pdv-pagamento">
             <div className="pdv-formas" role="group" aria-label="Forma de pagamento">
-              {FORMAS_PAGAMENTO.map((f) => (
+              {FORMAS_PAGAMENTO.map((f) => {
+                const bloqueada = formaPrecisaDeCliente(f) && !cliente;
+                return (
                 <button
                   key={f}
                   type="button"
-                  className={!pag.dividido && pag.forma === f ? 'pdv-forma pdv-forma-on' : 'pdv-forma'}
+                  className={['pdv-forma', !pag.dividido && pag.forma === f ? 'pdv-forma-on' : '', f === 'fiado' ? 'pdv-forma-fiado' : '', bloqueada ? 'pdv-forma-bloqueada' : '']
+                    .filter(Boolean)
+                    .join(' ')}
                   aria-pressed={!pag.dividido && pag.forma === f}
+                  aria-disabled={bloqueada || undefined}
+                  title={bloqueada ? 'Fiado só para cliente identificado (F6)' : undefined}
                   onClick={() => definirForma(f)}
                 >
-                  <span className="pdv-forma-nome">{NOME_FORMA_PAGAMENTO[f]}</span>
+                  <span className="pdv-forma-nome">
+                    {NOME_FORMA_PAGAMENTO[f]}
+                    {bloqueada && <span className="pdv-forma-dica"> · só com cliente identificado</span>}
+                  </span>
                   {!pag.dividido && pag.forma === f && (
                     <span className="pdv-forma-ok" aria-hidden="true">
                       ✓
@@ -564,7 +605,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   )}
                   <small>{TECLA_FORMA[f]}</small>
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             {pag.dividido && (
@@ -572,7 +614,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                 {pag.partes.map((parte, i) => (
                   <div key={i} className="pdv-parte">
                     <select value={parte.forma} onChange={(e) => mudarParte(i, { forma: e.target.value as FormaPagamento })} aria-label={`Forma da parte ${i + 1}`}>
-                      {FORMAS_PAGAMENTO.map((f) => (
+                      {FORMAS_PAGAMENTO.filter((f) => !formaPrecisaDeCliente(f) || cliente || parte.forma === f).map((f) => (
                         <option key={f} value={f}>
                           {NOME_FORMA_PAGAMENTO[f]}
                         </option>
@@ -665,6 +707,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ['F3', 'buscar'],
           ['F4', 'dinheiro'],
           ['F6', 'cliente'],
+          ['F7', 'fiado'],
           ['F8', 'pix'],
           ['F9', 'débito'],
           ['F10', 'crédito'],
@@ -725,7 +768,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         <ModalCliente
           api={api}
           aoEscolher={(c, cadastradoAgora) => {
-            setCliente({ id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado });
+            setCliente({ id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado, fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos });
             setAviso({ tipo: 'ok', texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.` });
             fecharJanela();
           }}

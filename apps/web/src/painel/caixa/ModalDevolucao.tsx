@@ -307,10 +307,12 @@ function PassoVenda({
           {acao === 'cancelar' ? (
             <>
               Volta tudo para o cliente: <b>{comValores(venda.pagamentos)}</b>. Todos os itens voltam ao estoque.
+              {venda.pagamentos.some((p) => p.forma === 'fiado') && ' O fiado sai do que o cliente deve.'}
             </>
           ) : totalDevolver > 0 && previa.ok ? (
             <>
               Volta para o cliente: <b>{formatarCentavos(totalDevolver)}</b> ({comValores(previa.valor)}).
+              {previa.valor.some((p) => p.forma === 'fiado') && ' A parte no fiado sai do que o cliente deve.'}
               {descartados.length > 0 && (
                 <> Não volta ao estoque (avaria ou vencido): {descartados.map((x) => `${x.quantidade}× ${venda.itens[x.linha]!.nome}`).join(', ')}.</>
               )}
