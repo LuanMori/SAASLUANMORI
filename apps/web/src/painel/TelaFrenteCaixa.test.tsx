@@ -148,6 +148,46 @@ describe('Frente de caixa · pagamento e finalizar', () => {
     expect(api.criarVenda.mock.calls[0]![0].recebidoDinheiroCentavos).toBe(10000);
   });
 
+  it('troco: atalhos "Exato" e quantias redondas preenchem o recebido; Enter no recebido finaliza', async () => {
+    const { api } = await montar();
+    await bipar('7891000200209'); // R$ 79,90
+    await userEvent.keyboard('{F4}');
+    const atalhos = within(screen.getByRole('group', { name: 'Atalhos do valor recebido' }));
+    expect(atalhos.getAllByRole('button').map((b) => txt(b.textContent))).toEqual(['Exato', 'R$ 80,00', 'R$ 100,00']);
+    await userEvent.click(atalhos.getByRole('button', { name: 'Exato' }));
+    expect((screen.getByLabelText(/RECEBIDO EM DINHEIRO/) as HTMLInputElement).value).toBe('79,90');
+    expect(txt(screen.getByTestId('pdv-troco').textContent)).toBe('R$ 0,00');
+    await userEvent.click(atalhos.getByRole('button', { name: /100,00/ }));
+    expect(txt(screen.getByTestId('pdv-troco').textContent)).toBe('R$ 20,10');
+    expect(document.activeElement).toBe(screen.getByLabelText(/RECEBIDO EM DINHEIRO/)); // o foco volta para o campo
+    await userEvent.keyboard('{Enter}');
+    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 79,90 em Dinheiro. Troco: R$ 20,10.');
+    expect(api.criarVenda).toHaveBeenCalledOnce();
+  });
+
+  it('troco no pagamento dividido: sobre a parte em dinheiro; com pouco dinheiro, avisa quanto falta', async () => {
+    await montar();
+    await bipar('7891000200209'); // R$ 79,90
+    await userEvent.click(screen.getByRole('button', { name: 'Dividir pagamento' }));
+    await userEvent.selectOptions(screen.getByLabelText('Forma da parte 1'), 'dinheiro');
+    await userEvent.clear(screen.getByLabelText('Valor da parte 1'));
+    await userEvent.type(screen.getByLabelText('Valor da parte 1'), '30');
+    await userEvent.selectOptions(screen.getByLabelText('Forma da parte 2'), 'pix');
+    await userEvent.type(screen.getByLabelText('Valor da parte 2'), '49,90');
+    expect(within(screen.getByRole('group', { name: 'Atalhos do valor recebido' })).getAllByRole('button').map((b) => txt(b.textContent))).toEqual([
+      'Exato',
+      'R$ 35,00',
+      'R$ 40,00',
+      'R$ 50,00',
+    ]);
+    await userEvent.type(screen.getByLabelText(/RECEBIDO EM DINHEIRO/), '20');
+    expect(txt(screen.getByTestId('pdv-troco').textContent)).toBe('Faltam R$ 10,00');
+    expect(screen.getByTestId('pdv-troco').previousElementSibling?.textContent).toBe('VALOR INSUFICIENTE');
+    await userEvent.clear(screen.getByLabelText(/RECEBIDO EM DINHEIRO/));
+    await userEvent.type(screen.getByLabelText(/RECEBIDO EM DINHEIRO/), '50');
+    expect(txt(screen.getByTestId('pdv-troco').textContent)).toBe('R$ 20,00');
+  });
+
   it('F8, F9 e F10 escolhem Pix, Débito e Crédito', async () => {
     await montar();
     await userEvent.keyboard('{F9}');

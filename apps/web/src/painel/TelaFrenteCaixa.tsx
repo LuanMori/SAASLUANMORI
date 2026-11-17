@@ -3,8 +3,11 @@
 //   esquerda: CÓDIGO (leitor; "3*código" = 3 unidades), busca por nome (F3), fita de itens
 //             (quantidade, desconto, remover) e resumo (itens, produtos, descontos, total);
 //   direita:  ÚLTIMO ITEM, TOTAL A PAGAR, formas de pagamento com atalho (F4 Dinheiro, F8 Pix,
-//             F9 Débito, F10 Crédito), dinheiro com valor recebido e troco, dividir pagamento,
+//             F9 Débito, F10 Crédito), dinheiro com valor recebido e TROCO (calculado na hora; atalhos
+//             "Exato" e quantias redondas; Enter no valor recebido finaliza), dividir pagamento,
 //             FINALIZAR (F2);
+// A tela se ajusta ao tamanho da janela (estilos.css, "caixa na altura da tela"): tudo fica visível
+// sem rolar a página, e quem rola é só a lista de itens.
 //   rodapé:   teclas, Devolução / cancelamento e Limpar venda.
 // Cliente (F6): identificar ou cadastrar na hora; venda sem cliente continua normal.
 // Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
@@ -41,6 +44,7 @@ import {
   precoDaLinha,
   proximaForma,
   salvarCarrinho,
+  sugestoesDeDinheiro,
   totaisDoCarrinho,
 } from './caixa/carrinho';
 import { ModalCliente } from './caixa/ModalCliente';
@@ -94,6 +98,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   const refCodigo = useRef<HTMLInputElement>(null);
   const refBusca = useRef<HTMLInputElement>(null);
   const refRecebido = useRef<HTMLInputElement>(null);
+  const refDinheiro = useRef<HTMLDivElement>(null);
 
   // Produto que saiu do cadastro (ou foi desativado) sai do carrinho guardado.
   useEffect(() => {
@@ -190,6 +195,13 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   }
 
   // ------------------------------------------------------------------ pagamento
+  // No pagamento dividido o painel pode rolar (janela baixa): o recebido e o troco ficam à vista,
+  // como no DaniPets.
+  const partesDivididas = pag.dividido ? pag.partes.length : 0;
+  useEffect(() => {
+    if (partesDivididas > 0 && temDinheiro) refDinheiro.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [partesDivididas, temDinheiro]);
+
   const definirForma = (forma: FormaPagamento) => {
     setPag((p) => ({ ...p, dividido: false, forma, partes: [] }));
     if (forma === 'dinheiro') setTimeout(() => refRecebido.current?.focus(), 0);
@@ -414,7 +426,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               <table className="pdv-tabela">
                 <thead>
                   <tr>
-                    <th>#</th>
+                    <th className="pdv-n">#</th>
                     <th>Produto</th>
                     <th className="numero">Quantidade</th>
                     <th className="numero">Preço</th>
@@ -544,7 +556,12 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   aria-pressed={!pag.dividido && pag.forma === f}
                   onClick={() => definirForma(f)}
                 >
-                  {NOME_FORMA_PAGAMENTO[f]}
+                  <span className="pdv-forma-nome">{NOME_FORMA_PAGAMENTO[f]}</span>
+                  {!pag.dividido && pag.forma === f && (
+                    <span className="pdv-forma-ok" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
                   <small>{TECLA_FORMA[f]}</small>
                 </button>
               ))}
@@ -580,7 +597,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             )}
 
             {temDinheiro && (
-              <div className="pdv-dinheiro">
+              <div className="pdv-dinheiro" ref={refDinheiro}>
                 <div>
                   <label className="pdv-rotulo" htmlFor="pdv-recebido">
                     RECEBIDO EM DINHEIRO{pag.dividido ? ` · PARTE DE ${formatarCentavos(conta.dinheiroCentavos)}` : ''}
@@ -590,15 +607,37 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     ref={refRecebido}
                     value={pag.recebidoTexto}
                     onChange={(e) => setPag((p) => ({ ...p, recebidoTexto: e.target.value }))}
+                    onKeyDown={(e) => {
+                      // digitou o valor e deu Enter: finaliza (como o F2)
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void finalizar();
+                      }
+                    }}
                     inputMode="decimal"
                     placeholder="0,00"
                   />
                 </div>
-                <div className="pdv-troco" role="status">
+                <div className={troco !== null && troco < 0 ? 'pdv-troco pdv-troco-falta' : 'pdv-troco'} role="status">
                   <div className="pdv-rotulo">{troco !== null && troco < 0 ? 'VALOR INSUFICIENTE' : 'TROCO'}</div>
                   <div className={troco !== null && troco < 0 ? 'pdv-troco-valor pdv-falta-dinheiro' : 'pdv-troco-valor'} data-testid="pdv-troco">
                     {troco === null ? '—' : troco < 0 ? `Faltam ${formatarCentavos(-troco)}` : formatarCentavos(troco)}
                   </div>
+                </div>
+                <div className="pdv-notas" role="group" aria-label="Atalhos do valor recebido">
+                  {[conta.dinheiroCentavos, ...sugestoesDeDinheiro(conta.dinheiroCentavos)].map((v, i) => (
+                    <button
+                      key={v}
+                      type="button"
+                      className="pdv-nota"
+                      onClick={() => {
+                        setPag((p) => ({ ...p, recebidoTexto: centavosParaTexto(v) }));
+                        refRecebido.current?.focus();
+                      }}
+                    >
+                      {i === 0 ? 'Exato' : formatarCentavos(v)}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
@@ -631,7 +670,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ['F10', 'crédito'],
           ['Esc', 'leitor'],
         ].map(([k, t]) => (
-          <span key={k} className="pdv-tecla">
+          // as teclas das formas de pagamento já aparecem nos botões: em tela estreita, somem daqui
+          <span key={k} className={FORMA_DA_TECLA[k!] ? 'pdv-tecla pdv-tecla-forma' : 'pdv-tecla'}>
             <kbd>{k}</kbd>
             {t}
           </span>

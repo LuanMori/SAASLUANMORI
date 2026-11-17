@@ -552,6 +552,8 @@ h2 { font-size: 1.05rem; }
   display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 46px; padding: 8px 12px;
   border: 1px solid #8b929c; border-radius: 10px; background: #fff; font: inherit; font-weight: 600; font-size: 0.92rem; color: var(--texto); cursor: pointer; text-align: left;
 }
+.pdv-forma-nome { margin-right: auto; }
+.pdv-forma-ok { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--primaria); color: #fff; font-size: 0.8rem; font-weight: 800; }
 .pdv-forma small { padding: 1px 6px; border-radius: 5px; background: #eceeed; color: var(--suave); font-size: 0.72rem; font-weight: 700; }
 .pdv-forma:hover { border-color: var(--primaria); }
 .pdv-forma-on { border: 2px solid var(--primaria); background: var(--primaria-clara); color: var(--primaria-escura); }
@@ -570,9 +572,16 @@ h2 { font-size: 1.05rem; }
   font: inherit; font-size: 1.15rem; text-align: right; font-variant-numeric: tabular-nums;
 }
 .pdv-dinheiro input:focus-visible, .pdv-parte input:focus-visible, .pdv-parte select:focus-visible { outline: 0; border-color: var(--primaria); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primaria) 22%, transparent); }
-.pdv-troco { text-align: right; }
-.pdv-troco-valor { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-.pdv-falta-dinheiro { color: var(--erro); font-size: 1.1rem; }
+.pdv-troco { align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 6px 12px; border-radius: 10px; text-align: right; background: #dff3e9; border: 1px solid #a9dcc3; }
+.pdv-troco .pdv-rotulo { color: var(--primaria-escura); }
+.pdv-troco-valor { font-size: 1.5rem; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--primaria-escura); }
+.pdv-troco-falta { background: var(--erro-fundo); border-color: color-mix(in srgb, var(--erro) 35%, #fff); }
+.pdv-troco-falta .pdv-rotulo, .pdv-falta-dinheiro { color: var(--erro); }
+.pdv-falta-dinheiro { font-size: 1.1rem; }
+.pdv-notas { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.pdv-nota { padding: 4px 10px; border: 1px solid #8b929c; border-radius: 999px; background: #fff; font: inherit; font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--texto); cursor: pointer; }
+.pdv-nota:hover { border-color: var(--primaria); background: var(--primaria-clara); }
+.pdv-nota:focus-visible { outline: 2px solid var(--primaria); outline-offset: 1px; }
 .pdv-dividir { border-radius: 10px; }
 .pdv-aviso { margin: 0; }
 .pdv-finalizar {
@@ -661,10 +670,103 @@ h2 { font-size: 1.05rem; }
   .vg-visor { min-height: 0; padding: 22px; }
 }
 @media (max-width: 1100px) {
+  .rel-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
   .pdv-corpo { grid-template-columns: minmax(0, 1fr); }
   .pdv-direita { position: static; }
   .pdv-fita { max-height: none; }
-  .rel-metricas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ------------------------------------------------------------------ caixa na altura da tela
+   Em computador e tablet deitado, a Frente de caixa ocupa exatamente a janela: nada fica cortado
+   e a página não rola. Quem rola é a lista de itens (e, no pagamento dividido, a lista de partes).
+   Recebido em dinheiro, TROCO e FINALIZAR ficam sempre à vista. Quanto mais baixa a janela, mais
+   compactos ficam os blocos; quanto mais alta, maior o TOTAL e mais itens aparecem.
+   Em tela estreita ou muito baixa (celular), a tela volta a rolar normalmente. */
+@media (min-width: 901px) and (min-height: 540px) {
+  #raiz:has(> .pdv-modo) { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  #raiz:has(> .pdv-modo) > .pdv-modo { flex: 1; min-height: 0; }
+  .pdv-modo .pdv-conteudo { min-height: 0; }
+  .pdv-modo .pdv { min-height: 0; height: 100%; }
+  .pdv-topo { flex: none; }
+  .pdv-rodape { flex: none; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+  .pdv-corpo { min-height: 0; grid-template-columns: minmax(0, 1.75fr) minmax(310px, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .pdv-esquerda, .pdv-direita { min-height: 0; }
+  .pdv-leitor, .pdv-busca, .pdv-cliente, .pdv-soma { flex: none; }
+  .pdv-fita { flex: 1; min-height: 0; max-height: none; }
+  .pdv-vazio { min-height: 0; height: 100%; }
+  .pdv-direita { position: static; }
+  .pdv-visor, .pdv-total, .pdv-aviso, .pdv-finalizar { flex: none; }
+  .pdv-total-valor { font-size: clamp(1.9rem, 5.4vh, 3.6rem); }
+  /* o painel de pagamento rola inteiro quando não cabe (pagamento dividido em janela baixa), como no DaniPets */
+  .pdv-pagamento { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .pdv-pagamento > * { flex: none; }
+  .pdv-aviso { max-height: 4.6em; overflow-y: auto; }
+}
+@media (min-width: 901px) and (max-width: 1240px) and (min-height: 540px) {
+  .pdv-tecla-forma { display: none; }
+}
+/* tela média (1024 a 1240 px): o nome do produto ganha espaço */
+@media (min-width: 901px) and (max-width: 1240px) {
+  .pdv-corpo { grid-template-columns: minmax(0, 1fr) minmax(300px, 36%); }
+  .pdv-tabela .pdv-n { display: none; }
+  .pdv-tabela th, .pdv-tabela td { padding-left: 8px; padding-right: 8px; }
+  .pdv-qtd small { display: none; }
+  .pdv-qtd button { width: 30px; }
+  .pdv-qtd input { width: 44px; }
+  .pdv-desc-botoes { gap: 6px; }
+}
+/* janela de altura média (notebook em tela cheia) */
+@media (min-width: 901px) and (min-height: 540px) and (max-height: 820px) {
+  .pdv-topo { padding: 7px 16px; }
+  .pdv-corpo { gap: 12px; padding: 12px; }
+  .pdv-esquerda, .pdv-direita { gap: 10px; }
+  .pdv-leitor input, .pdv-ok { height: 50px; }
+  .pdv-busca input { height: 42px; }
+  .pdv-cliente { min-height: 44px; padding-top: 5px; padding-bottom: 5px; }
+  .pdv-tabela td { padding-top: 7px; padding-bottom: 7px; }
+  .pdv-soma { padding: 9px 14px; }
+  .pdv-visor { padding: 10px 16px; }
+  .pdv-total { padding: 10px 16px; }
+  .pdv-pagamento { gap: 8px; padding: 12px; }
+  .pdv-forma { min-height: 42px; }
+  .pdv-finalizar { height: 56px; }
+  .pdv-rodape { padding: 7px 16px; }
+}
+/* janela baixa (notebook 1366×768 com as barras do navegador, ~650 px de altura) */
+@media (min-width: 901px) and (min-height: 540px) and (max-height: 700px) {
+  .pdv-topo { padding: 5px 14px; }
+  .pdv-corpo { gap: 10px; padding: 10px; }
+  .pdv-esquerda, .pdv-direita { gap: 8px; }
+  .pdv-leitor input, .pdv-ok { height: 44px; }
+  .pdv-leitor input { font-size: 1.15rem; }
+  .pdv-busca input { height: 38px; }
+  .pdv-cliente { min-height: 38px; padding-top: 3px; padding-bottom: 3px; }
+  .pdv-tabela th { padding-top: 7px; padding-bottom: 7px; }
+  .pdv-tabela td { padding-top: 5px; padding-bottom: 5px; }
+  .pdv-soma { padding: 7px 14px; }
+  /* ÚLTIMO ITEM numa linha só */
+  .pdv-visor { display: flex; align-items: baseline; gap: 10px; padding: 8px 14px; }
+  .pdv-visor-nome { flex: 1; min-width: 0; margin: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pdv-visor-conta { white-space: nowrap; font-size: 0.9rem; }
+  .pdv-total { padding: 7px 14px; }
+  .pdv-pagamento { gap: 7px; padding: 10px; }
+  .pdv-formas { gap: 6px; }
+  .pdv-forma { min-height: 36px; padding: 5px 10px; font-size: 0.88rem; }
+  .pdv-dinheiro { gap: 6px 10px; padding: 8px; }
+  .pdv-dinheiro input { height: 38px; }
+  .pdv-troco-valor { font-size: 1.3rem; }
+  .pdv-nota { padding: 2px 9px; }
+  .pdv-dividir { padding-top: 5px; padding-bottom: 5px; }
+  .pdv-aviso { padding: 6px 10px; font-size: 0.86rem; }
+  .pdv-finalizar { height: 46px; font-size: 1.05rem; }
+  .pdv-rodape { padding: 5px 14px; }
+  .pdv-rodape-botao { padding: 5px 12px; }
+}
+/* janela muito baixa: os atalhos do valor recebido dão lugar ao essencial (recebido, troco, finalizar) */
+@media (min-width: 901px) and (min-height: 540px) and (max-height: 620px) {
+  .pdv-notas { display: none; }
 }
 @media (max-width: 560px) {
   .vg-visor { padding: 20px; }

@@ -64,6 +64,10 @@ pagamento com atalho (F4 Dinheiro, F8 Pix, F9 Débito, F10 Crédito); dinheiro c
 troco; pagamento dividido; finalizar (F2); limpar venda; carrinho guardado por pessoa; desconto com
 motivo (Vendedor até 10%; acima disso, senha do Dono ou do Administrador; brinde só com o Dono);
 devolução de itens e cancelamento da venda (no mesmo dia), com o valor voltando pelas mesmas formas.
+No pagamento em dinheiro o **troco** é calculado na hora (sobre a parte em dinheiro, no pagamento dividido);
+atalhos "Exato" e quantias redondas preenchem o valor recebido, e Enter no campo finaliza. A tela do caixa
+se ajusta ao tamanho da janela: em computador e tablet deitado tudo fica à vista sem rolar a página (só a
+lista de itens rola); no celular a tela rola normalmente.
 Usuários de teste: `ana` (Dono), `caio` (Administrador), `bruno` (Vendedor), senha `demo1234`.
 As regras ficam em `packages/core/src/venda.ts`.
 

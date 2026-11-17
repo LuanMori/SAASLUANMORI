@@ -153,6 +153,16 @@ export function disponivelParaVenda(saldos: ReadonlyMap<string, number>, linhas:
   return Math.max(0, (saldos.get(produtoId) ?? 0) - noCarrinho);
 }
 
+/**
+ * Atalhos para o valor recebido em dinheiro: as próximas quantias "redondas" acima do valor a pagar
+ * (múltiplos de R$ 5, R$ 10, R$ 50 e R$ 100), até 3. Ex.: R$ 32,40 -> R$ 35, R$ 40 e R$ 50.
+ */
+export function sugestoesDeDinheiro(valorCentavos: number): number[] {
+  if (valorCentavos <= 0) return [];
+  const acima = [500, 1000, 5000, 10_000].map((nota) => (Math.floor(valorCentavos / nota) + 1) * nota);
+  return [...new Set(acima)].sort((a, b) => a - b).slice(0, 3);
+}
+
 /** Próxima forma ainda não usada no pagamento dividido (ou a primeira). */
 export function proximaForma(usadas: readonly FormaPagamento[]): FormaPagamento {
   return FORMAS_PAGAMENTO.find((f) => !usadas.includes(f)) ?? FORMAS_PAGAMENTO[0];

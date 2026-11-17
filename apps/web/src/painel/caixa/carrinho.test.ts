@@ -8,6 +8,7 @@ import {
   contaDoPagamento,
   disponivelParaVenda,
   lerCarrinhoSalvo,
+  sugestoesDeDinheiro,
   lerEntrada,
   type LinhaCarrinho,
   montarPedido,
@@ -124,6 +125,14 @@ describe('pagamento', () => {
     expect(disponivelParaVenda(saldos, noCarrinho, 'p')).toBe(1);
     expect(disponivelParaVenda(saldos, [{ produtoId: 'p', quantidade: 3, desconto: null }], 'p')).toBe(0);
     expect(disponivelParaVenda(saldos, noCarrinho, 'x')).toBe(0);
+  });
+
+  it('atalhos do valor recebido: próximas quantias redondas acima do valor (até 3)', () => {
+    expect(sugestoesDeDinheiro(3240)).toEqual([3500, 4000, 5000]);
+    expect(sugestoesDeDinheiro(7990)).toEqual([8000, 10_000]);
+    expect(sugestoesDeDinheiro(37_160)).toEqual([37_500, 38_000, 40_000]);
+    expect(sugestoesDeDinheiro(5000)).toEqual([5500, 6000, 10_000]); // valor redondo: a nota exata já é o "Exato"
+    expect(sugestoesDeDinheiro(0)).toEqual([]);
   });
 
   it('proximaForma e centavosParaTexto', () => {
