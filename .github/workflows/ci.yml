@@ -1,0 +1,119 @@
+# .github/workflows/ci.yml — confere TUDO a cada push e pull request (revisão de 18/11/2026, itens 2.1,
+# 2.2, 2.4 e 3.x). Falhou? O GitHub mostra um X vermelho no commit e manda e-mail.
+#   1. varredura de segredos nos arquivos e em TODO o histórico do git
+#   2. tipos (TypeScript) do core, da API e da tela
+#   3. testes: core, tela e API com Postgres 16 de verdade — inclui os testes de vigilância
+#      (RLS em toda tabela, role da API sem BYPASSRLS, privilégios, acentos, backup e restauração)
+#   4. o schema do Prisma bate com as migrations (db:drift)
+#   5. a demonstração (sistema-padrao-demo.html) foi gerada de novo com o código deste commit
+#   6. as imagens Docker sobem juntas (banco + migração + API + nginx) e respondem
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI: "true"
+      TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # o histórico inteiro, para a varredura de segredos
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Varredura de segredos (arquivos e histórico)
+        run: node scripts/varrer-segredos.mjs --historico
+
+      - name: pg_dump e pg_restore 16 (teste de backup)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+
+      - run: npm ci
+
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Testes (core, tela e API)
+        run: npm test
+
+      - name: Schema do Prisma igual às migrations
+        run: npm run db:drift -w @saas/api
+        env:
+          DATABASE_URL_MIGRATE: postgres://postgres:postgres@localhost:5432/saas_teste
+
+      - name: A demonstração foi gerada com este código
+        run: |
+          npm run build:demo -w @saas/web
+          git diff --exit-code --stat -- sistema-padrao-demo.html || {
+            echo "::error::sistema-padrao-demo.html está desatualizado: rode npm run build:core && npm run build:demo -w @saas/web e faça commit."
+            exit 1
+          }
+
+  docker:
+    runs-on: ubuntu-24.04
+    needs: testes
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Senhas aleatórias só para este teste
+        run: |
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "SAAS_APP_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "SAAS_BACKUP_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "COOKIE_SEGURO=false"
+            echo "PORTA_HTTP=8080"
+          } > .env.producao
+
+      - name: Constrói e sobe banco, migração, API e nginx
+        run: docker compose -f docker-compose.prod.yml --env-file .env.producao up -d --build --wait
+
+      - name: Responde pelo nginx, com os cabeçalhos de segurança
+        run: |
+          curl -fsS http://localhost:8080/api/saude | grep -q '"status":"ok"'
+          curl -fsS -D - -o /dev/null http://localhost:8080/ | tee cabecalhos.txt
+          grep -qi '^content-security-policy:.*frame-ancestors' cabecalhos.txt
+          grep -qi '^x-content-type-options: nosniff' cabecalhos.txt
+
+      - name: Backup e restauração
+        run: |
+          ./deploy/backup.sh
+          ./deploy/restaurar.sh "$(ls backups/saas-*.dump | head -1)"
+
+      - name: Logs (se algo falhou)
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.producao logs --no-color
+
+      - name: Desliga
+        if: always()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.producao down -v

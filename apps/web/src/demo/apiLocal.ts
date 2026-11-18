@@ -19,9 +19,12 @@
 // Lojas gravadas por versões anteriores da demonstração ganham o estoque e o financeiro montados
 // a partir das vendas que já tinham (uma vez só).
 //
-// NÃO é segurança: aqui não há Auth0, RLS nem servidor.
+// Usuários, senhas (com hash), bloqueio por senhas erradas e histórico: usuariosDemo.ts.
+//
+// NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
   type AcaoAutorizada,
+  anonimizarCliente,
   type Autorizacao,
   buscarClientes,
   calcularCancelamento,
@@ -29,6 +32,7 @@ import {
   calcularVenda,
   type Cliente,
   conferirCpfUnico,
+  conferirExclusaoDeCliente,
   conferirSaida,
   CONTAS,
   diaNoFuso,
@@ -36,7 +40,6 @@ import {
   devolucoesComVenda,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
-  ehGestor,
   fiadoEmAberto,
   formatarCodigoInterno,
   FUSO_PADRAO,
@@ -44,16 +47,20 @@ import {
   lancamentosManuais,
   LIMITES_CLIENTE,
   mascararCpf,
+  mensagemSemPermissao,
   type MovimentoEstoque,
   movimentoManual,
   movimentosDaDevolucao,
   movimentosDaVenda,
   movimentosDoCancelamento,
+  NOME_CLIENTE_REMOVIDO,
   NOME_CONTA,
   type NovoCliente,
   type Operador,
   type OperadorComPapel,
   type Pagamento,
+  type Permissao,
+  pode,
   PRAZO_FIADO_PADRAO_DIAS,
   type ProdutoParaVenda,
   type Recebivel,
@@ -67,6 +74,7 @@ import {
   situacaoEstoque,
   somarDias,
   TAXAS_CARTAO_PADRAO,
+  tirarNomeDoCliente,
   type TaxasCartao,
   validarEstoqueMinimo,
   validarLancamentoManual,
@@ -81,8 +89,9 @@ import {
   type Venda,
   vendasNoPeriodo,
 } from '@saas/core';
-import { type ApiPainel, ErroApi, type FiltroVendas, type Produto, type SaldoEstoque } from '../api';
-import { BLOQUEIO_MS, conferirSenhaDemo, gestoresDemo, TENTATIVAS_MAX } from './contasDemo';
+import { type ApiSistema, ErroApi, type FiltroVendas, type Produto, type SaldoEstoque } from '../api';
+import { gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja } from './armazenamento';
+import { autorizadoresDemo, conferirAutorizadorDemo, criarApiUsuariosDemo, registrarAuditoriaDemo } from './usuariosDemo';
 
 const CHAVES = {
   produtos: 'saas-demo:produtos:v1',
@@ -100,31 +109,6 @@ const CHAVES = {
   /** Lojas que já tiveram o estoque e o financeiro montados a partir das vendas antigas. */
   ecossistema: 'saas-demo:ecossistema:v1',
 } as const;
-
-type PorLoja<T> = Record<string, T[]>;
-const memoria: Record<string, unknown> = {};
-
-function ler<T>(chave: string, vazio: T): T {
-  try {
-    const texto = localStorage.getItem(chave);
-    return texto ? (JSON.parse(texto) as T) : vazio;
-  } catch {
-    // Sem localStorage (ou dado corrompido): usa a cópia em memória desta aba.
-    return (memoria[chave] as T | undefined) ?? vazio;
-  }
-}
-
-function gravar(chave: string, valor: unknown): void {
-  memoria[chave] = valor;
-  try {
-    localStorage.setItem(chave, JSON.stringify(valor));
-  } catch {
-    // Navegador sem localStorage (ex.: aba anônima restrita): fica só na memória.
-  }
-}
-
-const lerDaLoja = <T,>(chave: string, lojaId: string): T[] => ler<PorLoja<T>>(chave, {})[lojaId] ?? [];
-const gravarDaLoja = <T,>(chave: string, lojaId: string, lista: T[]) => gravar(chave, { ...ler<PorLoja<T>>(chave, {}), [lojaId]: lista });
 
 /** Apaga produtos, vendas, estoque, clientes e financeiro de todas as lojas (os exemplos não voltam). */
 export function apagarDadosDemo(): void {
@@ -172,8 +156,6 @@ export function normalizarVenda(bruta: Venda & { formaPagamento?: Pagamento['for
 // ------------------------------------------------------------------ autorizações dadas com senha
 // Ficam só na memória desta aba (como no DaniPets): recarregar a página não cria autorização.
 const autorizacoes = new Map<string, Autorizacao & { lojaId: string }>();
-// Senhas erradas na autorização, por loja e autorizador: mesma regra do login (5 erradas = 1 minuto bloqueado).
-const falhasDeAutorizacao = new Map<string, { quantidade: number; bloqueadoAte: number }>();
 
 // ------------------------------------------------------------------ exemplos
 /** estoque = quanto o produto tem depois das vendas de exemplo; minimo = aviso de estoque baixo. */
@@ -409,7 +391,7 @@ export function criarApiLocal({
   agora = () => new Date(),
   exemplos = true,
   atrasoMs = 120,
-}: OpcoesApiLocal): ApiPainel {
+}: OpcoesApiLocal): ApiSistema {
   const preparar = async (ms = atrasoMs) => {
     await esperar(ms);
     if (bloqueio) throw new ErroApi(403, bloqueio);
@@ -420,9 +402,10 @@ export function criarApiLocal({
     if (!operador) throw new ErroApi(401, 'Faça login para continuar.');
     return operador;
   };
-  const exigirGestor = (acao: string): OperadorComPapel => {
+  /** Mesma matriz de permissões do servidor (@saas/core/permissoes). */
+  const exigir = (permissao: Permissao): OperadorComPapel => {
     const quem = exigirOperador();
-    if (!ehGestor(quem.papel)) throw new ErroApi(403, `${acao}: só o Dono ou o Administrador.`);
+    if (!pode(quem.papel, permissao)) throw new ErroApi(403, mensagemSemPermissao(permissao));
     return quem;
   };
   const pessoa = (o: OperadorComPapel): Operador => ({ id: o.id, nome: o.nome });
@@ -430,7 +413,7 @@ export function criarApiLocal({
   const exigirPeriodoPermitido = (filtro: FiltroVendas) => {
     const quem = exigirOperador();
     const hoje = diaNoFuso(agora(), fuso);
-    if (!ehGestor(quem.papel) && (filtro.de !== hoje || filtro.ate !== hoje)) {
+    if (!pode(quem.papel, 'relatorios') && (filtro.de !== hoje || filtro.ate !== hoje)) {
       throw new ErroApi(403, 'Vendas de outros dias: só o Dono ou o Administrador (Relatórios).');
     }
   };
@@ -491,7 +474,17 @@ export function criarApiLocal({
     };
   };
 
+  const usuarios = criarApiUsuariosDemo({
+    lojaId,
+    operadorId: operador?.id ?? null,
+    agora,
+    atrasoMs,
+    nomeDoProduto: (id) => produtosDaLoja().find((p) => p.id === id)?.nome ?? null,
+  });
+
   return {
+    ...usuarios,
+
     // ---------------------------------------------------------------- produtos
     async listarProdutos() {
       await preparar();
@@ -530,6 +523,7 @@ export function criarApiLocal({
       const quando = agora().toISOString();
       const produto: Produto = { id: novoId(), codigoInterno, ...novo, ativo: true, criadoEm: quando, atualizadoEm: quando };
       gravarDaLoja(CHAVES.produtos, lojaId, [...daLoja, produto]);
+      if (operador) registrarAuditoriaDemo(lojaId, operador.id, 'produto.criado', { tipo: 'produto', id: produto.id }, { codigoInterno }, agora());
       return produto;
     },
 
@@ -594,29 +588,15 @@ export function criarApiLocal({
     async listarAutorizadores() {
       await preparar();
       exigirOperador();
-      return gestoresDemo();
+      return autorizadoresDemo(lojaId);
     },
 
     async autorizar({ usuarioId, senha, acao }) {
       await preparar(atrasoMs * 2);
       exigirOperador();
-      // mesma proteção do login: 5 senhas erradas seguidas bloqueiam o autorizador por 1 minuto
-      const chave = `${lojaId}:${usuarioId}`;
-      const falhas = falhasDeAutorizacao.get(chave);
-      const instante = agora().getTime();
-      if (falhas && falhas.bloqueadoAte > instante) {
-        throw new ErroApi(429, `Muitas senhas erradas. Tente de novo em ${Math.ceil((falhas.bloqueadoAte - instante) / 1000)} s.`);
-      }
-      const g = conferirSenhaDemo(usuarioId, senha);
-      if (!g) {
-        const quantidade = (falhas?.quantidade ?? 0) + 1;
-        const bloqueia = quantidade >= TENTATIVAS_MAX;
-        falhasDeAutorizacao.set(chave, { quantidade: bloqueia ? 0 : quantidade, bloqueadoAte: bloqueia ? instante + BLOQUEIO_MS : 0 });
-        if (bloqueia) throw new ErroApi(429, 'Muitas senhas erradas. As autorizações desta pessoa ficaram bloqueadas por 1 minuto.');
-        throw new ErroApi(403, 'Senha incorreta.');
-      }
-      falhasDeAutorizacao.delete(chave);
-      if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && g.papel !== 'dono') {
+      // mesma proteção do login (e a mesma contagem): 5 senhas erradas seguidas bloqueiam por 5 minutos
+      const g = await conferirAutorizadorDemo(lojaId, usuarioId, senha, agora);
+      if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g.papel, 'brinde')) {
         throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
       }
       const id = novoId();
@@ -712,7 +692,7 @@ export function criarApiLocal({
 
     async lancarMovimentoEstoque(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigirGestor('Entrada e ajuste de estoque');
+      const quem = exigir('estoque.lancar');
       const validacao = validarMovimentoManual(dados);
       if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Movimento inválido.', validacao.erros);
       const p = exigirProduto(validacao.valor.produtoId);
@@ -726,7 +706,7 @@ export function criarApiLocal({
 
     async definirEstoqueMinimo(produtoId, minimo) {
       await preparar();
-      exigirGestor('Estoque mínimo');
+      exigir('estoque.lancar');
       const p = exigirProduto(produtoId);
       const validacao = validarEstoqueMinimo(minimo);
       if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
@@ -789,7 +769,7 @@ export function criarApiLocal({
 
     async definirClienteAtivo(id, ativo) {
       await preparar(atrasoMs * 2);
-      exigirGestor('Desativar ou reativar cliente');
+      exigir('clientes.desativar');
       const daLoja = clientesDaLoja();
       const i = daLoja.findIndex((c) => c.id === id);
       if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
@@ -814,10 +794,35 @@ export function criarApiLocal({
       return { cliente, resumo: resumirCliente(vendas, id), vendas, fiadoEmAbertoCentavos: fiadoEmAberto(recebiveisDaLoja(), id) };
     },
 
+    async excluirDadosDoCliente(id) {
+      await preparar();
+      const quem = exigirOperador();
+      const daLoja = clientesDaLoja();
+      const cliente = daLoja.find((c) => c.id === id) ?? null;
+      const recebiveis = recebiveisDaLoja();
+      const permitido = conferirExclusaoDeCliente(quem.papel, cliente, fiadoEmAberto(recebiveis, id));
+      if (!permitido.ok) throw new ErroApi(cliente ? 403 : 404, permitido.erros[0]!.mensagem, permitido.erros);
+      const anonimo = anonimizarCliente(cliente!, agora());
+      gravarDaLoja(CHAVES.clientes, lojaId, daLoja.map((c) => (c.id === id ? anonimo : c)));
+      // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
+      gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
+      const doCliente = new Set(recebiveis.filter((r) => r.cliente?.id === id).map((r) => r.id));
+      gravarDaLoja(CHAVES.recebiveis, lojaId, tirarNomeDoCliente(recebiveis, id));
+      gravarDaLoja(
+        CHAVES.lancamentos,
+        lojaId,
+        lancamentosDaLoja().map((l) =>
+          l.recebivelId && doCliente.has(l.recebivelId) ? { ...l, descricao: l.descricao.split(` • ${cliente!.nome}`).join(` • ${NOME_CLIENTE_REMOVIDO}`) } : l,
+        ),
+      );
+      registrarAuditoriaDemo(lojaId, quem.id, 'cliente.dados_excluidos', null, {}, agora());
+      return anonimo;
+    },
+
     // ---------------------------------------------------------------- financeiro
     async resumoFinanceiro() {
       await preparar();
-      exigirGestor('Financeiro');
+      exigir('financeiro');
       const saldos = saldosDasContas(lancamentosDaLoja());
       return {
         contas: CONTAS.map((id) => ({ id, nome: NOME_CONTA[id], saldoCentavos: saldos.porConta[id] })),
@@ -830,7 +835,7 @@ export function criarApiLocal({
 
     async listarLancamentos(filtro = {}) {
       await preparar();
-      exigirGestor('Financeiro');
+      exigir('financeiro');
       return lancamentosDaLoja()
         .filter((l) => (!filtro.conta || l.conta === filtro.conta) && noPeriodo(l.criadoEm, filtro))
         .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -838,7 +843,7 @@ export function criarApiLocal({
 
     async listarRecebiveis(filtro = {}) {
       await preparar();
-      exigirGestor('Financeiro');
+      exigir('financeiro');
       return recebiveisDaLoja()
         .filter((r) => !filtro.situacao || r.situacao === filtro.situacao)
         .sort((a, b) => a.venceEm.localeCompare(b.venceEm) || a.criadoEm.localeCompare(b.criadoEm));
@@ -846,7 +851,7 @@ export function criarApiLocal({
 
     async receberRecebivel(id, conta) {
       await preparar(atrasoMs * 2);
-      const quem = exigirGestor('Confirmar recebimento');
+      const quem = exigir('financeiro');
       const todos = recebiveisDaLoja();
       const atual = todos.find((r) => r.id === id);
       if (!atual) throw new ErroApi(404, 'Recebimento não encontrado.');
@@ -859,7 +864,7 @@ export function criarApiLocal({
 
     async lancarNoFinanceiro(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigirGestor('Lançamento financeiro');
+      const quem = exigir('financeiro');
       const validacao = validarLancamentoManual(dados);
       if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
       const novos = lancamentosManuais(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) });
@@ -870,7 +875,7 @@ export function criarApiLocal({
 
     async definirSaldoInicial(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigirGestor('Saldo inicial');
+      const quem = exigir('financeiro');
       const validacao = validarSaldoInicial(dados, lancamentosDaLoja());
       if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
       const [lancamento] = juntarLancamentos([
@@ -892,13 +897,13 @@ export function criarApiLocal({
 
     async lerTaxasCartao() {
       await preparar();
-      exigirGestor('Taxas de cartão');
+      exigir('financeiro');
       return taxasDaLoja();
     },
 
     async salvarTaxasCartao(taxas) {
       await preparar(atrasoMs * 2);
-      exigirGestor('Taxas de cartão');
+      exigir('financeiro');
       const validacao = validarTaxasCartao(taxas);
       if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
       gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });

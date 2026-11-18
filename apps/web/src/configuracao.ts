@@ -1,16 +1,22 @@
 // apps/web/src/configuracao.ts
-// Lê a configuração de build (VITE_*). Falta algo? Mostra na tela em vez de quebrar em silêncio.
+// Configuração de build (VITE_*). Nada aqui é segredo: tudo vai para o navegador.
 const env = import.meta.env;
 
-const faltando = (['VITE_AUTH0_DOMAIN', 'VITE_AUTH0_CLIENT_ID', 'VITE_AUTH0_AUDIENCE', 'VITE_API_URL'] as const).filter(
-  (n) => !env[n],
-);
-
-export const erroConfiguracao = faltando.length ? `Configuração incompleta: ${faltando.join(', ')}` : null;
+function lojaDoEndereco(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('loja');
+  } catch {
+    return null;
+  }
+}
 
 export const configuracao = {
-  auth0Domain: env.VITE_AUTH0_DOMAIN,
-  auth0ClientId: env.VITE_AUTH0_CLIENT_ID,
-  auth0Audience: env.VITE_AUTH0_AUDIENCE,
-  apiUrl: (env.VITE_API_URL ?? '').replace(/\/+$/, ''),
+  /** Onde a API responde. Padrão: /api no MESMO endereço (o nginx e o Vite repassam para o servidor). */
+  apiUrl: (env.VITE_API_URL || '/api').replace(/\/+$/, ''),
+  /**
+   * Só quando o servidor não tem DOMINIO_BASE (desenvolvimento e teste local): o endereço da loja de
+   * teste. Ordem: VITE_LOJA, ?loja= no endereço, "lojaa" no `npm run dev`. Em produção, a loja vem
+   * do subdomínio e isto é ignorado pelo servidor.
+   */
+  lojaDev: env.VITE_LOJA || lojaDoEndereco() || (env.DEV ? 'lojaa' : null),
 };

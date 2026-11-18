@@ -1,10 +1,16 @@
 // apps/api/test/apoio/banco.ts
 // Conexões diretas ao banco de testes:
-//   poolAdmin() -> superusuário (prepara dados e confere o que foi gravado; ignora RLS)
-//   poolApp()   -> role saas_app (a mesma da API; sujeita a RLS)
+//   poolAdmin() -> superusuário (prepara dados e confere o que foi gravado; ignora RLS e a trava)
+//   poolApp()   -> role saas_app (a mesma da API; sujeita a RLS e à trava de usuários)
 import type { PapelDeLoja } from '@saas/core';
 import pg from 'pg';
+import { gerarHashSenha, usarCustoDeTeste } from '../../src/auth/senhas.js';
 import { BANCO_TESTE, URL_APP_TESTE, urlDoBanco } from './config.js';
+
+usarCustoDeTeste();
+
+/** Senha padrão das pessoas criadas pelos testes. */
+export const SENHA_TESTE = 'cavalo-bateria-grampo';
 
 export function poolAdmin(): pg.Pool {
   return new pg.Pool({ connectionString: urlDoBanco(BANCO_TESTE), max: 3 });
@@ -15,29 +21,37 @@ export function poolApp(max = 3): pg.Pool {
 }
 
 export async function limparBanco(admin: pg.Pool): Promise<void> {
-  await admin.query('TRUNCATE produtos, usuarios, lojas');
+  await admin.query('TRUNCATE auditoria, sessoes, produtos, usuarios, lojas');
 }
 
-export async function criarLoja(admin: pg.Pool, nome: string, auth0OrgId: string, ativa = true): Promise<string> {
+export async function criarLoja(admin: pg.Pool, nome: string, subdominio: string, ativa = true): Promise<string> {
   const { rows } = await admin.query<{ id: string }>(
-    'INSERT INTO lojas (id, nome, auth0_org_id, ativa) VALUES (gen_random_uuid(), $1, $2, $3) RETURNING id',
-    [nome, auth0OrgId, ativa],
+    'INSERT INTO lojas (id, nome, subdominio, ativa) VALUES (gen_random_uuid(), $1, $2, $3) RETURNING id',
+    [nome, subdominio, ativa],
   );
   return rows[0]!.id;
 }
 
-/** Faz o papel do dono cadastrando a pessoa na loja (o que o script db:usuario faz). */
-export async function cadastrarUsuario(
-  admin: pg.Pool,
-  lojaId: string,
-  auth0Sub: string,
-  papel: PapelDeLoja = 'vendedor',
-  ativo = true,
-): Promise<void> {
-  await admin.query(
-    `INSERT INTO usuarios (id, loja_id, auth0_sub, papel, ativo) VALUES (gen_random_uuid(), $1, $2, $3::papel, $4)`,
-    [lojaId, auth0Sub, papel, ativo],
+export interface DadosUsuario {
+  usuario: string;
+  nome?: string;
+  papel?: PapelDeLoja;
+  /** null = sem senha (como os usuários que vieram do Auth0). */
+  senha?: string | null;
+  ativo?: boolean;
+  /** Padrão false: a pessoa já criou a própria senha. */
+  provisoria?: boolean;
+}
+
+/** Faz o papel do Dono cadastrando a pessoa (direto no banco, como superusuário). */
+export async function criarUsuario(admin: pg.Pool, lojaId: string, d: DadosUsuario): Promise<string> {
+  const senha = d.senha === undefined ? SENHA_TESTE : d.senha;
+  const { rows } = await admin.query<{ id: string }>(
+    `INSERT INTO usuarios (id, loja_id, usuario, nome, papel, ativo, senha_hash, senha_provisoria)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4::papel, $5, $6, $7) RETURNING id`,
+    [lojaId, d.usuario, d.nome ?? `Pessoa ${d.usuario}`, d.papel ?? 'vendedor', d.ativo ?? true, senha === null ? null : await gerarHashSenha(senha), d.provisoria ?? false],
   );
+  return rows[0]!.id;
 }
 
 /** Insere produto direto no banco (como superusuário), com o próximo código interno da loja. */
@@ -58,12 +72,21 @@ export async function criarProdutoDireto(
   return rows[0]!.id;
 }
 
-/** Executa `fn` numa transação da role saas_app, com app.loja_id = lojaId (ou sem definir, se null). */
-export async function comoApp<T>(app: pg.Pool, lojaId: string | null, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+/**
+ * Executa `fn` numa transação da role saas_app, com app.loja_id = lojaId (ou sem definir, se null) e,
+ * se informado, app.usuario_id = quem está "logado" (é o que a trava de usuários confere).
+ */
+export async function comoApp<T>(
+  app: pg.Pool,
+  lojaId: string | null,
+  fn: (c: pg.PoolClient) => Promise<T>,
+  usuarioId: string | null = null,
+): Promise<T> {
   const c = await app.connect();
   try {
     await c.query('BEGIN');
     if (lojaId !== null) await c.query(`SELECT set_config('app.loja_id', $1, true)`, [lojaId]);
+    if (usuarioId !== null) await c.query(`SELECT set_config('app.usuario_id', $1, true)`, [usuarioId]);
     const r = await fn(c);
     await c.query('COMMIT');
     return r;

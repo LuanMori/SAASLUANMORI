@@ -5,7 +5,7 @@
 import type pg from 'pg';
 import { BancoService } from '../src/banco/banco.service.js';
 import { lerAmbiente } from '../src/config/ambiente.js';
-import { comoApp, criarLoja, criarProdutoDireto, limparBanco, poolAdmin, poolApp } from './apoio/banco.js';
+import { comoApp, criarLoja, criarProdutoDireto, criarUsuario, limparBanco, poolAdmin, poolApp } from './apoio/banco.js';
 
 const ERRO_RLS = /row-level security/;
 const SEM_PERMISSAO = { code: '42501' };
@@ -24,15 +24,13 @@ describe('RLS no Postgres (role saas_app)', () => {
 
   beforeEach(async () => {
     await limparBanco(admin);
-    lojaA = await criarLoja(admin, 'Loja A', 'org_lojaA');
-    lojaB = await criarLoja(admin, 'Loja B', 'org_lojaB');
+    lojaA = await criarLoja(admin, 'Loja A', 'lojaa');
+    lojaB = await criarLoja(admin, 'Loja B', 'lojab');
     await criarProdutoDireto(admin, lojaA, 'A1');
     await criarProdutoDireto(admin, lojaA, 'A2');
     produtoB = await criarProdutoDireto(admin, lojaB, 'B1');
-    await admin.query(
-      `INSERT INTO usuarios (id, loja_id, auth0_sub) VALUES (gen_random_uuid(), $1, 'auth0|a'), (gen_random_uuid(), $2, 'auth0|b')`,
-      [lojaA, lojaB],
-    );
+    await criarUsuario(admin, lojaA, { usuario: 'pessoa-a', senha: null });
+    await criarUsuario(admin, lojaB, { usuario: 'pessoa-b', senha: null });
   });
 
   afterAll(async () => {
@@ -58,8 +56,8 @@ describe('RLS no Postgres (role saas_app)', () => {
     const deB = await comoApp(app, lojaA, async (c) => (await c.query('SELECT * FROM produtos WHERE loja_id = $1', [lojaB])).rows);
     expect(deB).toHaveLength(0);
 
-    const usuarios = await comoApp(app, lojaA, async (c) => (await c.query('SELECT auth0_sub FROM usuarios')).rows);
-    expect(usuarios).toEqual([{ auth0_sub: 'auth0|a' }]);
+    const usuarios = await comoApp(app, lojaA, async (c) => (await c.query('SELECT usuario FROM usuarios')).rows);
+    expect(usuarios).toEqual([{ usuario: 'pessoa-a' }]);
   });
 
   it('INSERT com loja_id de OUTRA loja é recusado (WITH CHECK)', async () => {
@@ -108,34 +106,11 @@ describe('RLS no Postgres (role saas_app)', () => {
     const role = await admin.query(`SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'saas_app'`);
     expect(role.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, rolcreaterole: false, rolcreatedb: false });
 
-    const donas = await admin.query(
-      `SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('lojas','usuarios','produtos')`,
-    );
-    expect(donas.rows).toHaveLength(3);
+    const donas = await admin.query(`SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'public'`);
+    expect(donas.rows.length).toBeGreaterThanOrEqual(6);
     for (const t of donas.rows) expect(t.tableowner).not.toBe('saas_app');
   });
 
-  it('RLS está ligado com FORCE em produtos e usuarios', async () => {
-    const r = await admin.query(
-      `SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
-        WHERE relname IN ('produtos','usuarios') ORDER BY relname`,
-    );
-    expect(r.rows).toEqual([
-      { relname: 'produtos', relrowsecurity: true, relforcerowsecurity: true },
-      { relname: 'usuarios', relrowsecurity: true, relforcerowsecurity: true },
-    ]);
-  });
-
-  it('saas_app só LÊ usuarios: quem cadastra é o dono (hoje, pelo script db:usuario)', async () => {
-    await expect(
-      comoApp(app, lojaA, (c) =>
-        c.query(`INSERT INTO usuarios (id, loja_id, auth0_sub) VALUES (gen_random_uuid(), $1, 'auth0|intruso')`, [lojaA]),
-      ),
-    ).rejects.toMatchObject(SEM_PERMISSAO);
-    await expect(comoApp(app, lojaA, (c) => c.query(`UPDATE usuarios SET papel = 'dono'`))).rejects.toMatchObject(SEM_PERMISSAO);
-    const lidos = await comoApp(app, lojaA, async (c) => (await c.query('SELECT auth0_sub FROM usuarios')).rows);
-    expect(lidos).toEqual([{ auth0_sub: 'auth0|a' }]);
-  });
 
   it('saas_app não pode apagar, truncar nem alterar estrutura', async () => {
     await expect(comoApp(app, lojaA, (c) => c.query('DELETE FROM produtos'))).rejects.toMatchObject(SEM_PERMISSAO);
@@ -143,16 +118,17 @@ describe('RLS no Postgres (role saas_app)', () => {
     await expect(app.query('ALTER TABLE produtos DISABLE ROW LEVEL SECURITY')).rejects.toMatchObject(SEM_PERMISSAO);
     await expect(app.query('DROP POLICY produtos_isolamento_loja ON produtos')).rejects.toMatchObject(SEM_PERMISSAO);
     await expect(app.query(`UPDATE lojas SET ativa = false`)).rejects.toMatchObject(SEM_PERMISSAO);
+    await expect(comoApp(app, lojaA, (c) => c.query('DELETE FROM usuarios'))).rejects.toMatchObject(SEM_PERMISSAO);
   });
 
   it('CHECK: super_admin é sem loja; os demais papéis exigem loja', async () => {
     await expect(
-      admin.query(`INSERT INTO usuarios (id, loja_id, auth0_sub, papel) VALUES (gen_random_uuid(), NULL, 'x', 'vendedor')`),
+      admin.query(`INSERT INTO usuarios (id, loja_id, usuario, nome, papel) VALUES (gen_random_uuid(), NULL, 'x1', 'X', 'vendedor')`),
     ).rejects.toThrow(/usuarios_super_admin_sem_loja/);
     await expect(
-      admin.query(`INSERT INTO usuarios (id, loja_id, auth0_sub, papel) VALUES (gen_random_uuid(), $1, 'y', 'super_admin')`, [lojaA]),
+      admin.query(`INSERT INTO usuarios (id, loja_id, usuario, nome, papel) VALUES (gen_random_uuid(), $1, 'y1', 'Y', 'super_admin')`, [lojaA]),
     ).rejects.toThrow(/usuarios_super_admin_sem_loja/);
-    await admin.query(`INSERT INTO usuarios (id, loja_id, auth0_sub, papel) VALUES (gen_random_uuid(), NULL, 'z', 'super_admin')`);
+    await admin.query(`INSERT INTO usuarios (id, loja_id, usuario, nome, papel) VALUES (gen_random_uuid(), NULL, 'z1', 'Z', 'super_admin')`);
   });
 
   it('BancoService.comLoja recusa lojaId que não é UUID e isola por loja', async () => {

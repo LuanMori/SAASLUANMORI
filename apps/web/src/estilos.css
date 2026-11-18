@@ -815,3 +815,35 @@ h2 { font-size: 1.05rem; }
   .tabela-vendas td[data-rotulo='Lançado por']::before { content: 'por '; color: var(--suave); font-size: 0.82rem; }
   .tabela-vendas td[data-rotulo='Lançado por'] { flex-basis: 100%; }
 }
+
+/* ---------------------------------------------------------------- Usuários (item 5.4) */
+.us .vg-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.us-tabela td { vertical-align: middle; }
+.us-inativo td { color: var(--suave); }
+.us-situacao { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; background: var(--primaria-clara); color: var(--primaria-escura); }
+.us-desativado { background: #eef0f3; color: var(--suave); }
+.us-bloqueado { background: var(--erro-fundo); color: var(--erro); }
+.us-senha { background: var(--aviso-fundo); color: var(--aviso); }
+.us-acoes { white-space: nowrap; text-align: right; }
+.us-acoes .link + .link { margin-left: 14px; }
+.us-perigo { color: var(--erro); }
+.us-permissoes td.numero, .us-permissoes th.numero { text-align: center; width: 1%; white-space: nowrap; padding-left: 16px; padding-right: 16px; }
+.us-historico td[data-rotulo='Quando'] { white-space: nowrap; width: 1%; }
+.us-senha-linha { display: flex; gap: 8px; }
+.us-senha-linha input { flex: 1; min-width: 0; }
+.us-senha-mostrada { margin: 0; padding: 14px; border: 1px dashed var(--primaria); border-radius: 10px; background: var(--primaria-clara); font-size: 1.35rem; text-align: center; letter-spacing: 0.08em; user-select: all; }
+.ts-mostrar { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--suave); }
+.cs-texto { margin: -12px 0 18px; text-align: center; font-size: 0.95rem; }
+.painel-aviso { margin: 0 0 16px; }
+.sideuser-actions button:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 760px) {
+  .us-tabela thead, .us-historico thead { display: none; }
+  .us-tabela, .us-tabela tbody, .us-historico, .us-historico tbody { display: block; }
+  .us-tabela tr, .us-historico tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 16px; border-bottom: 1px solid var(--borda); }
+  .us-tabela td, .us-historico td { border: 0; padding: 0 !important; }
+  .us-tabela td[data-rotulo='Nome'] { flex-basis: 100%; font-weight: 600; }
+  .us-tabela td[data-rotulo='Último acesso']::before { content: 'último acesso '; font-size: 0.82rem; }
+  .us-acoes { flex-basis: 100%; text-align: left; margin-top: 4px; }
+  .us-historico td[data-rotulo='Quando'] { flex-basis: 100%; width: auto; white-space: normal; font-size: 0.82rem; color: var(--suave); }
+  .us-historico td[data-rotulo='Quem'] { font-weight: 600; }
+}

@@ -2,21 +2,23 @@
 // Controller fino: recebe, delega, devolve. Sem regra de negócio aqui.
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { Contexto, type ContextoRequisicao } from '../auth/contexto.js';
+import { Exige } from '../auth/decoradores.js';
 import { type ProdutoPublico, ProdutosService } from './produtos.service.js';
 
 @Controller('produtos')
 export class ProdutosController {
   constructor(private readonly produtos: ProdutosService) {}
 
-  /** GET /produtos -> { itens: Produto[] } da loja do token. */
+  /** GET /produtos -> { itens: Produto[] } da loja da sessão. */
   @Get()
   async listar(@Contexto() ctx: ContextoRequisicao): Promise<{ itens: ProdutoPublico[] }> {
     return { itens: await this.produtos.listar(ctx) };
   }
 
-  /** POST /produtos { nome, codigoBarras?, precoCentavos } -> Produto criado na loja do token (o código interno é gerado aqui). */
+  /** POST /produtos { nome, codigoBarras?, precoCentavos } -> Produto criado na loja da sessão (o código interno é gerado aqui). */
   @Post()
   @HttpCode(201)
+  @Exige('produtos.cadastrar')
   criar(@Contexto() ctx: ContextoRequisicao, @Body() corpo: unknown): Promise<ProdutoPublico> {
     return this.produtos.criar(ctx, corpo);
   }

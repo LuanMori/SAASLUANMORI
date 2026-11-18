@@ -7,10 +7,6 @@ export const ADMIN_URL = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgres://post
 export const BANCO_TESTE = 'saas_teste';
 export const SENHA_APP_TESTE = 'senha-de-teste-nao-usar-em-producao';
 
-export const AUTH0_DOMAIN_TESTE = 'teste.auth0.local';
-export const AUDIENCE_TESTE = 'https://api.teste.local';
-export const ISSUER_TESTE = `https://${AUTH0_DOMAIN_TESTE}/`;
-
 /** URL do banco `nome`, como superusuário (padrão) ou como outra role. */
 export function urlDoBanco(nome: string, credenciais?: { usuario: string; senha: string }): string {
   const url = new URL(ADMIN_URL);

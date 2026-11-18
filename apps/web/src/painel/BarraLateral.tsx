@@ -17,6 +17,8 @@ interface Props extends DadosBarra {
   secao: IdSecao;
   aoEscolher: (id: IdSecao) => void;
   aoSair: () => void;
+  /** "Trocar senha" da pessoa logada. */
+  aoTrocarSenha?: () => void;
   versao?: string;
 }
 
@@ -30,7 +32,7 @@ export function iniciais(nome: string): string {
   return (letras.join('') || nome.trim().charAt(0)).toUpperCase() || '?';
 }
 
-export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao = 'V0.1' }: Props) {
+export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocarSenha, versao = 'V0.1' }: Props) {
   const botao = (item: ItemMenu, extra = '') => (
     <button
       key={item.id}
@@ -82,7 +84,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao =
             <b>{pessoa.nome}</b>
             <small>{NOME_PAPEL[pessoa.papel]}</small>
           </div>
-          {/* Tema escuro e Trocar senha ainda não fazem nada (entram depois). */}
+          {/* O tema escuro ainda não faz nada (entra depois). */}
           <button type="button" className="sideuser-theme" aria-label="Trocar o tema (claro ou escuro)" title="Trocar o tema">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
               <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
@@ -90,7 +92,9 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao =
           </button>
         </div>
         <div className="sideuser-actions">
-          <button type="button">Trocar senha</button>
+          <button type="button" onClick={aoTrocarSenha} disabled={!aoTrocarSenha}>
+            Trocar senha
+          </button>
           <button type="button" onClick={aoSair}>
             Sair
           </button>

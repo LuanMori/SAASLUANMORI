@@ -1,0 +1,14 @@
+# .dockerignore — o que NUNCA entra numa imagem (segredos, builds locais, dados)
+.git
+**/node_modules
+**/dist
+**/dist-demo
+**/coverage
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+apps/api/src/generated
+backups
+.env.producao
+sistema-padrao-demo.html

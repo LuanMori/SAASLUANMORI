@@ -1,7 +1,7 @@
 // apps/web/src/painel/menu.tsx — itens da barra lateral, copiados do DaniPets V9.3.3:
 // "Frente de caixa" em destaque acima do menu e os outros itens em grupos
 // (Operação, Cadastros, Gestão, Sistema). Para mudar a barra, mexa só nesta lista.
-import { ehGestor, type PapelDeLoja } from '@saas/core';
+import { type PapelDeLoja, type Permissao, pode } from '@saas/core';
 import type { ReactNode } from 'react';
 
 export type IdSecao =
@@ -21,8 +21,8 @@ export interface ItemMenu {
   id: IdSecao;
   rotulo: string;
   icone: ReactNode;
-  /** Como no DaniPets (PAGE_PERM): só Dono e Administrador veem. */
-  soGestor?: boolean;
+  /** Quem não tem esta permissão não vê o item (matriz única de @saas/core/permissoes; DaniPets: PAGE_PERM). */
+  permissao?: Permissao;
 }
 
 export interface GrupoMenu {
@@ -84,7 +84,7 @@ const ITENS: readonly ItemMenu[] = [
   },
   {
     id: 'compras',
-    soGestor: true,
+    permissao: 'compras',
     rotulo: 'Compras',
     icone: (
       <Icone>
@@ -106,7 +106,7 @@ const ITENS: readonly ItemMenu[] = [
   },
   {
     id: 'financeiro',
-    soGestor: true,
+    permissao: 'financeiro',
     rotulo: 'Financeiro',
     icone: (
       <Icone>
@@ -116,7 +116,7 @@ const ITENS: readonly ItemMenu[] = [
   },
   {
     id: 'relatorios',
-    soGestor: true,
+    permissao: 'relatorios',
     rotulo: 'Relatórios',
     icone: (
       <Icone>
@@ -126,7 +126,7 @@ const ITENS: readonly ItemMenu[] = [
   },
   {
     id: 'dados-e-backup',
-    soGestor: true,
+    permissao: 'dados',
     rotulo: 'Dados e backup',
     icone: (
       <Icone>
@@ -137,6 +137,7 @@ const ITENS: readonly ItemMenu[] = [
   },
   {
     id: 'usuarios',
+    permissao: 'usuarios',
     rotulo: 'Usuários',
     icone: (
       <Icone>
@@ -179,5 +180,5 @@ export const GRUPOS_MENU: readonly GrupoMenu[] = [
 export const ITENS_MENU: readonly ItemMenu[] = [ITEM_CAIXA, ...GRUPOS_MENU.flatMap((g) => g.itens)];
 
 export function podeVer(item: ItemMenu, papel: PapelDeLoja): boolean {
-  return !item.soGestor || ehGestor(papel);
+  return !item.permissao || pode(papel, item.permissao);
 }

@@ -1,6 +1,10 @@
 // packages/core/src/index.ts
 export * from './resultado';
 export * from './papeis';
+export * from './permissoes';
+export * from './loja';
+export * from './tentativas';
+export * from './usuario';
 export * from './dinheiro';
 export * from './texto';
 export * from './produto';

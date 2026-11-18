@@ -1,6 +1,8 @@
 // apps/web/src/api.ts
-// Cliente HTTP da API. O token do Auth0 vai no Authorization; a LOJA não é
-// enviada pelo frontend em lugar nenhum — a API descobre pelo token.
+// Contratos da área logada (o que as telas usam) e o cliente HTTP do sistema real.
+// A LOJA nunca é enviada pela tela: o servidor descobre pela sessão (cookie HttpOnly, que o
+// JavaScript nem consegue ler). A demonstração implementa os mesmos contratos no navegador
+// (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
   AcaoAutorizada,
   Cliente,
@@ -15,6 +17,8 @@ import type {
   NovoCliente,
   NovoLancamentoManual,
   NovoProduto,
+  NovoUsuario,
+  AlteracaoUsuario,
   PapelDeLoja,
   PedidoCancelamento,
   PedidoDevolucao,
@@ -41,10 +45,12 @@ export interface Produto {
 
 export class ErroApi extends Error {
   constructor(
-    /** 0 = sem conexão / sem resposta. */
+    /** 0 = sem conexão / sem resposta. 501 = parte que ainda não está no servidor. */
     readonly status: number,
     mensagem: string,
     readonly erros: ErroCampo[] = [],
+    /** Para a tela reagir sem comparar texto (ex.: "senha_provisoria", "sessao_encerrada"). */
+    readonly codigo: string | null = null,
   ) {
     super(mensagem);
     this.name = 'ErroApi';
@@ -54,43 +60,6 @@ export class ErroApi extends Error {
 export interface ApiProdutos {
   listarProdutos(): Promise<Produto[]>;
   criarProduto(dados: NovoProduto): Promise<Produto>;
-}
-
-export function criarApi(urlBase: string, obterToken: () => Promise<string>): ApiProdutos {
-  async function chamar<T>(caminho: string, init: RequestInit = {}): Promise<T> {
-    let token: string;
-    try {
-      token = await obterToken();
-    } catch {
-      throw new ErroApi(401, 'Sua sessão expirou. Entre novamente.');
-    }
-
-    let resposta: Response;
-    try {
-      resposta = await fetch(`${urlBase}${caminho}`, {
-        ...init,
-        headers: { ...init.headers, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
-    } catch {
-      throw new ErroApi(0, 'Sem conexão com o servidor. Verifique a internet.');
-    }
-
-    const corpo: unknown = await resposta.json().catch(() => null);
-    if (!resposta.ok) {
-      const c = (corpo ?? {}) as { mensagem?: unknown; erros?: unknown };
-      throw new ErroApi(
-        resposta.status,
-        typeof c.mensagem === 'string' ? c.mensagem : 'Algo deu errado. Tente novamente.',
-        Array.isArray(c.erros) ? (c.erros as ErroCampo[]) : [],
-      );
-    }
-    return corpo as T;
-  }
-
-  return {
-    listarProdutos: async () => (await chamar<{ itens: Produto[] }>('/produtos')).itens,
-    criarProduto: (dados) => chamar<Produto>('/produtos', { method: 'POST', body: JSON.stringify(dados) }),
-  };
 }
 
 // ---- Vendas (Frente de caixa, Visão geral e Relatórios)
@@ -127,7 +96,7 @@ export interface ApiVendas {
   buscarVenda(numero: number): Promise<Venda>;
   criarVenda(dados: NovaVenda): Promise<Venda>;
   listarAutorizadores(): Promise<Autorizador[]>;
-  /** Confere a senha de quem autoriza e devolve o identificador da autorização. 5 senhas erradas seguidas bloqueiam o autorizador por 1 minuto (429). */
+  /** Confere a senha de quem autoriza e devolve o identificador da autorização. 5 senhas erradas seguidas bloqueiam o autorizador por 5 minutos (429), como no login. */
   autorizar(pedido: PedidoAutorizacao): Promise<{ autorizacao: string; autorizador: Autorizador }>;
   cancelarVenda(vendaId: string, pedido: PedidoCancelamento): Promise<Venda>;
   devolverItens(vendaId: string, pedido: PedidoDevolucao): Promise<{ venda: Venda; devolucao: Devolucao }>;
@@ -197,6 +166,11 @@ export interface ApiClientes {
   /** Desativa (some da busca e não entra em venda nova) ou reativa. Só Dono e Administrador. */
   definirClienteAtivo(id: string, ativo: boolean): Promise<Cliente>;
   historicoDoCliente(id: string): Promise<HistoricoCliente>;
+  /**
+   * LGPD: apaga nome, CPF e telefone do cliente (fica "Cliente removido"; as vendas continuam, sem o
+   * nome). Só o Dono, e só sem fiado em aberto (a dívida precisa do cadastro até ser paga).
+   */
+  excluirDadosDoCliente(id: string): Promise<Cliente>;
 }
 
 // ---- Financeiro (só Dono e Administrador; Vendedor recebe 403)
@@ -238,3 +212,154 @@ export interface ApiFinanceiro {
  * Visão geral e Relatórios.
  */
 export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro;
+
+// ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
+
+/** Como a tela Usuários recebe cada pessoa (nunca a senha nem o hash). */
+export interface UsuarioDaLoja {
+  id: string;
+  nome: string;
+  /** Login, minúsculo. */
+  usuario: string;
+  papel: PapelDeLoja;
+  ativo: boolean;
+  /** Senha criada ou redefinida pelo Dono: no próximo acesso a pessoa cria a dela. */
+  senhaProvisoria: boolean;
+  /** ISO; bloqueado por senhas erradas até este instante (null = não). */
+  bloqueadoAte: string | null;
+  ultimoAcessoEm: string | null;
+  criadoEm: string;
+}
+
+/** Uma linha do histórico (quem fez o quê). */
+export interface ItemAuditoria {
+  id: string;
+  acao: string;
+  /** "Usuário criado", "Entrou no sistema"... */
+  texto: string;
+  /** Nome de quem fez (null = sistema ou tentativa sem login). */
+  quem: string | null;
+  alvo: { tipo: string; id: string; nome: string | null } | null;
+  detalhes: unknown;
+  criadoEm: string;
+}
+
+export interface ApiUsuarios {
+  listarUsuarios(): Promise<UsuarioDaLoja[]>;
+  /** A senha informada é PROVISÓRIA. Só Dono e Administrador; Dono novo, só outro Dono. */
+  criarUsuario(dados: NovoUsuario): Promise<UsuarioDaLoja>;
+  alterarUsuario(id: string, mudanca: AlteracaoUsuario): Promise<UsuarioDaLoja>;
+  /** Nova senha provisória (e o bloqueio por senhas erradas some). Não vale para a própria senha. */
+  redefinirSenhaUsuario(id: string, senha: string): Promise<void>;
+  /** LGPD: só o Dono, só de usuário desativado. */
+  excluirDadosUsuario(id: string): Promise<UsuarioDaLoja>;
+  /** Do mais novo para o mais antigo. Só Dono e Administrador. */
+  listarAuditoria(limite?: number): Promise<ItemAuditoria[]>;
+}
+
+export interface ApiConta {
+  /** "Trocar minha senha" (e criar a própria no primeiro acesso). Pede a senha atual. */
+  trocarMinhaSenha(senhaAtual: string, senhaNova: string): Promise<void>;
+}
+
+/** Tudo o que a área logada usa. */
+export type ApiSistema = ApiPainel & ApiUsuarios & ApiConta;
+
+// ---- Cliente HTTP do sistema real
+
+/** Quem está logado (GET /sessao e resposta do login). */
+export interface SessaoAtual {
+  usuario: { id: string; nome: string; usuario: string; papel: PapelDeLoja };
+  loja: { nome: string; subdominio: string };
+  senhaProvisoria: boolean;
+  /** Minutos sem uso até a sessão cair (a tela sai sozinha). */
+  inatividadeMin: number;
+}
+
+export const MENSAGEM_SEM_SERVIDOR = 'Esta parte ainda não está ligada ao servidor. Por enquanto ela funciona na demonstração (sistema-padrao-demo.html).';
+
+type Chamar = <T>(caminho: string, init?: RequestInit) => Promise<T>;
+
+/**
+ * fetch com cookie (mesmo endereço: o nginx manda /api para o servidor), JSON e erros no formato
+ * do servidor ({ status, mensagem, codigo?, erros? }). 401 numa área logada chama `aoSessaoEncerrada`.
+ */
+export function criarChamador(urlBase: string, aoSessaoEncerrada: (mensagem: string) => void = () => undefined): Chamar {
+  return async function chamar<T>(caminho: string, init: RequestInit = {}): Promise<T> {
+    let resposta: Response;
+    try {
+      resposta = await fetch(`${urlBase}${caminho}`, {
+        ...init,
+        credentials: 'same-origin',
+        headers: { ...init.headers, ...(init.body ? { 'Content-Type': 'application/json' } : {}) },
+      });
+    } catch {
+      throw new ErroApi(0, 'Sem conexão com o servidor. Verifique a internet.');
+    }
+    if (resposta.status === 204) return undefined as T;
+    const corpo: unknown = await resposta.json().catch(() => null);
+    if (!resposta.ok) {
+      const c = (corpo ?? {}) as { mensagem?: unknown; erros?: unknown; codigo?: unknown };
+      const erro = new ErroApi(
+        resposta.status,
+        typeof c.mensagem === 'string' ? c.mensagem : 'Algo deu errado. Tente novamente.',
+        Array.isArray(c.erros) ? (c.erros as ErroCampo[]) : [],
+        typeof c.codigo === 'string' ? c.codigo : null,
+      );
+      if (resposta.status === 401 && (erro.codigo === 'sessao_encerrada' || erro.codigo === 'sem_sessao')) aoSessaoEncerrada(erro.message);
+      throw erro;
+    }
+    return corpo as T;
+  };
+}
+
+/** Entrada e saída (antes de existir sessão). */
+export function criarApiEntrada(urlBase: string) {
+  const chamar = criarChamador(urlBase);
+  return {
+    /** Loja da tela de entrada: pelo endereço (produção) ou pelo endereço informado (desenvolvimento). */
+    lojaDaEntrada: (loja?: string | null) =>
+      chamar<{ loja: { nome: string; subdominio: string } | null; informarLoja: boolean }>(`/sessao/loja${loja ? `?loja=${encodeURIComponent(loja)}` : ''}`),
+    /** null = ninguém logado neste navegador. */
+    sessaoAtual: async (): Promise<SessaoAtual | null> => {
+      try {
+        return await chamar<SessaoAtual>('/sessao');
+      } catch (e) {
+        if (e instanceof ErroApi && e.status === 401) return null;
+        throw e;
+      }
+    },
+    entrar: (dados: { loja?: string | null; usuario: string; senha: string }) => chamar<SessaoAtual>('/sessao', { method: 'POST', body: JSON.stringify(dados) }),
+    sair: () => chamar<void>('/sessao/sair', { method: 'POST' }),
+  };
+}
+
+/**
+ * A área logada falando com o servidor. Hoje o servidor tem produtos, usuários, histórico e a conta;
+ * o resto (vendas, estoque, clientes, financeiro) responde 501 até chegar a vez de cada parte — as
+ * telas dessas partes ficam com um aviso no sistema real (TelaPainel, `secoesDisponiveis`).
+ */
+export function criarApiServidor(urlBase: string, aoSessaoEncerrada: (mensagem: string) => void): ApiSistema {
+  const chamar = criarChamador(urlBase, aoSessaoEncerrada);
+  const json = (corpo: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(corpo) });
+  const implementado: Partial<ApiSistema> = {
+    listarProdutos: async () => (await chamar<{ itens: Produto[] }>('/produtos')).itens,
+    criarProduto: (dados) => chamar<Produto>('/produtos', json(dados)),
+    listarUsuarios: async () => (await chamar<{ itens: UsuarioDaLoja[] }>('/usuarios')).itens,
+    criarUsuario: (dados) => chamar<UsuarioDaLoja>('/usuarios', json(dados)),
+    alterarUsuario: (id, mudanca) => chamar<UsuarioDaLoja>(`/usuarios/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(mudanca) }),
+    redefinirSenhaUsuario: (id, senha) => chamar<void>(`/usuarios/${encodeURIComponent(id)}/senha`, json({ senha })),
+    excluirDadosUsuario: (id) => chamar<UsuarioDaLoja>(`/usuarios/${encodeURIComponent(id)}/excluir-dados`, { method: 'POST' }),
+    listarAuditoria: async (limite = 40) => (await chamar<{ itens: ItemAuditoria[] }>(`/auditoria?limite=${limite}`)).itens,
+    trocarMinhaSenha: async (senhaAtual, senhaNova) => {
+      await chamar<SessaoAtual>('/sessao/senha', json({ senhaAtual, senhaNova }));
+    },
+  };
+  // O que não está em `implementado` responde 501 com a mesma mensagem (sem listar 30 funções à mão).
+  return new Proxy(implementado, {
+    get(alvo, nome) {
+      if (typeof nome !== 'string' || nome === 'then') return undefined;
+      return (alvo as Record<string, unknown>)[nome] ?? (async () => Promise.reject(new ErroApi(501, MENSAGEM_SEM_SERVIDOR)));
+    },
+  }) as ApiSistema;
+}

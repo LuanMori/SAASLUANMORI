@@ -1,68 +1,118 @@
 // apps/api/scripts/cadastrar-usuario.ts
-// Cadastra (ou desativa) uma pessoa numa loja. Faz o papel do "dono cadastra"
-// até existir a tela de usuários (Fase 5.7) e o super_admin (Fase 3).
+// Cadastra o PRIMEIRO Dono de uma loja (os outros, o Dono cadastra pela tela Usuários), ou socorre
+// quem perdeu o acesso: nova senha provisória, desativar.
 //
 // Uso:
-//   npm run db:usuario -w @saas/api -- --org org_xxx --sub "auth0|abc123" --papel dono
-//   npm run db:usuario -w @saas/api -- --org org_xxx --sub "auth0|abc123" --desativar
+//   npm run db:usuario -w @saas/api -- --loja lojaa --usuario ana --nome "Ana Paula" --papel dono
+//   npm run db:usuario -w @saas/api -- --loja lojaa --usuario ana --redefinir-senha
+//   npm run db:usuario -w @saas/api -- --loja lojaa --usuario ana --desativar
 //
-// --sub é o "user_id" da pessoa no painel do Auth0 (User Management → Users).
-// A pessoa também precisa ser membro da Organization no Auth0.
+// A senha provisória é sorteada aqui e mostrada UMA vez: entregue à pessoa; no primeiro acesso ela
+// cria a própria senha (o sistema obriga). A senha nunca vai para o banco, só o hash (scrypt).
 //
 // Lê DATABASE_URL_MIGRATE. Define app.loja_id na transação: no RDS o usuário de
 // migração é dono das tabelas mas não superusuário, então também passa pelo RLS.
-// Não grava nome nem e-mail (dado pessoal só com auditoria — Fases 2/3).
+// Cada ação fica no histórico (auditoria) como feita pelo "sistema" (sem usuário).
 import 'dotenv/config';
+import { randomInt } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { type PapelDeLoja, PAPEIS_DE_LOJA, ehPapelDeLoja } from '@saas/core';
+import { ehPapelDeLoja, PAPEIS_DE_LOJA, type PapelDeLoja, validarLogin, validarNovoUsuario, validarSenhaNova, validarSubdominio } from '@saas/core';
 import pg from 'pg';
+import { gerarHashSenha } from '../src/auth/senhas.js';
 
 export type OpcoesCadastro =
-  | { org: string; sub: string; papel: PapelDeLoja; desativar?: false }
-  | { org: string; sub: string; desativar: true };
+  | { loja: string; usuario: string; nome?: string; papel?: PapelDeLoja; acao: 'cadastrar' }
+  | { loja: string; usuario: string; acao: 'redefinir-senha' | 'desativar' };
 
-export async function cadastrarUsuario(connectionString: string, opcoes: OpcoesCadastro): Promise<string> {
-  const sub = opcoes.sub.trim();
-  if (sub === '' || sub.length > 128) throw new Error('--sub inválido.');
-  if (!opcoes.desativar && !ehPapelDeLoja(opcoes.papel)) {
-    throw new Error(`--papel deve ser: ${PAPEIS_DE_LOJA.join(', ')}.`);
+export interface ResultadoCadastro {
+  resumo: string;
+  /** Só quando uma senha provisória foi criada. */
+  senhaProvisoria?: string;
+}
+
+const LETRAS = 'abcdefghjkmnpqrstuvwxyz23456789'; // sem 0/o, 1/l/i: fácil de ditar
+
+/** 12 letras e números sorteados (~59 bits): só serve até a pessoa criar a dela. */
+export function sortearSenhaProvisoria(usuario: string, nome: string): string {
+  for (;;) {
+    const s = Array.from({ length: 12 }, () => LETRAS[randomInt(LETRAS.length)]).join('');
+    if (validarSenhaNova(s, { usuario, nome }).ok) return s;
   }
+}
+
+function erroDe(r: { ok: false; erros: { mensagem: string }[] }): Error {
+  return new Error(r.erros.map((e) => e.mensagem).join(' '));
+}
+
+export async function cadastrarUsuario(connectionString: string, opcoes: OpcoesCadastro): Promise<ResultadoCadastro> {
+  const loja = validarSubdominio(opcoes.loja);
+  if (!loja.ok) throw new Error('--loja inválida: use o endereço da loja (ex.: lojaa).');
+  const login = validarLogin(opcoes.usuario);
+  if (!login.ok) throw erroDe(login);
 
   const cliente = new pg.Client({ connectionString });
   await cliente.connect();
   try {
-    const loja = await cliente.query<{ id: string; nome: string }>(
-      'SELECT id, nome FROM lojas WHERE auth0_org_id = $1',
-      [opcoes.org],
-    );
-    const l = loja.rows[0];
-    if (!l) throw new Error(`Nenhuma loja cadastrada com a organization ${opcoes.org}.`);
+    const l = (await cliente.query<{ id: string; nome: string }>('SELECT id, nome FROM lojas WHERE subdominio = $1', [loja.valor])).rows[0];
+    if (!l) throw new Error(`Nenhuma loja com o endereço "${loja.valor}". Rode o db:seed antes.`);
 
     await cliente.query('BEGIN');
     await cliente.query(`SELECT set_config('app.loja_id', $1, true)`, [l.id]);
+    const atual = (
+      await cliente.query<{ id: string; nome: string; papel: string }>('SELECT id, nome, papel FROM usuarios WHERE loja_id = $1 AND usuario = $2', [
+        l.id,
+        login.valor,
+      ])
+    ).rows[0];
+    const auditar = (acao: string, id: string, detalhes: object = {}) =>
+      cliente.query(
+        `INSERT INTO auditoria (id, loja_id, usuario_id, acao, alvo_tipo, alvo_id, detalhes) VALUES (gen_random_uuid(), $1, NULL, $2, 'usuario', $3, $4)`,
+        [l.id, acao, id, JSON.stringify({ origem: 'script', ...detalhes })],
+      );
+    const encerrarSessoes = (id: string) =>
+      cliente.query('UPDATE sessoes SET encerrada_em = now() WHERE loja_id = $1 AND usuario_id = $2 AND encerrada_em IS NULL', [l.id, id]);
 
-    let resumo: string;
-    if (opcoes.desativar) {
-      const r = await cliente.query(
-        'UPDATE usuarios SET ativo = false, atualizado_em = now() WHERE loja_id = $1 AND auth0_sub = $2',
-        [l.id, sub],
-      );
-      if (r.rowCount === 0) throw new Error(`${sub} não está cadastrado na loja ${l.nome}.`);
-      resumo = `${sub} desativado na loja ${l.nome}.`;
+    let resultado: ResultadoCadastro;
+    if (opcoes.acao !== 'cadastrar') {
+      if (!atual) throw new Error(`${login.valor} não está cadastrado na loja ${l.nome}.`);
+      if (opcoes.acao === 'desativar') {
+        await cliente.query('UPDATE usuarios SET ativo = false, atualizado_em = now() WHERE id = $1', [atual.id]);
+        await encerrarSessoes(atual.id);
+        await auditar('usuario.desativado', atual.id);
+        resultado = { resumo: `${login.valor} desativado na loja ${l.nome}.` };
+      } else {
+        const senha = sortearSenhaProvisoria(login.valor, atual.nome);
+        await cliente.query(
+          `UPDATE usuarios SET senha_hash = $2, senha_provisoria = true, tentativas_erradas = 0, bloqueado_ate = NULL, atualizado_em = now() WHERE id = $1`,
+          [atual.id, await gerarHashSenha(senha)],
+        );
+        await encerrarSessoes(atual.id);
+        await auditar('usuario.senha_redefinida', atual.id);
+        resultado = { resumo: `Nova senha provisória para ${login.valor} na loja ${l.nome}.`, senhaProvisoria: senha };
+      }
+    } else if (atual) {
+      if (opcoes.papel !== undefined && !ehPapelDeLoja(opcoes.papel)) throw new Error(`--papel deve ser: ${PAPEIS_DE_LOJA.join(', ')}.`);
+      const nome = opcoes.nome?.trim() || atual.nome;
+      const papel = opcoes.papel ?? atual.papel;
+      await cliente.query('UPDATE usuarios SET nome = $2, papel = $3::papel, ativo = true, atualizado_em = now() WHERE id = $1', [atual.id, nome, papel]);
+      await auditar('usuario.alterado', atual.id, { papel });
+      resultado = { resumo: `${login.valor} atualizado na loja ${l.nome} como ${papel} (a senha não mudou).` };
     } else {
-      await cliente.query(
-        `INSERT INTO usuarios (id, loja_id, auth0_sub, papel, ativo)
-         VALUES (gen_random_uuid(), $1, $2, $3::papel, true)
-         ON CONFLICT (loja_id, auth0_sub)
-         DO UPDATE SET papel = EXCLUDED.papel, ativo = true, atualizado_em = now()`,
-        [l.id, sub, opcoes.papel],
+      const senha = sortearSenhaProvisoria(login.valor, opcoes.nome ?? '');
+      const v = validarNovoUsuario({ nome: opcoes.nome, usuario: login.valor, papel: opcoes.papel, senha });
+      if (!v.ok) throw erroDe(v);
+      const { rows } = await cliente.query<{ id: string }>(
+        `INSERT INTO usuarios (id, loja_id, usuario, nome, papel, ativo, senha_hash, senha_provisoria)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4::papel, true, $5, true) RETURNING id`,
+        [l.id, v.valor.usuario, v.valor.nome, v.valor.papel, await gerarHashSenha(senha)],
       );
-      resumo = `${sub} cadastrado na loja ${l.nome} como ${opcoes.papel}.`;
+      await auditar('usuario.criado', rows[0]!.id, { papel: v.valor.papel });
+      resultado = { resumo: `${login.valor} cadastrado na loja ${l.nome} como ${v.valor.papel}.`, senhaProvisoria: senha };
     }
 
     await cliente.query('COMMIT');
-    return resumo;
+    return resultado;
   } catch (erro) {
     await cliente.query('ROLLBACK').catch(() => undefined);
     throw erro;
@@ -74,23 +124,33 @@ export async function cadastrarUsuario(connectionString: string, opcoes: OpcoesC
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { values } = parseArgs({
     options: {
-      org: { type: 'string' },
-      sub: { type: 'string' },
+      loja: { type: 'string' },
+      usuario: { type: 'string' },
+      nome: { type: 'string' },
       papel: { type: 'string' },
+      'redefinir-senha': { type: 'boolean', default: false },
       desativar: { type: 'boolean', default: false },
     },
   });
   const url = process.env.DATABASE_URL_MIGRATE;
-  if (!url || !values.org || !values.sub || (!values.desativar && !values.papel)) {
-    console.error('Uso: --org org_xxx --sub "auth0|..." (--papel dono|administrador|vendedor | --desativar)');
+  if (!url || !values.loja || !values.usuario || (values['redefinir-senha'] && values.desativar)) {
+    console.error('Uso: --loja lojaa --usuario ana (--nome "Ana Paula" --papel dono | --redefinir-senha | --desativar)');
     console.error('Precisa de DATABASE_URL_MIGRATE.');
     process.exit(1);
   }
-  const opcoes: OpcoesCadastro = values.desativar
-    ? { org: values.org, sub: values.sub, desativar: true }
-    : { org: values.org, sub: values.sub, papel: values.papel as PapelDeLoja };
+  const acao = values.desativar ? 'desativar' : values['redefinir-senha'] ? 'redefinir-senha' : 'cadastrar';
+  const opcoes: OpcoesCadastro =
+    acao === 'cadastrar'
+      ? { loja: values.loja, usuario: values.usuario, nome: values.nome, papel: values.papel as PapelDeLoja | undefined, acao }
+      : { loja: values.loja, usuario: values.usuario, acao };
   cadastrarUsuario(url, opcoes)
-    .then((msg) => console.log(msg))
+    .then((r) => {
+      console.log(r.resumo);
+      if (r.senhaProvisoria) {
+        console.log(`Senha provisória: ${r.senhaProvisoria}`);
+        console.log('Entregue à pessoa. No primeiro acesso ela cria a própria senha. Esta senha não aparece de novo.');
+      }
+    })
     .catch((e: unknown) => {
       console.error('Falha:', e instanceof Error ? e.message : e);
       process.exit(1);

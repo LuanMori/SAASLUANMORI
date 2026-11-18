@@ -76,7 +76,7 @@ export function validarNovoProduto(entrada: unknown): Resultado<NovoProduto> {
   if (typeof dados.nome !== 'string') {
     erros.push({ campo: 'nome', mensagem: 'Informe o nome do produto.' });
   } else {
-    nome = dados.nome.trim();
+    nome = dados.nome.normalize('NFC').trim();
     if (nome === '') {
       erros.push({ campo: 'nome', mensagem: 'Informe o nome do produto.' });
     } else if (nome.length > LIMITES_PRODUTO.nomeMax) {

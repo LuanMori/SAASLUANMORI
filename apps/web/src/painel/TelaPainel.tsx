@@ -1,22 +1,28 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
-// Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Produtos e estoque e
-// Relatórios (todas as vendas). As outras seções ficam em branco até chegar a vez delas.
+// Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Produtos e estoque,
+// Relatórios (todas as vendas) e Usuários. As outras seções ficam em branco até chegar a vez delas.
 // A Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets);
 // o botão "← Painel" volta para a Visão geral.
-import { ehGestor, FUSO_PADRAO } from '@saas/core';
+// Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
+import { ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
 import { useState } from 'react';
-import type { ApiPainel } from '../api';
+import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
+import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
+import { TelaUsuarios } from './TelaUsuarios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
+import { ModalTrocarSenha } from './TrocarSenha';
 
 interface Props extends DadosBarra {
-  api: ApiPainel;
+  api: ApiSistema;
+  /** Quem está logado. `id` e `usuario` entram na tela Usuários e na troca de senha. */
+  pessoa: { id?: string; nome: string; usuario?: string; papel: PapelDeLoja };
   aoSair: () => void;
   secaoInicial?: IdSecao;
   /** Fuso da loja (define o que é "hoje"). */
@@ -29,6 +35,14 @@ interface Props extends DadosBarra {
   pendencias?: readonly Pendencia[] | null;
   /** Onde guardar o carrinho da Frente de caixa desta pessoa (loja + pessoa). null = não guarda. */
   chaveCarrinho?: string | null;
+  /** Minutos sem uso até sair sozinho (null = não sai). */
+  inatividadeMin?: number | null;
+  /** O que fazer quando sai por inatividade (padrão: aoSair). */
+  aoInatividade?: () => void;
+  /** A sessão terminou de fora (ex.: errou a senha atual 5 vezes ao trocar a senha). */
+  aoSessaoEncerrada?: (mensagem: string) => void;
+  /** Seções que já funcionam (no sistema real, as ligadas ao servidor). null = todas. */
+  secoesDisponiveis?: readonly IdSecao[] | null;
 }
 
 export function TelaPainel({
@@ -42,14 +56,23 @@ export function TelaPainel({
   intervaloMs,
   pendencias = null,
   chaveCarrinho = null,
+  inatividadeMin = null,
+  aoInatividade,
+  aoSessaoEncerrada,
+  secoesDisponiveis = null,
 }: Props) {
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  usarInatividade(inatividadeMin, aoInatividade ?? aoSair);
+
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
   const permitido = item ? podeVer(item, pessoa.papel) : false;
+  const disponivel = (id: IdSecao) => secoesDisponiveis === null || secoesDisponiveis.includes(id);
   const pode = (id: IdSecao) => {
     const alvo = ITENS_MENU.find((i) => i.id === id);
-    return alvo ? podeVer(alvo, pessoa.papel) : false;
+    return alvo ? podeVer(alvo, pessoa.papel) && disponivel(id) : false;
   };
   // Pendência "só gestor" some para o Vendedor; nas outras, o botão só aparece para quem pode abrir a aba de destino.
   const gestor = ehGestor(pessoa.papel);
@@ -57,8 +80,12 @@ export function TelaPainel({
     pendencias
       ?.filter((p) => !p.soGestor || gestor)
       .map((p) => (p.acao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
+  const escolher = (id: IdSecao) => {
+    setAviso(null);
+    setSecao(id);
+  };
 
-  if (permitido && secao === 'frente-de-caixa') {
+  if (permitido && disponivel(secao) && secao === 'frente-de-caixa') {
     return (
       <div className="painel-app pdv-modo">
         <main className="pdv-conteudo" aria-label="Frente de caixa">
@@ -76,27 +103,61 @@ export function TelaPainel({
     );
   }
 
+  const ver = (id: IdSecao) => permitido && secao === id && disponivel(id);
   return (
     <div className="painel-app">
-      <BarraLateral loja={loja} pessoa={pessoa} secao={secao} aoEscolher={setSecao} aoSair={aoSair} />
+      <BarraLateral loja={loja} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
       <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
-        {permitido && secao === 'visao-geral' && (
+        {aviso && (
+          <p className="alerta painel-aviso" role="status">
+            {aviso}
+          </p>
+        )}
+        {permitido && !disponivel(secao) && (
+          <div className="rel">
+            <header className="vg-topo">
+              <div>
+                <h1>{item?.rotulo}</h1>
+                <p className="alerta" role="status">
+                  {MENSAGEM_SEM_SERVIDOR}
+                </p>
+              </div>
+            </header>
+          </div>
+        )}
+        {ver('visao-geral') && (
           <TelaVisaoGeral
             api={api}
             nome={pessoa.nome}
             fuso={fuso}
             agora={agora}
             intervaloMs={intervaloMs}
-            aoVerProdutos={pode('produtos-e-estoque') ? () => setSecao('produtos-e-estoque') : undefined}
-            aoVerFinanceiro={pode('financeiro') ? () => setSecao('financeiro') : undefined}
-            aoVerRelatorios={pode('relatorios') ? () => setSecao('relatorios') : undefined}
+            aoVerProdutos={pode('produtos-e-estoque') ? () => escolher('produtos-e-estoque') : undefined}
+            aoVerFinanceiro={pode('financeiro') ? () => escolher('financeiro') : undefined}
+            aoVerRelatorios={pode('relatorios') ? () => escolher('relatorios') : undefined}
             pendencias={pendenciasVisiveis}
-            aoIrPara={setSecao}
+            aoIrPara={escolher}
           />
         )}
-        {permitido && secao === 'produtos-e-estoque' && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
-        {permitido && secao === 'relatorios' && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
+        {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
+        {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
+        {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
       </main>
+      {trocandoSenha && (
+        <ModalTrocarSenha
+          api={api}
+          pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '' }}
+          aoFechar={() => setTrocandoSenha(false)}
+          aoTrocar={() => {
+            setTrocandoSenha(false);
+            setAviso('Senha trocada. Use a senha nova no próximo acesso e nas autorizações do caixa.');
+          }}
+          aoBloquear={(mensagem) => {
+            setTrocandoSenha(false);
+            (aoSessaoEncerrada ?? (() => aoSair()))(mensagem);
+          }}
+        />
+      )}
     </div>
   );
 }

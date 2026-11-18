@@ -3,46 +3,49 @@
 > "Sistema Padrão" é o nome provisório do repositório; na tela aparece o que está em
 > `apps/web/src/marca.ts` (hoje "Nome da empresa").
 
-## Onde o projeto está (16/11/2026)
+## Onde o projeto está (18/11/2026)
 
 | Parte | Estado |
 |---|---|
-| **Servidor** (`apps/api`) | Fase -1 (esqueleto): banco, Auth0, isolamento entre lojas e cadastro de produtos. **Ainda não tem** vendas, estoque, clientes nem financeiro. |
-| **App com servidor** (`apps/web/src/App.tsx`, o que o `teste-local.bat` abre) | Login pelo Auth0 e a tela de produtos. Mostra só o que o servidor já tem. |
-| **Demonstração** (`sistema-padrao-demo.html`) | O painel completo feito até agora (entrada com usuário e senha, Visão geral, Frente de caixa, Produtos e estoque, Relatórios), com os dados no navegador. É onde as telas e as regras são testadas antes de irem para o servidor. |
-| **Regras** (`packages/core`) | As mesmas para a demonstração e para o servidor: quando o servidor ganhar vendas, estoque, clientes e financeiro, usa estas funções. |
+| **Servidor** (`apps/api`) | Login próprio (usuário e senha por loja), sessões, tela **Usuários**, histórico (auditoria), produtos, isolamento entre lojas no banco (RLS) vigiado por teste, `/saude`, logs em JSON. **Ainda não tem** vendas, estoque, clientes nem financeiro. |
+| **Sistema real** (`apps/web/src/App.tsx`) | Entrada com usuário e senha, "Crie a sua senha" no primeiro acesso, aba Usuários funcionando com o servidor. As abas que o servidor ainda não tem mostram um aviso. |
+| **Demonstração** (`sistema-padrao-demo.html`) | O painel completo feito até agora (Visão geral, Frente de caixa, Produtos e estoque, Relatórios, **Usuários**), com os dados no navegador. É onde as telas e as regras são testadas antes de irem para o servidor. |
+| **Regras** (`packages/core`) | As mesmas para a demonstração e para o servidor: permissões, senha e bloqueio, usuários, venda, estoque, clientes, financeiro. |
+| **Produção** | Docker (`docker-compose.prod.yml`), backup e restauração (`deploy/`), CI no GitHub a cada push. Passo a passo em `docs/deploy.md`. |
 
-**Decisão em aberto: o login de verdade.** A tela de entrada pedida pelo Luan é usuário e senha, com a loja
-vinda do subdomínio (`apps/web/src/telas/TelaEntrada.tsx`, `apps/web/src/subdominio.ts`). O servidor hoje
-autentica pelo Auth0 (`docs/AUTH0.md`). Falta decidir como juntar os dois (Auth0 com usuário e senha por loja,
-ou login próprio) antes de levar o painel para o servidor. Até lá, o app com servidor continua com o login do Auth0.
+A revisão de 18/11/2026 (o documento da reunião) está respondida item por item em
+**[`docs/REVISAO-2026-11-18.md`](docs/REVISAO-2026-11-18.md)**.
 
 ## Estrutura
 
 ```
-packages/core   @saas/core  regras puras (sem DOM, sem I/O, sem dependência de runtime) — Vitest
-apps/api        @saas/api   NestJS 12 + Prisma 7 + PostgreSQL (RLS) + Auth0 — Jest + Supertest
-apps/web        @saas/web   React 19 + Vite 8 + TypeScript + Auth0 SPA SDK — Vitest + Testing Library
-docs/AUTH0.md               passo a passo do Auth0 (Organizations)
+packages/core   @saas/core  regras puras (sem DOM, sem I/O) — Vitest, cobertura ≥ 80%
+apps/api        @saas/api   NestJS 12 + Prisma 7 + PostgreSQL 16 (RLS) — Jest + Supertest, Postgres de verdade
+apps/web        @saas/web   React 19 + Vite 8 + TypeScript — Vitest + Testing Library
+deploy/                     backup.sh e restaurar.sh (produção)
+scripts/                    varrer-segredos.mjs (CI)
+docs/                       LOGIN, SEGURANCA, deploy, backup, lgpd/, decisoes/, PENDENCIAS, REVISAO-2026-11-18
 ```
 
 ## Como o isolamento entre lojas funciona
 
 ```
-navegador ── token Auth0 (org_id) ──▶ API
-                                       │ 1. GuardaAutenticacao valida o JWT (RS256, iss, aud, exp)
-                                       │ 2. org_id → loja ativa (tabela lojas)
-                                       │ 3. BancoService.comLoja(lojaId):
-                                       │      BEGIN; set_config('app.loja_id', lojaId, true); ...; COMMIT
-                                       ▼
-                                   Postgres (role saas_app, sem BYPASSRLS, não é dona das tabelas)
-                                       RLS: loja_id = app_loja_atual()   ← vale mesmo se a query esquecer o filtro
+navegador ── cookie HttpOnly (sessão) ──▶ nginx ──/api──▶ API
+                                                          │ 1. sessão conferida no banco (loja ativa, pessoa ativa, 30 min sem uso = fim)
+                                                          │ 2. a loja vem SÓ da sessão (nunca do corpo, da URL ou de cabeçalho)
+                                                          │ 3. BancoService.comLoja(lojaId, fn, usuarioId):
+                                                          │      BEGIN; set_config('app.loja_id', ..., true); ...; COMMIT
+                                                          ▼
+                                                      Postgres (role saas_app: sem BYPASSRLS, não é dona das tabelas)
+                                                          RLS: loja_id = app_loja_atual()   ← vale mesmo se a query esquecer o filtro
 ```
 
 - **A loja nunca vem do cliente**: nem corpo, nem URL, nem header. Campos desconhecidos no corpo → 400.
 - **Sem `app.loja_id` definido, o banco devolve zero linhas** (falha fechada). Valor inválido → erro.
 - `set_config(..., true)` = vale só dentro da transação: não vaza pelo pool de conexões.
 - `FORCE ROW LEVEL SECURITY`: nem a role dona das tabelas escapa (só superusuário, que a API nunca usa).
+- **A API se recusa a subir** se a conexão ignorar o RLS ou se alguma tabela de loja estiver sem RLS.
+  Teste de vigilância no CI olha o banco inteiro a cada push. Detalhes: `docs/SEGURANCA.md`.
 
 ## Demonstração em um arquivo só (sem instalar nada)
 
@@ -71,6 +74,12 @@ lista de itens rola); no celular a tela rola normalmente.
 Usuários de teste: `ana` (Dono), `caio` (Administrador), `bruno` (Vendedor), senha `demo1234`.
 As regras ficam em `packages/core/src/venda.ts`.
 
+Na aba **Usuários** (Ana ou Caio) dá para cadastrar a equipe com **senha provisória** (quem recebe cria a
+própria no primeiro acesso), alterar nome e papel, desativar, criar senha nova e, como Dono, excluir os dados
+de quem foi desativado (LGPD). Abaixo ficam "O que cada papel pode fazer" (a matriz de permissões) e o
+**Histórico** (quem fez o quê). "Trocar senha", na barra lateral, troca a própria senha. As senhas da
+demonstração ficam guardadas só como hash, como no servidor.
+
 Cada venda da Frente de caixa alimenta o resto do sistema, como no DaniPets:
 
 - **Estoque**: a venda dá baixa e é recusada sem estoque ("Estoque insuficiente para X. Disponível: N un.");
@@ -93,9 +102,10 @@ Cada venda da Frente de caixa alimenta o resto do sistema, como no DaniPets:
   devolução no período aparece também "Vendas líquidas" (bruto menos devoluções), como no DaniPets. Os filtros
   de quem vendeu, cliente e pagamento valem também para as devoluções e as taxas.
 
-Proteções que o servidor terá e a demonstração já imita: o Vendedor só recebe as vendas de hoje (outros dias são
-dos Relatórios, do Dono e do Administrador; para devolver, ele busca a venda pelo número); 5 senhas erradas
-seguidas na autorização bloqueiam aquele autorizador por 1 minuto, como no login.
+Proteções que o servidor tem (ou terá) e a demonstração já imita: o Vendedor só recebe as vendas de hoje (outros
+dias são dos Relatórios, do Dono e do Administrador; para devolver, ele busca a venda pelo número); 5 senhas
+erradas seguidas bloqueiam o usuário por 5 minutos — no login e na senha de quem autoriza no caixa, que é a
+mesma contagem; a sessão termina depois de 30 minutos sem uso.
 
 As abas Clientes e Financeiro ainda não têm tela (ficam em branco até a vez delas), mas o código está pronto:
 regras em `packages/core/src/cliente.ts` e `financeiro.ts`; chamadas da API em `apps/web/src/api.ts`
@@ -104,8 +114,9 @@ demonstração ganham o estoque e o financeiro montados a partir das vendas que 
 O card **Pendências** da Visão geral já existe, mas o que entra nele ainda está **a definir**
 (sugestões em `docs/PENDENCIAS.md`); na demonstração, "Usuários de teste" → "Mostrar pendências de exemplo".
 
-Serve para testar telas e regras. **Não testa segurança**: Auth0, RLS e isolamento
-de verdade só existem com API + Postgres (abaixo). Para gerar o arquivo de novo depois de mudar
+Serve para testar telas e regras. **Não testa segurança**: cookie HttpOnly, RLS e isolamento
+de verdade só existem com API + Postgres (abaixo). A demonstração tem CSP (só roda o próprio código e não
+fala com servidor nenhum) e começa com o BOM UTF-8, para os acentos abrirem certos em qualquer programa. Para gerar o arquivo de novo depois de mudar
 a tela: `npm run build:core && npm run build:demo -w @saas/web`.
 
 ## Rodar localmente
@@ -113,89 +124,95 @@ a tela: `npm run build:core && npm run build:demo -w @saas/web`.
 ### Windows: um clique
 
 Com o Node 22+ instalado e o Docker Desktop aberto, dê dois cliques em **`teste-local.bat`**.
-Ele sobe o Postgres, cria os `.env` (se não existirem), instala as dependências, aplica as
-migrations, cadastra as lojas, abre API e web em janelas separadas e abre o navegador.
+Ele sobe o Postgres, cria os `.env` (e acerta os da época do Auth0), instala as dependências, aplica as
+migrations, cadastra as lojas, **cria o Dono e mostra a senha provisória**, abre API e web e o navegador.
 
 ```powershell
-.\teste-local.ps1 -PularInstalacao                              # próximas vezes (sem npm install)
-.\teste-local.ps1 -PularInstalacao -Org org_xxx -Sub "auth0|..." -Papel dono   # cadastra uma pessoa
-.\teste-local.ps1 -Parar                                        # para o banco
+.\teste-local.ps1 -PularInstalacao                   # próximas vezes (sem npm install)
+.\teste-local.ps1 -PularInstalacao -RedefinirSenha   # esqueceu a senha do Dono
+.\teste-local.ps1 -Parar                             # para o banco
 ```
-
-O login só funciona depois de preencher o Auth0 nos `.env` (docs/AUTH0.md).
 
 ### Passo a passo (qualquer sistema)
 
-Pré-requisitos: Node 22+, Docker (ou um Postgres 16+ local), um tenant Auth0 configurado (docs/AUTH0.md).
+Pré-requisitos: Node 22+ e Docker (ou um Postgres 16+ local).
 
 ```bash
 docker compose up -d db
 npm install
-cp apps/api/.env.example apps/api/.env      # preencha
-cp apps/web/.env.example apps/web/.env      # preencha
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
 npm run build:core
 
-npm run db:migrate   -w @saas/api   # prisma migrate deploy
-npm run db:drift     -w @saas/api   # confere schema.prisma x banco (tem que sair sem diferenças)
-npm run db:app-role  -w @saas/api   # liga login da role saas_app com a senha do .env
-npm run db:seed      -w @saas/api   # cadastra as lojas (org_id do Auth0)
-# cadastra cada pessoa na loja (só entra quem foi cadastrado — ver docs/AUTH0.md, passo 5)
-npm run db:usuario   -w @saas/api -- --org org_xxx --sub "auth0|..." --papel dono
+npm run db:migrate     -w @saas/api   # prisma migrate deploy
+npm run db:drift       -w @saas/api   # confere schema.prisma x banco (tem que sair sem diferenças)
+npm run db:app-role    -w @saas/api   # liga o login da role saas_app com a senha do .env
+npm run db:backup-role -w @saas/api   # role do backup (só leitura)
+npm run db:seed        -w @saas/api   # lojas do SEED_LOJAS ("Loja A=lojaa;Loja B=lojab")
+npm run db:usuario     -w @saas/api -- --loja lojaa --usuario dono --nome "Dono da Loja" --papel dono   # mostra a senha provisória
 
 # terminal 1
 npm run dev:build -w @saas/api      # compila em modo watch
 # terminal 2
 npm run dev -w @saas/api            # http://localhost:3000
 # terminal 3
-npm run dev -w @saas/web            # http://localhost:5173
+npm run dev -w @saas/web            # http://localhost:5173 (o /api vai para a API)
 ```
 
-Reverter a última migration: `npm run db:migrate:down -w @saas/api -- --confirmar`.
+Login: usuário `dono` e a senha provisória mostrada pelo `db:usuario`. Reverter a última migration:
+`npm run db:migrate:down -w @saas/api -- --confirmar`. Produção: `docs/deploy.md`.
 
 ## Testes
 
 ```bash
 npm test          # core + api + web
+node scripts/varrer-segredos.mjs --historico   # segredos nos arquivos e em todo o histórico
 ```
 
 Os testes da API usam **Postgres de verdade** (o do docker-compose): recriam o banco `saas_teste`,
-aplicam as migrations com `prisma migrate deploy` e conectam como `saas_app`. O Auth0 é
-substituído por um JWKS local — a verificação do token é o mesmo código de produção.
+aplicam as migrations com `prisma migrate deploy` e conectam como `saas_app`. O CI
+(`.github/workflows/ci.yml`) roda tudo isso a cada push, e ainda sobe as imagens Docker juntas.
 
 | Arquivo | O que prova |
 |---|---|
-| `apps/api/test/isolamento.spec.ts` | produto da Loja A não aparece na Loja B; loja_id sempre o do token; lojaId no corpo recusado; mesmo código de barras em lojas diferentes; sequência de código interno por loja; mesma pessoa em 2 lojas; 30 requisições concorrentes sem mistura |
-| `apps/api/test/rls-banco.spec.ts` | query direta sem loja_id → 0 linhas; WITH CHECK bloqueia INSERT/UPDATE em outra loja; sem vazamento no pool; saas_app sem superuser/BYPASSRLS/DELETE/DDL e sem escrita em usuarios; FORCE RLS ligado |
-| `apps/api/test/autenticacao.spec.ts` | 401 para token ausente/forjado/expirado/alg none/HS256/aud ou iss errados; 403 sem org, org desconhecida, loja inativa, pessoa não cadastrada pelo dono (e nada é criado), cadastro em outra loja, usuário desativado |
-| `apps/api/test/codigos.spec.ts` | código interno 0001, 0002…, continua do maior, 9999 → 10000, pula código de barras, 25 cadastros simultâneos sem repetir nem pular; código de barras só números, repetido → 409 com o nome do produto, igual a código interno → 409; preço zero recusado pela API e pelo banco |
-| `apps/api/test/migracoes.spec.ts` | aplica tudo → reverte uma a uma (conferindo cada estado) → reaplica; migration 2 numera produtos antigos por loja; para sem apagar nada se houver código com letra |
-| `apps/api/test/scripts.spec.ts` | `db:usuario` cadastra, muda papel, desativa, reativa; recusa loja desconhecida, papel inválido e super_admin |
-| `packages/core/test/*` | validação de produto, formato do código interno, conversão de dinheiro, venda, estoque, clientes e financeiro (cobertura ≥ 80% obrigatória) |
-| `apps/web/src/telas/*.test.tsx` | tela de entrada (usuário e senha, loja pelo subdomínio); produtos: lista com códigos, cadastro sem campo de código interno, Enter do leitor vai para o preço, validação local, erro 409, bloqueio 403, queda de rede |
-| `apps/web/src/painel/*.test.tsx` | barra lateral e permissões por papel, Visão geral, Frente de caixa (leitor, pagamento, desconto, estoque, cliente F6, devolução), Produtos e estoque, Relatórios, regras de pendência |
-| `apps/web/src/demo/apiLocal.test.ts` | a venda alimenta estoque, clientes e financeiro; cancelamento e devolução desfazem; loja de versão anterior é convertida; proteções (Vendedor só hoje, bloqueio da senha de autorização, CPF mascarado na busca) |
+| `apps/api/test/vigilancia.spec.ts` | **o banco inteiro**: toda tabela de loja com RLS forçado e a policy padrão; privilégios da `saas_app` numa lista fechada; sem superusuário/BYPASSRLS (nem herdado); a API não sobe com conexão insegura ou tabela sem RLS |
+| `apps/api/test/autenticacao.spec.ts` | login: cookie HttpOnly/SameSite/`__Host-`, só o hash no banco, mesma resposta para usuário inexistente, 5 erradas = 5 min (também para quem não existe), 30 tentativas simultâneas, limite por IP, desativado, sem senha, sessão de 30 min e 12 h, sair, senha provisória, trocar senha, origem de outro site, loja pelo endereço |
+| `apps/api/test/usuarios.spec.ts` | tela Usuários: Dono/Administrador/Vendedor, login repetido, ninguém se desativa, dois Donos ao mesmo tempo, desativar derruba a sessão, nova senha, excluir dados (LGPD), histórico; **e a trava no banco** conectando direto como `saas_app` |
+| `apps/api/test/isolamento.spec.ts` | produto da Loja A não aparece na B; loja_id sempre o da sessão; mesmo login em duas lojas com senhas separadas; cookie com a loja trocada não entra; 30 pedidos simultâneos sem mistura |
+| `apps/api/test/rls-banco.spec.ts` | query direta sem loja_id → 0 linhas; WITH CHECK; sem vazamento no pool; sem DELETE/DDL; CHECK do super_admin |
+| `apps/api/test/codigos.spec.ts` | código interno 0001…, 25 cadastros simultâneos, código de barras só números e sem repetir, preço maior que zero |
+| `apps/api/test/acentos-e-logs.spec.ts` | acentos de ponta a ponta (bytes UTF-8 no banco, NFC); logs em JSON sem senha, cookie ou nome |
+| `apps/api/test/backup.spec.ts` | `pg_dump` com a role de backup → `pg_restore` num banco novo → mesmas linhas e RLS; com a role da API o dump falha |
+| `apps/api/test/migracoes.spec.ts` | aplica → reverte uma a uma → reaplica igual; migrations 2 e 3 convertem dados antigos (Auth0 → login próprio) |
+| `apps/api/test/scripts.spec.ts` | `db:usuario` (senha provisória sorteada, redefinir, desativar) e `db:seed` |
+| `packages/core/test/*` | produto, dinheiro, venda, estoque, clientes (e exclusão LGPD), financeiro, permissões, senha, bloqueio, usuários, endereço da loja |
+| `apps/web/src/**/*.test.ts(x)` | sistema real (login, senha provisória, 401 volta à entrada), cliente HTTP, tela Usuários, trocar senha, saída por inatividade, barra lateral, Visão geral, Frente de caixa, Produtos e estoque, Relatórios, demonstração |
 
 ## Regras de produto já decididas (Luan, 11/11/2026 — iguais ao DaniPets V9.2)
 
-- **Só entra quem o dono cadastrou.** Ser membro da Organization no Auth0 não basta; a pessoa precisa estar em `usuarios` daquela loja. Até a tela de usuários (Fase 5.7), o cadastro é pelo script `db:usuario`.
+- **Só entra quem o dono cadastrou.** Desde 18/11/2026, pela aba **Usuários** (o primeiro Dono, pelo script `db:usuario`). Ver `docs/LOGIN.md`.
 - **Preço de venda maior que zero.** Brinde é dado na venda, com 100% de desconto e autorização do Dono (Fase 4).
 - **Código interno é do sistema:** maior código da loja + 1, com 4 dígitos (0001… 9999, 10000…). Cada loja tem a sua sequência.
 - **Código de barras: opcional, só números**, único na loja. Nenhum código de barras pode ser igual a um código interno da mesma loja (o leitor aceita os dois).
 
-## Decisões técnicas da Fase -1
+## Decisões técnicas
+
+Registros completos em `docs/decisoes/` (auditoria, login próprio, transação e concorrência, roles do banco, implantação).
 
 | Decisão | Por quê |
 |---|---|
-| Duas conexões: `DATABASE_URL_MIGRATE` (dona) e `DATABASE_URL_APP` (`saas_app`) | Dono de tabela e superusuário ignoram RLS. A API roda com uma role que não consegue nem desligar o RLS. |
+| Duas conexões: `DATABASE_URL_MIGRATE` (dona) e `DATABASE_URL_APP` (`saas_app`) | Dono de tabela e superusuário ignoram RLS. A API roda com uma role que não consegue nem desligar o RLS — e confere isso ao subir. |
 | `set_config(..., true)` dentro de transação, via `BancoService.comLoja()` | `SET` comum grudaria na conexão do pool e vazaria para a requisição seguinte. |
 | `PrismaClient` privado no `BancoService` | Não existe outro caminho de código para tabela de tenant. |
-| RLS também em `usuarios` | Tem e-mail/nome (LGPD). Custa uma policy. |
-| API só lê `usuarios` (sem INSERT/UPDATE no banco) | Se a API for enganada, ainda assim não consegue se cadastrar nem promover alguém a dono. |
+| Login próprio com sessão no servidor (cookie `__Host-` HttpOnly) | Dá para encerrar na hora; o JavaScript não lê o cookie; o banco guarda só o hash. Ver `docs/decisoes/0002-login-proprio.md`. |
+| Senha com scrypt (do próprio Node) | Sem dependência nova; custo guardado junto com o hash. |
+| Trava de usuários no banco (trigger) | Se a API errar, ainda assim não promove ninguém a Dono nem deixa a loja sem Dono. |
+| Auditoria só de acréscimo, sem dado pessoal nos detalhes | O histórico não se apaga pela API, e a exclusão LGPD vale também para ele. |
+| Permissões numa matriz só (`@saas/core/permissoes.ts`) | A mesma regra no servidor, nas telas, no menu e na demonstração. |
 | Código interno gerado sob trava por loja (`pg_advisory_xact_lock`) | Dois vendedores cadastrando ao mesmo tempo não pegam o mesmo número; lojas diferentes não esperam umas pelas outras. |
-| Migration 2 desliga o `FORCE RLS` só durante ela | No RDS o usuário de migração não é superusuário e ficaria preso ao RLS (não veria as linhas para numerar). A `saas_app` fica sob RLS o tempo todo. |
+| Migrations desligam o `FORCE RLS` só durante elas | No RDS o usuário de migração não é superusuário e ficaria preso ao RLS. A `saas_app` fica sob RLS o tempo todo. |
 | Down migrations em `down.sql` + script | Prisma Migrate não tem "down" nativo. O teste garante que a reversão funciona. |
-| Dinheiro em centavos (`INTEGER`) | Sem erro de ponto flutuante. Conversão texto→centavos sem passar por float. |
+| Dinheiro em centavos (`INTEGER`) | Sem erro de ponto flutuante. |
 | Validação no `@saas/core`, usada por API e web | Mesma regra nos dois lados; a API continua sendo a autoridade. |
-| `jose` para validar JWT | ESM nativo (NestJS 12 é ESM), mantida, usada pelos SDKs oficiais do Auth0. |
 | Guarda global (APP_GUARD) | Toda rota nasce protegida; esquecer o decorator não abre nada. |
-| Tokens do Auth0 só em memória no navegador | Nada em localStorage (menos exposição a XSS). |
+| Tela e API no mesmo endereço (nginx repassa `/api`) | Cookie SameSite=Strict funciona e o CORS nem entra em jogo. |

@@ -1,20 +1,22 @@
-﻿# teste-local.ps1 — sobe o Sistema Padrão no Windows para teste local.
+﻿# teste-local.ps1 — sobe o Sistema Padrão no Windows para teste local (login próprio: usuário e senha).
 #
 # Uso (no PowerShell, na pasta do projeto) — ou dê dois cliques em teste-local.bat:
-#   .\teste-local.ps1                         # banco + dependências + migrations + seed + API + web
-#   .\teste-local.ps1 -PularInstalacao        # não roda npm install (mais rápido nas próximas vezes)
-#   .\teste-local.ps1 -Org org_xxx -Sub "auth0|123" -Papel dono   # também cadastra a pessoa na loja
-#   .\teste-local.ps1 -Parar                  # para o banco (feche as janelas da API e da web)
+#   .\teste-local.ps1                       # banco + dependências + migrations + lojas + 1º Dono + API + web
+#   .\teste-local.ps1 -PularInstalacao      # não roda npm install (mais rápido nas próximas vezes)
+#   .\teste-local.ps1 -RedefinirSenha       # nova senha provisória para o Dono (esqueceu a senha)
+#   .\teste-local.ps1 -Usuario maria -Nome "Maria Souza" -Loja lojab   # outro Dono, em outra loja
+#   .\teste-local.ps1 -Parar                # para o banco (feche as janelas da API e da web)
 #
-# Pré-requisitos: Node 22+ e Docker Desktop aberto. Para o login funcionar, o Auth0
-# precisa estar configurado nos .env (ver docs/AUTH0.md).
+# Pré-requisitos: Node 22+ e Docker Desktop aberto.
+# Os outros usuários (vendedores, administradores) o Dono cadastra na tela, aba Usuários.
 
 param(
   [switch]$PularInstalacao,
   [switch]$Parar,
-  [string]$Org,
-  [string]$Sub,
-  [ValidateSet('dono', 'administrador', 'vendedor')][string]$Papel = 'dono'
+  [switch]$RedefinirSenha,
+  [string]$Loja = 'lojaa',
+  [string]$Usuario = 'dono',
+  [string]$Nome = 'Dono da Loja'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,6 +43,11 @@ function Silencioso([string]$programa, [string[]]$argumentos) {
   try { & $programa @argumentos *> $null } catch { $global:LASTEXITCODE = 1 }
 }
 
+# Lê e grava arquivos em UTF-8 sem BOM (o Node lê o .env assim).
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+function LerTexto([string]$caminho) { [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot $caminho), $utf8) }
+function GravarTexto([string]$caminho, [string]$texto) { [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot $caminho), $texto, $utf8) }
+
 # ---------------------------------------------------------------- parar
 if ($Parar) {
   Rodar 'Parando o banco' 'docker' @('compose', 'stop', 'db')
@@ -66,7 +73,8 @@ Silencioso 'docker' @('info')
 if ($LASTEXITCODE -ne 0) { Falha 'O Docker não está rodando. Abra o Docker Desktop, espere ficar pronto e rode de novo.' }
 Write-Host 'Docker ok'
 
-if (($Org -and -not $Sub) -or ($Sub -and -not $Org)) { Falha 'Para cadastrar uma pessoa, informe -Org e -Sub juntos.' }
+if ($Loja -notmatch '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$') { Falha "-Loja '$Loja' inválida: use o endereço da loja (letras minúsculas, números e hífen), ex.: lojaa" }
+if ($Usuario -notmatch '^[a-z0-9][a-z0-9._-]{1,39}$') { Falha "-Usuario '$Usuario' inválido: letras minúsculas e números, sem espaço (pode ponto, hífen e _)." }
 
 # ---------------------------------------------------------------- banco
 Passo 'Subindo o Postgres (docker compose)'
@@ -98,16 +106,23 @@ foreach ($app in 'api', 'web') {
   }
 }
 
-$envApi = Get-Content 'apps/api/.env' -Raw
-$envWeb = Get-Content 'apps/web/.env' -Raw
-$auth0Pendente = ($envApi -match 'seu-tenant') -or ($envWeb -match 'seu-tenant') -or
-                 ($envWeb -match '(?m)^VITE_AUTH0_CLIENT_ID=\s*$')
-if ($auth0Pendente) {
-  Aviso 'O Auth0 ainda não está configurado nos .env. Tudo vai subir, mas o login não vai funcionar.'
-  Aviso 'Preencha apps/api/.env e apps/web/.env seguindo docs/AUTH0.md.'
+# .env da época do Auth0 (antes de 18/11/2026): acerta o que mudou, guardando uma cópia do antigo.
+$envApi = LerTexto 'apps/api/.env'
+if ($envApi -match 'AUTH0_DOMAIN' -or $envApi -match 'org_[A-Za-z0-9]') {
+  Copy-Item 'apps/api/.env' 'apps/api/.env.antes-login-proprio' -Force
+  $envApi = [regex]::Replace($envApi, '(?m)^AUTH0_[A-Z_]*=.*\r?\n?', '')
+  $envApi = [regex]::Replace($envApi, '(?m)^SEED_LOJAS=.*$', 'SEED_LOJAS=Loja A=lojaa;Loja B=lojab')
+  Aviso 'apps/api/.env era do Auth0: tirei as linhas AUTH0_* e troquei SEED_LOJAS (cópia em apps/api/.env.antes-login-proprio).'
 }
-if ($envApi -match 'org_xxxxxxxx') {
-  Aviso 'SEED_LOJAS em apps/api/.env ainda tem org_ de exemplo. Troque pelos org_id reais das suas Organizations.'
+if ($envApi -notmatch '(?m)^COOKIE_SEGURO=') { $envApi = $envApi.TrimEnd() + "`nCOOKIE_SEGURO=false`n" }
+if ($envApi -notmatch '(?m)^SAAS_BACKUP_DB_PASSWORD=') { $envApi = $envApi.TrimEnd() + "`nSAAS_BACKUP_DB_PASSWORD=troque-por-outra-senha-longa`n" }
+GravarTexto 'apps/api/.env' $envApi
+
+$envWeb = LerTexto 'apps/web/.env'
+if ($envWeb -match 'VITE_AUTH0' -or $envWeb -match '(?m)^VITE_API_URL=http') {
+  Copy-Item 'apps/web/.env' 'apps/web/.env.antes-login-proprio' -Force
+  Copy-Item 'apps/web/.env.example' 'apps/web/.env' -Force
+  Aviso 'apps/web/.env era do Auth0: recriei a partir do .env.example (cópia em apps/web/.env.antes-login-proprio).'
 }
 
 # ---------------------------------------------------------------- dependências e banco
@@ -115,10 +130,13 @@ if (-not $PularInstalacao) { Npm 'Instalando dependências (npm install)' @('ins
 Npm 'Compilando @saas/core' @('run', 'build:core')
 Npm 'Aplicando migrations' @('run', 'db:migrate', '-w', '@saas/api')
 Npm 'Ligando o login da role saas_app' @('run', 'db:app-role', '-w', '@saas/api')
+Npm 'Preparando a role do backup (só leitura)' @('run', 'db:backup-role', '-w', '@saas/api')
 Npm 'Cadastrando as lojas (SEED_LOJAS)' @('run', 'db:seed', '-w', '@saas/api')
 
-if ($Org) {
-  Npm "Cadastrando $Sub como $Papel na loja $Org" @('run', 'db:usuario', '-w', '@saas/api', '--', '--org', $Org, '--sub', $Sub, '--papel', $Papel)
+if ($RedefinirSenha) {
+  Npm "Nova senha provisória para $Usuario ($Loja)" @('run', 'db:usuario', '-w', '@saas/api', '--', '--loja', $Loja, '--usuario', $Usuario, '--redefinir-senha')
+} else {
+  Npm "Cadastrando o Dono $Usuario na loja $Loja" @('run', 'db:usuario', '-w', '@saas/api', '--', '--loja', $Loja, '--usuario', $Usuario, '--nome', $Nome, '--papel', 'dono')
 }
 
 Npm 'Compilando a API' @('run', 'build', '-w', '@saas/api')
@@ -134,6 +152,7 @@ NovaJanela 'SAAS - API (compilação)' 'npm run dev:build -w @saas/api'
 NovaJanela 'SAAS - API :3000' 'npm run dev -w @saas/api'
 NovaJanela 'SAAS - Web :5173' 'npm run dev -w @saas/web'
 
+$endereco = "http://localhost:5173/?loja=$Loja"
 Write-Host -NoNewline 'Esperando a web responder'
 $webPronta = $false
 for ($i = 0; $i -lt 90; $i++) {
@@ -144,16 +163,16 @@ for ($i = 0; $i -lt 90; $i++) {
 }
 Write-Host ''
 
-if ($webPronta) { Start-Process 'http://localhost:5173' }
+if ($webPronta) { Start-Process $endereco }
 else { Aviso 'A web ainda não respondeu. Veja a janela "SAAS - Web :5173".' }
 
 Write-Host ''
 Write-Host 'Pronto!' -ForegroundColor Green
-Write-Host '  Web: http://localhost:5173'
-Write-Host '  API: http://localhost:3000'
+Write-Host "  Web: $endereco"
+Write-Host '  API: http://localhost:3000/saude'
 Write-Host ''
-Write-Host 'Só entra quem foi cadastrado na loja. Depois de tentar o primeiro login, pegue o'
-Write-Host '"sub" do usuário no painel do Auth0 (User Management > Users) e rode:'
-Write-Host '  .\teste-local.ps1 -PularInstalacao -Org org_xxx -Sub "auth0|..." -Papel dono'
+Write-Host "Entre com o usuário '$Usuario' e a senha provisória mostrada acima (ela só aparece na primeira vez)."
+Write-Host 'No primeiro acesso o sistema pede para criar a sua senha. A equipe você cadastra na aba Usuários.'
+Write-Host 'Esqueceu a senha?  .\teste-local.ps1 -PularInstalacao -RedefinirSenha'
 Write-Host ''
 Write-Host 'Para parar: feche as 3 janelas e rode  .\teste-local.ps1 -Parar'

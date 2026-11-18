@@ -117,7 +117,7 @@ export function validarMovimentoManual(entrada: unknown): Resultado<MovimentoMan
   } else if (tipo === 'entrada' && q < 0) {
     erros.push({ campo: 'quantidade', mensagem: 'Entrada é sempre positiva. Para tirar do estoque, use ajuste.' });
   }
-  const motivo = typeof d.motivo === 'string' ? d.motivo.trim() : '';
+  const motivo = typeof d.motivo === 'string' ? d.motivo.normalize('NFC').trim() : '';
   if (tipo === 'ajuste' && !motivo) erros.push({ campo: 'motivo', mensagem: 'Informe o motivo do ajuste (ex.: perda, avaria, contagem).' });
   if (motivo.length > LIMITES_ESTOQUE.motivoMax) erros.push({ campo: 'motivo', mensagem: `O motivo pode ter até ${LIMITES_ESTOQUE.motivoMax} caracteres.` });
   if (erros.length) return { ok: false, erros };

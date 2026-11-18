@@ -15,7 +15,10 @@ export type PapelDeLoja = (typeof PAPEIS_DE_LOJA)[number];
 /** Como a tela chama cada papel. */
 export const NOME_PAPEL: Record<PapelDeLoja, string> = { dono: 'Dono', administrador: 'Administrador', vendedor: 'Vendedor' };
 
-/** Dono e Administrador: tudo liberado (financeiro, relatórios, autorizações, estoque). */
+/**
+ * Dono ou Administrador (os "gestores" do DaniPets). Para liberar uma AÇÃO, use `pode(papel, permissao)`
+ * de permissoes.ts: lá fica a matriz de quem pode o quê.
+ */
 export const ehGestor = (papel: PapelDeLoja): boolean => papel === 'dono' || papel === 'administrador';
 
 export function ehPapel(valor: unknown): valor is Papel {

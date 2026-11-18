@@ -315,16 +315,16 @@ describe('exemplos e lojas antigas', () => {
 });
 
 describe('proteções do servidor (o que a tela não decide)', () => {
-  it('senha de autorização: 5 erradas seguidas bloqueiam por 1 minuto, como no login', async () => {
+  it('senha de autorização: 5 erradas seguidas bloqueiam por 5 minutos, como no login (a mesma contagem)', async () => {
     const { bruno, mudar } = await loja('trava2');
     const pedido = (senha: string) => bruno.autorizar({ usuarioId: 'ana', senha, acao: { tipo: 'cancelamento', vendaId: 'v' } });
     for (let i = 0; i < 4; i++) expect((await erro(pedido('errada'))).message).toBe('Senha incorreta.');
     const quinta = await erro(pedido('errada'));
-    expect([quinta.status, quinta.message]).toEqual([429, 'Muitas senhas erradas. As autorizações desta pessoa ficaram bloqueadas por 1 minuto.']);
+    expect([quinta.status, quinta.message]).toEqual([429, 'Muitas tentativas erradas. Este usuário ficou bloqueado por 5 minutos.']);
     // bloqueada: nem a senha certa passa; o outro autorizador continua livre
-    expect((await erro(pedido('demo1234'))).message).toMatch(/Tente de novo em 60 s/);
+    expect((await erro(pedido('demo1234'))).message).toMatch(/Tente de novo em 5 min/);
     expect((await bruno.autorizar({ usuarioId: 'caio', senha: 'demo1234', acao: { tipo: 'cancelamento', vendaId: 'v' } })).autorizador.nome).toBe('Caio');
-    mudar('2026-11-16T15:01:01Z');
+    mudar('2026-11-16T15:05:01Z');
     expect((await pedido('demo1234')).autorizador.nome).toBe('Ana');
     // acertar zera a contagem
     for (let i = 0; i < 4; i++) await erro(pedido('errada'));

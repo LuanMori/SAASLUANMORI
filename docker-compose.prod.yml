@@ -1,0 +1,83 @@
+# docker-compose.prod.yml — o sistema inteiro num servidor (item 3.x da revisão de 18/11/2026).
+#   docker compose -f docker-compose.prod.yml --env-file .env.producao up -d --build
+# Passo a passo, HTTPS, backup e atualização: docs/deploy.md.
+#
+#   db         Postgres 16 em UTF-8, sem porta aberta para fora
+#   migracao   aplica as migrations e prepara as roles saas_app (API) e saas_backup; depois termina
+#   api        NestJS com a role saas_app (sem BYPASSRLS; se tiver, a API se recusa a subir)
+#   web        nginx: a tela + /api repassado para a API, com os cabeçalhos de segurança
+# Só a porta do web fica aberta. Na frente dela vai o HTTPS (Cloudflare, balanceador ou Caddy).
+name: sistema-padrao
+
+x-endurecido: &endurecido
+  restart: unless-stopped
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  networks: [interna]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env.producao}
+      POSTGRES_DB: ${POSTGRES_DB:-saas}
+      # acentos (item 4.5): o banco nasce em UTF-8, com a ordem alfabética do português
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=pt-BR"
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [interna]
+    shm_size: 256mb
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  migracao:
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: ferramentas }
+    environment:
+      DATABASE_URL_MIGRATE: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-saas}
+      SAAS_APP_DB_PASSWORD: ${SAAS_APP_DB_PASSWORD:?defina SAAS_APP_DB_PASSWORD no .env.producao}
+      SAAS_BACKUP_DB_PASSWORD: ${SAAS_BACKUP_DB_PASSWORD:?defina SAAS_BACKUP_DB_PASSWORD no .env.producao}
+    command: ["sh", "-c", "npx prisma migrate deploy && npx tsx scripts/definir-senha-app.ts && npx tsx scripts/criar-role-backup.ts"]
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [interna]
+    restart: "no"
+
+  api:
+    <<: *endurecido
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: api }
+    environment:
+      DATABASE_URL_APP: postgresql://saas_app:${SAAS_APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-saas}
+      DOMINIO_BASE: ${DOMINIO_BASE:-}
+      COOKIE_SEGURO: ${COOKIE_SEGURO:-true}
+      SALTOS_DE_PROXY: "1"
+      LOG_NIVEL: ${LOG_NIVEL:-info}
+    tmpfs: [/tmp]
+    depends_on:
+      migracao: { condition: service_completed_successfully }
+
+  web:
+    <<: *endurecido
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    ports:
+      - "${PORTA_HTTP:-8080}:8080"
+    tmpfs: [/tmp]
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  dados-postgres:
+
+networks:
+  interna:

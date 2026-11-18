@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lojaDoEndereco } from '../subdominio';
+import { subdominioDoEndereco } from '@saas/core';
 import { type ResultadoEntrada, TelaEntrada } from './TelaEntrada';
 
 afterEach(cleanup);
@@ -82,7 +82,7 @@ describe('TelaEntrada', () => {
   });
 });
 
-describe('lojaDoEndereco', () => {
+describe('loja pelo endereço (subdominioDoEndereco, a mesma regra do servidor)', () => {
   const base = 'nomedaempresa.com.br';
   it.each([
     ['petshopdaana.nomedaempresa.com.br', 'petshopdaana'],
@@ -98,6 +98,6 @@ describe('lojaDoEndereco', () => {
     ['localhost', null],
     ['127.0.0.1', null],
   ])('%s -> %s', (host, esperado) => {
-    expect(lojaDoEndereco(host, base)).toBe(esperado);
+    expect(subdominioDoEndereco(host, base)).toBe(esperado);
   });
 });

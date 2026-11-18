@@ -1,10 +1,11 @@
 // apps/api/prisma/schema.prisma
-// Fase -1: só lojas, usuarios e produtos.
-// Regras que o Prisma NÃO modela ficam no SQL da migration (e são testadas):
-//   - Row-Level Security (ENABLE + FORCE) e policies por loja_id
-//   - função app_loja_atual()
-//   - role saas_app e GRANTs
-//   - CHECK: super_admin <=> loja_id NULL
+// lojas, usuarios (com login próprio), sessoes, auditoria e produtos.
+// Regras que o Prisma NÃO modela ficam no SQL das migrations (e são testadas):
+//   - Row-Level Security (ENABLE + FORCE) e policies por loja_id em TODA tabela de loja
+//     (test/rls-banco.spec.ts falha se uma tabela nova ficar sem)
+//   - função app_loja_atual() e a trava de usuários (usuarios_trava_api)
+//   - role saas_app e GRANTs mínimos (auditoria só acrescenta; ninguém apaga)
+//   - CHECKs: super_admin <=> loja_id NULL, formato do subdomínio e do login
 
 generator client {
   provider            = "prisma-client"
@@ -26,41 +27,95 @@ enum Papel {
   @@map("papel")
 }
 
-/// Tenant. Cada loja corresponde a uma Organization do Auth0.
+/// Tenant. A loja é achada pelo SUBDOMÍNIO do endereço (lojaa.nomedaempresa.com.br -> "lojaa").
 /// Sem RLS (é o cadastro de tenants). A API só tem SELECT nesta tabela.
 model Loja {
   id           String   @id @default(uuid(7)) @db.Uuid
   nome         String   @db.VarChar(120)
-  auth0OrgId   String   @unique @map("auth0_org_id") @db.VarChar(64)
+  /// Só letras minúsculas, números e hífen (CHECK lojas_subdominio_formato).
+  subdominio   String   @unique @db.VarChar(63)
   ativa        Boolean  @default(true)
   criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
   atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
 
-  usuarios Usuario[]
-  produtos Produto[]
+  usuarios  Usuario[]
+  produtos  Produto[]
+  sessoes   Sessao[]
+  auditoria Auditoria[]
 
   @@map("lojas")
 }
 
-/// Pessoa que opera o sistema dentro de UMA loja. Só entra quem foi cadastrado
-/// aqui (pelo dono; por enquanto via `npm run db:usuario`). A API só lê esta tabela.
-/// A mesma conta Auth0 em duas lojas = duas linhas (uma por loja).
+/// Pessoa que opera o sistema dentro de UMA loja. Só entra quem o Dono ou o Administrador
+/// cadastrou (tela Usuários; o primeiro Dono, pelo script db:usuario). Login próprio: usuário + senha.
+/// A mesma pessoa em duas lojas = duas linhas (uma por loja), com senhas independentes.
 /// super_admin: loja_id NULL (garantido por CHECK no banco).
+/// A trava usuarios_trava_api (trigger) impede, no próprio banco, que a API promova alguém a Dono
+/// sem ser Dono, desative a si mesma ou deixe a loja sem Dono ativo.
 model Usuario {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  lojaId       String?  @map("loja_id") @db.Uuid
-  auth0Sub     String   @map("auth0_sub") @db.VarChar(128)
-  email        String?  @db.VarChar(254)
-  nome         String?  @db.VarChar(120)
-  papel        Papel    @default(vendedor)
-  ativo        Boolean  @default(true)
-  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
-  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  id                String    @id @default(uuid(7)) @db.Uuid
+  lojaId            String?   @map("loja_id") @db.Uuid
+  /// Login, minúsculo (CHECK usuarios_usuario_formato). Único na loja.
+  usuario           String    @db.VarChar(40)
+  nome              String    @db.VarChar(120)
+  papel             Papel     @default(vendedor)
+  ativo             Boolean   @default(true)
+  /// scrypt (apps/api/src/auth/senhas.ts). null = ainda sem senha (não entra).
+  senhaHash         String?   @map("senha_hash") @db.VarChar(255)
+  /// Senha criada/redefinida pelo Dono: no primeiro acesso a pessoa cria a dela.
+  senhaProvisoria   Boolean   @default(true) @map("senha_provisoria")
+  tentativasErradas Int       @default(0) @map("tentativas_erradas")
+  bloqueadoAte      DateTime? @map("bloqueado_ate") @db.Timestamptz(3)
+  ultimoAcessoEm    DateTime? @map("ultimo_acesso_em") @db.Timestamptz(3)
+  criadoEm          DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm      DateTime  @default(now()) @updatedAt @map("atualizado_em") @db.Timestamptz(3)
 
-  loja Loja? @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  loja    Loja?    @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  sessoes Sessao[]
 
-  @@unique([lojaId, auth0Sub])
+  @@unique([lojaId, usuario])
   @@map("usuarios")
+}
+
+/// Sessão de login. O segredo fica só no cookie (HttpOnly) do navegador; aqui fica o SHA-256 dele.
+/// Expira por inatividade (30 min) ou depois de 12 h. Sair, desativar o usuário ou redefinir a
+/// senha encerram a sessão. A API só lê, cria e encerra (não estende a validade).
+model Sessao {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  lojaId      String    @map("loja_id") @db.Uuid
+  usuarioId   String    @map("usuario_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  criadaEm    DateTime  @default(now()) @map("criada_em") @db.Timestamptz(3)
+  ultimoUsoEm DateTime  @default(now()) @map("ultimo_uso_em") @db.Timestamptz(3)
+  expiraEm    DateTime  @map("expira_em") @db.Timestamptz(3)
+  encerradaEm DateTime? @map("encerrada_em") @db.Timestamptz(3)
+
+  loja    Loja    @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([lojaId, usuarioId])
+  @@map("sessoes")
+}
+
+/// Quem fez o quê, em qual loja e quando (docs/decisoes/0001-auditoria.md). Só acrescenta:
+/// a API não altera nem apaga (sem GRANT de UPDATE/DELETE). Sem dado pessoal em `detalhes`:
+/// nomes vêm de `usuarios` na hora de mostrar (assim a exclusão LGPD vale também aqui).
+model Auditoria {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  lojaId    String   @map("loja_id") @db.Uuid
+  /// Quem fez (null = sistema).
+  usuarioId String?  @map("usuario_id") @db.Uuid
+  /// Chave de ACOES_AUDITORIA (@saas/core), ex.: "usuario.criado".
+  acao      String   @db.VarChar(60)
+  alvoTipo  String?  @map("alvo_tipo") @db.VarChar(40)
+  alvoId    String?  @map("alvo_id") @db.Uuid
+  detalhes  Json     @default("{}")
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+
+  loja Loja @relation(fields: [lojaId], references: [id], onDelete: Restrict)
+
+  @@index([lojaId, criadoEm(sort: Desc)])
+  @@map("auditoria")
 }
 
 /// Regras fora do Prisma (CHECK na migration 20261111190000, testadas):

@@ -385,7 +385,7 @@ export type NovoLancamentoManual = Omit<LancamentoManual, 'contaDestino' | 'cate
 const valorPositivo = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= CENTAVOS_MAX;
 
 function lerTexto(v: unknown, campo: string, max: number, erros: ErroCampo[], obrigatorio?: string): string {
-  const t = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '';
+  const t = typeof v === 'string' ? v.normalize('NFC').trim().replace(/\s+/g, ' ') : '';
   if (!t && obrigatorio) erros.push({ campo, mensagem: obrigatorio });
   else if (t.length > max) erros.push({ campo, mensagem: `Use até ${max} caracteres.` });
   else if (CONTROLE.test(t)) erros.push({ campo, mensagem: 'Texto com caracteres inválidos.' });

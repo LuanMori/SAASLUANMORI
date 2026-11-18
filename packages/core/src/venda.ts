@@ -23,7 +23,8 @@ import type { ClienteParaVenda } from './cliente';
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import { conferirEstoque } from './estoque';
 import { CONTROLE, ehObjeto } from './interno';
-import { ehGestor, type PapelDeLoja } from './papeis';
+import type { PapelDeLoja } from './papeis';
+import { pode } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
 export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'fiado'] as const;
@@ -237,7 +238,7 @@ function lerMotivo(valor: unknown, campo: string, erros: ErroCampo[], obrigatori
     erros.push({ campo, mensagem: obrigatorio });
     return '';
   }
-  const t = valor.trim();
+  const t = valor.normalize('NFC').trim();
   if (t.length > LIMITES_VENDA.motivoMax) erros.push({ campo, mensagem: `O motivo pode ter até ${LIMITES_VENDA.motivoMax} caracteres.` });
   else if (CONTROLE.test(t)) erros.push({ campo, mensagem: 'O motivo contém caracteres inválidos.' });
   return t;
@@ -273,15 +274,17 @@ export function classificarDesconto(precoListaCentavos: number, precoFinalCentav
 
 /** Quem precisa autorizar este desconto, para quem está operando. null = a própria pessoa pode dar. */
 export function quemAutorizaDesconto(tipo: TipoDesconto, papelOperador: PapelDeLoja): QuemAutoriza | null {
-  if (tipo === 'brinde') return papelOperador === 'dono' ? null : 'dono';
-  if (tipo === 'acima-do-limite') return ehGestor(papelOperador) ? null : 'gestor';
+  // quem pode o quê vem da matriz única (permissoes.ts)
+  if (tipo === 'brinde') return pode(papelOperador, 'brinde') ? null : 'dono';
+  if (tipo === 'acima-do-limite') return pode(papelOperador, 'desconto.acima_do_limite') ? null : 'gestor';
   return null;
 }
 
 /** Cancelamento e devolução: o Vendedor precisa do Dono ou do Administrador. */
-export const quemAutorizaEstorno = (papelOperador: PapelDeLoja): QuemAutoriza | null => (ehGestor(papelOperador) ? null : 'gestor');
+export const quemAutorizaEstorno = (papelOperador: PapelDeLoja): QuemAutoriza | null => (pode(papelOperador, 'estorno') ? null : 'gestor');
 
-const atende = (papel: PapelDeLoja, quem: QuemAutoriza) => (quem === 'dono' ? papel === 'dono' : ehGestor(papel));
+/** A senha de quem autoriza vale se essa pessoa pode fazer aquilo sozinha. */
+const atende = (papel: PapelDeLoja, quem: QuemAutoriza) => (quem === 'dono' ? pode(papel, 'brinde') : pode(papel, 'desconto.acima_do_limite') && pode(papel, 'estorno'));
 
 function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza, agora: Date): a is Autorizacao {
   if (!a || !atende(a.autorizador.papel, quem)) return false;

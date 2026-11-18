@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_AUTH0_DOMAIN: string;
-  readonly VITE_AUTH0_CLIENT_ID: string;
-  readonly VITE_AUTH0_AUDIENCE: string;
-  readonly VITE_API_URL: string;
+  /** Onde a API responde (padrão: /api no mesmo endereço). */
+  readonly VITE_API_URL?: string;
+  /** Endereço da loja de teste quando a API roda sem DOMINIO_BASE (desenvolvimento). */
+  readonly VITE_LOJA?: string;
 }
 
 interface ImportMeta {

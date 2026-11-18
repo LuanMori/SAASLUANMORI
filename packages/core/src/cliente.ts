@@ -7,7 +7,9 @@
 //   - CPF conferido pelos dígitos verificadores e único entre os clientes ativos da loja;
 //   - na busca (F6): 3 números ou mais procuram no CPF e no telefone; 2 letras ou mais, no nome (sem acento).
 // LGPD: as telas mostram o CPF mascarado (***.456.789-**); o número inteiro fica só no cadastro.
+import { formatarCentavos } from './dinheiro';
 import { CONTROLE, ehObjeto, soDigitos } from './interno';
+import { mensagemSemPermissao, pode } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 import { semAcento } from './texto';
 import type { Venda } from './venda';
@@ -82,7 +84,7 @@ export function validarNovoCliente(entrada: unknown): Resultado<NovoCliente> {
   const erros: ErroCampo[] = [];
   for (const k of Object.keys(d)) if (!CAMPOS_CLIENTE.has(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
 
-  const nome = typeof d.nome === 'string' ? d.nome.trim().replace(/\s+/g, ' ') : '';
+  const nome = typeof d.nome === 'string' ? d.nome.normalize('NFC').trim().replace(/\s+/g, ' ') : '';
   if (nome.length < LIMITES_CLIENTE.nomeMin) erros.push({ campo: 'nome', mensagem: 'Informe o nome completo do cliente (pelo menos 3 letras).' });
   else if (nome.length > LIMITES_CLIENTE.nomeMax) erros.push({ campo: 'nome', mensagem: `O nome pode ter até ${LIMITES_CLIENTE.nomeMax} caracteres.` });
   else if (CONTROLE.test(nome)) erros.push({ campo: 'nome', mensagem: 'O nome contém caracteres inválidos.' });
@@ -147,4 +149,37 @@ export function resumirCliente(vendas: readonly Venda[], clienteId: string): Res
   const total = dele.reduce((s, v) => s + v.totalCentavos - v.devolucoes.reduce((t, d) => t + d.totalCentavos, 0), 0);
   const ultima = dele.reduce<string | null>((u, v) => (!u || v.criadaEm > u ? v.criadaEm : u), null);
   return { compras: dele.length, totalCentavos: total, ticketMedioCentavos: dele.length ? Math.round(total / dele.length) : 0, ultimaCompraEm: ultima };
+}
+
+// ------------------------------------------------------------------ LGPD: exclusão a pedido do cliente
+// Como o DaniPets V9.3.3 (cliAnonimizar): só o Dono; recusada enquanto houver fiado em aberto (os
+// dados ficam até a conta ser paga); o nome, o telefone e o CPF somem; as vendas continuam no histórico
+// da loja (obrigação fiscal), sem identificar o cliente.
+
+export const NOME_CLIENTE_REMOVIDO = 'Cliente removido';
+
+export function conferirExclusaoDeCliente(
+  papel: string,
+  cliente: Pick<Cliente, 'nome' | 'ativo'> | null,
+  fiadoEmAbertoCentavos: number,
+): Resultado<null> {
+  if (!pode(papel, 'clientes.excluir_dados')) return { ok: false, erros: [{ campo: '_', mensagem: mensagemSemPermissao('clientes.excluir_dados') }] };
+  if (!cliente || cliente.nome === NOME_CLIENTE_REMOVIDO) return { ok: false, erros: [{ campo: '_', mensagem: 'Cliente não encontrado.' }] };
+  if (fiadoEmAbertoCentavos > 0) {
+    return {
+      ok: false,
+      erros: [{ campo: '_', mensagem: `${cliente.nome} tem ${formatarCentavos(fiadoEmAbertoCentavos)} de fiado em aberto. Os dados ficam guardados até a conta ser paga.` }],
+    };
+  }
+  return { ok: true, valor: null };
+}
+
+/** O cadastro sem nenhum dado pessoal (fica só o id, para as vendas antigas continuarem ligadas). */
+export function anonimizarCliente(c: Cliente, agora: Date): Cliente {
+  return { ...c, nome: NOME_CLIENTE_REMOVIDO, telefone: '', cpf: '', ativo: false, atualizadoEm: agora.toISOString() };
+}
+
+/** Tira o nome do cliente de vendas, recebimentos de fiado e outros registros que guardaram o nome. */
+export function tirarNomeDoCliente<T extends { cliente?: { id: string; nome: string } | null }>(lista: readonly T[], clienteId: string): T[] {
+  return lista.map((x) => (x.cliente?.id === clienteId ? { ...x, cliente: { id: clienteId, nome: NOME_CLIENTE_REMOVIDO } } : x));
 }

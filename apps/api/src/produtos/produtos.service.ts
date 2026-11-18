@@ -5,6 +5,7 @@
 //   2. RLS no Postgres via comLoja() (banco) — vale mesmo se (1) for esquecido
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { validarNovoProduto } from '@saas/core';
+import { registrarAuditoria } from '../auditoria/auditoria.js';
 import type { ContextoRequisicao } from '../auth/contexto.js';
 import { BancoService } from '../banco/banco.service.js';
 import { Prisma } from '../generated/prisma/client.js';
@@ -58,11 +59,13 @@ export class ProdutosService {
         }
 
         const codigoInterno = await proximoCodigoInterno(tx, ctx.lojaId, novo.codigoBarras);
-        return tx.produto.create({
+        const criado = await tx.produto.create({
           data: { ...novo, codigoInterno, lojaId: ctx.lojaId },
           select: CAMPOS_PUBLICOS,
         });
-      });
+        await registrarAuditoria(tx, ctx.lojaId, ctx.usuarioId, 'produto.criado', { tipo: 'produto', id: criado.id }, { codigoInterno });
+        return criado;
+      }, ctx.usuarioId);
     } catch (erro) {
       // Rede de segurança: com a trava por loja isto não deveria acontecer.
       if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === 'P2002') {

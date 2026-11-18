@@ -5,9 +5,9 @@ import type { INestApplication } from '@nestjs/common';
 import { MENSAGEM_PRECO_ZERO } from '@saas/core';
 import type pg from 'pg';
 import request from 'supertest';
-import { type ParChaves, emitirToken, gerarParChaves, iniciarServidorJwks } from './apoio/auth0-falso.js';
 import { criarAppTeste } from './apoio/app.js';
-import { cadastrarUsuario, comoApp, criarLoja, criarProdutoDireto, limparBanco, poolAdmin, poolApp } from './apoio/banco.js';
+import { comoApp, criarLoja, criarProdutoDireto, criarUsuario, limparBanco, poolAdmin, poolApp } from './apoio/banco.js';
+import { entrar } from './apoio/sessao.js';
 
 const SEM_REGRA = { code: '23514' }; // check_violation
 
@@ -15,32 +15,28 @@ describe('Códigos e preço de produto', () => {
   let app: INestApplication;
   let admin: pg.Pool;
   let appDb: pg.Pool;
-  let chave: ParChaves;
-  let jwks: Awaited<ReturnType<typeof iniciarServidorJwks>>;
   let lojaA: string;
+  let cookie: string;
 
-  const auth = () => `Bearer ${emitirToken(chave, { sub: 'auth0|vendedor', org_id: 'org_lojaA' })}`;
-  const criar = (corpo: object) => request(app.getHttpServer()).post('/produtos').set('Authorization', auth()).send(corpo);
+  const criar = (corpo: object) => request(app.getHttpServer()).post('/produtos').set('Cookie', cookie).send(corpo);
 
   beforeAll(async () => {
-    chave = gerarParChaves();
-    jwks = await iniciarServidorJwks([chave]);
-    app = await criarAppTeste(jwks.url);
+    app = await criarAppTeste();
     admin = poolAdmin();
     appDb = poolApp();
   });
 
   beforeEach(async () => {
     await limparBanco(admin);
-    lojaA = await criarLoja(admin, 'Loja A', 'org_lojaA');
-    await cadastrarUsuario(admin, lojaA, 'auth0|vendedor', 'vendedor');
+    lojaA = await criarLoja(admin, 'Loja A', 'lojaa');
+    await criarUsuario(admin, lojaA, { usuario: 'vendedor' });
+    cookie = await entrar(app, 'lojaa', 'vendedor');
   });
 
   afterAll(async () => {
     await app.close();
     await appDb.end();
     await admin.end();
-    await jwks.fechar();
   });
 
   describe('código interno', () => {
@@ -122,7 +118,7 @@ describe('Códigos e preço de produto', () => {
     });
 
     it('o conflito só considera a própria loja', async () => {
-      const lojaB = await criarLoja(admin, 'Loja B', 'org_lojaB');
+      const lojaB = await criarLoja(admin, 'Loja B', 'lojab');
       await criarProdutoDireto(admin, lojaB, 'Produto da B', '7890000000017');
       await criar({ nome: 'Produto da A', codigoBarras: '7890000000017', precoCentavos: 100 }).expect(201);
     });

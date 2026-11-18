@@ -12,7 +12,6 @@
     "build:demo": "vite build -c vite.demo.config.ts && node scripts/juntar-html.mjs"
   },
   "dependencies": {
-    "@auth0/auth0-react": "2.30.0",
     "@saas/core": "0.0.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
