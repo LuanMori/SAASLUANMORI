@@ -28,7 +28,7 @@ function apiFalsa(inicial: Produto[] = []) {
 
 const sessao = { nome: 'Maria Vendedora', loja: 'Loja Centro' };
 
-function montar(api: ApiProdutos, aoSair = vi.fn()) {
+function montar(api: Pick<ApiProdutos, 'listarProdutos' | 'criarProduto'>, aoSair = vi.fn()) {
   render(<TelaProdutos api={api} sessao={sessao} aoSair={aoSair} intervaloMs={60_000} />);
   return { aoSair };
 }

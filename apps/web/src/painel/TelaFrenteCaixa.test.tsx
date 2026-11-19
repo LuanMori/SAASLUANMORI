@@ -626,3 +626,61 @@ describe('Frente de caixa · fiado (F7)', () => {
     expect(api.criarVenda.mock.calls[0]![0].pagamentos).toEqual([{ forma: 'pix', valorCentavos: 750 }]);
   });
 });
+
+describe('Frente de caixa · produto por kg (Fase 2, módulo 2)', () => {
+  async function lojaComGranel() {
+    const base = criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 });
+    const granel = await base.criarProduto({ nome: 'Ração a granel', codigoBarras: '2000000000015', precoCentavos: 1990, unidade: 'kg', estoqueInicial: 10_000 });
+    return { base, granel };
+  }
+
+  it('"1,5*código" vende 1,5 kg; + e − andam 0,5 kg; o visor e o total saem pelo preço do quilo', async () => {
+    const { base } = await lojaComGranel();
+    await abrir(base, ANA, null);
+    await bipar('1,5*2000000000015');
+    expect(txt(screen.getByText(/1,5 kg ×/).textContent)).toBe('1,5 kg × R$ 19,90/kg = R$ 29,85');
+    expect(total()).toBe('R$ 29,85');
+    await userEvent.click(screen.getByRole('button', { name: 'Aumentar Ração a granel' }));
+    expect((screen.getByLabelText('Quantidade de Ração a granel em kg') as HTMLInputElement).value).toBe('2');
+    expect(total()).toBe('R$ 39,80');
+    await userEvent.click(screen.getByRole('button', { name: 'Diminuir Ração a granel' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Diminuir Ração a granel' }));
+    expect(total()).toBe('R$ 19,90');
+    const campo = screen.getByLabelText('Quantidade de Ração a granel em kg');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, '0,25{Enter}');
+    expect(total()).toBe('R$ 4,98');
+    await finalizar();
+    expect(txt((await screen.findByText(/Venda #00001 finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 4,98 em Pix.');
+    const venda = (await vendasDoPdv())[0]!;
+    expect(venda.itens[0]).toMatchObject({ unidade: 'kg', quantidade: 250, subtotalCentavos: 498 });
+    expect((await base.listarEstoque())[0]!.saldo).toBe(9750);
+  });
+
+  it('não passa do estoque em kg e recusa peso com mais de 3 casas', async () => {
+    const { base } = await lojaComGranel();
+    await abrir(base, ANA, null);
+    await bipar('11*2000000000015');
+    expect(txt((await screen.findByRole('alert')).textContent)).toBe('Estoque insuficiente para Ração a granel. Disponível: 10 kg.');
+    await bipar('1,2345*2000000000015');
+    expect(txt(screen.getByRole('alert').textContent)).toBe('Peso inválido: use até 3 casas (ex.: 1,5*código = 1,5 kg).');
+  });
+
+  it('devolução em kg: parte do peso volta, pelo preço do quilo', async () => {
+    const { base, granel } = await lojaComGranel();
+    await base.criarVenda({ itens: [{ produtoId: granel.id, quantidade: 1250 }], pagamentos: [{ forma: 'pix', valorCentavos: 2488 }] });
+    await abrir(base, ANA, null);
+    await userEvent.click(screen.getByRole('button', { name: 'Devolução / cancelamento' }));
+    await userEvent.type(within(janela()).getByLabelText('Número da venda'), '1');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Continuar' }));
+    await within(janela()).findByRole('heading', { name: 'Venda #00001' });
+    expect(within(janela()).getByText('1,25 kg')).toBeTruthy();
+    await userEvent.clear(within(janela()).getByLabelText('Quantidade a devolver de Ração a granel'));
+    await userEvent.type(within(janela()).getByLabelText('Quantidade a devolver de Ração a granel'), '0,5');
+    expect(txt(within(janela()).getByText(/Volta para o cliente/).textContent)).toBe('Volta para o cliente: R$ 9,95 (Pix R$ 9,95).');
+    await userEvent.type(within(janela()).getByLabelText('Motivo'), 'cliente levou demais');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Confirmar devolução' }));
+    expect(txt((await screen.findByText(/Devolução registrada/)).textContent)).toBe('Devolução registrada na venda #00001: R$ 9,95 (Pix R$ 9,95).');
+    expect((await base.listarEstoque())[0]!.saldo).toBe(10_000 - 1250 + 500);
+  });
+});

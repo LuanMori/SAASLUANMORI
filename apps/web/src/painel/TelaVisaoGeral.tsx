@@ -21,12 +21,14 @@ import {
   resumirDevolucoes,
   resumirVendas,
   type Venda,
+  unidadeDe,
+  valorDaQuantidade,
 } from '@saas/core';
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
 import { CardPendencias } from './CardPendencias';
-import { dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, saudacao } from './formato';
+import { dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, produtosVendidos, quantidadeDoItem, saudacao } from './formato';
 import type { IdSecao } from './menu';
 import type { Pendencia } from './pendencias';
 import { usarCarga } from './usarCarga';
@@ -136,7 +138,7 @@ export function TelaVisaoGeral({
                     'Nenhuma venda ainda hoje'
                   ) : (
                     <>
-                      <span>{plural(r.itensVendidos, 'produto vendido', 'produtos vendidos')}</span>
+                      <span>{produtosVendidos(r.itensVendidos, r.gramasVendidas)}</span>
                       <span className="vg-ponto" aria-hidden="true">
                         ·
                       </span>
@@ -314,7 +316,7 @@ function RelatorioVendasHoje({
           <TabelaDetalhada vendas={finalizadas} fuso={fuso} />
           <p className="vg-soma">
             Total: <b>{formatarCentavos(r.totalCentavos)}</b> em {plural(finalizadas.length, 'venda', 'vendas')} ·{' '}
-            {plural(r.itensVendidos, 'produto vendido', 'produtos vendidos')}
+            {produtosVendidos(r.itensVendidos, r.gramasVendidas)}
             {r.descontoCentavos > 0 && <> · descontos {formatarCentavos(r.descontoCentavos)}</>}
           </p>
         </>
@@ -433,15 +435,15 @@ function TabelaDetalhada({ vendas, fuso }: { vendas: Venda[]; fuso: string }) {
               <td data-rotulo="Produtos vendidos" className="itens-venda">
                 {v.itens.map((i) => (
                   <div key={i.produtoId} className="vg-item">
-                    <b>{i.quantidade}×</b> {i.nome}{' '}
+                    <b>{quantidadeDoItem(i)}</b> {i.nome}{' '}
                     <span className="suave">
-                      {i.quantidade > 1 ? `${formatarCentavos(i.precoCentavos)} cada · ` : ''}
+                      {i.unidade === 'kg' ? `${formatarCentavos(i.precoCentavos)}/kg · ` : i.quantidade > 1 ? `${formatarCentavos(i.precoCentavos)} cada · ` : ''}
                       {formatarCentavos(i.subtotalCentavos)}
                     </span>
                     {i.desconto && (
                       <span className="vg-tag-desc" title={`Motivo: ${i.desconto.motivo}`}>
                         {' '}
-                        desconto {formatarCentavos((i.precoListaCentavos - i.precoCentavos) * i.quantidade)} · {i.desconto.motivo} · {i.desconto.responsavel.nome}
+                        desconto {formatarCentavos(valorDaQuantidade(i.precoListaCentavos, i.quantidade, unidadeDe(i.unidade)) - i.subtotalCentavos)} · {i.desconto.motivo} · {i.desconto.responsavel.nome}
                         {i.desconto.autorizadoComSenha ? ' (autorizou com senha)' : ''}
                       </span>
                     )}

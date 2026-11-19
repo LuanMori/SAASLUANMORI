@@ -10,6 +10,7 @@
 // Quem altera: Dono e Administrador (permissão 'loja.configurar'); todos os logados leem.
 import { PRAZO_FIADO_PADRAO_DIAS } from './financeiro';
 import { CONTROLE, ehObjeto } from './interno';
+import { UNIDADES_VENDA, type UnidadeVenda } from './quantidade';
 import type { ErroCampo, Resultado } from './resultado';
 import { LIMITE_DESCONTO_VENDEDOR_PCT } from './venda';
 
@@ -117,9 +118,6 @@ export function normalizarDadosDaLoja(guardados: unknown, padrao: DadosDaLoja): 
 
 // ------------------------------------------------------------------ regras da loja
 
-export const UNIDADES_VENDA = ['un', 'kg'] as const;
-export type UnidadeVenda = (typeof UNIDADES_VENDA)[number];
-export const NOME_UNIDADE: Record<UnidadeVenda, string> = { un: 'Unidade (un)', kg: 'Quilo (kg, a granel)' };
 
 export interface RegrasDaLoja {
   /** DaniPets DISCOUNT_LIMIT: acima disso, o Vendedor pede a senha do Dono ou do Administrador. */

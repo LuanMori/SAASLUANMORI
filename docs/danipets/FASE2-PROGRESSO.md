@@ -8,7 +8,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | Módulo | Situação |
 |---|---|
 | 1. Base | **Concluído** (19/11/2026) |
-| 2. Produtos e estoque | a fazer |
+| 2. Produtos e estoque | **Concluído** (19/11/2026) |
 | 3. Fornecedores | a fazer |
 | 4. Compras e contas a pagar | a fazer |
 | 5. Caixa do dia | a fazer |
@@ -64,3 +64,50 @@ devolve o mesmo `resumo` da demonstração.
   acesso dele na outra e a barra lateral da outra atualiza sozinha; armazenamento cheio → aviso vermelho,
   nada gravado pela metade, aviso some ao liberar espaço; histórico com as ações novas; celular (390 px)
   sem rolagem para o lado; console sem erros nem avisos.
+
+---
+
+## Módulo 2 — Produtos e estoque
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| PRD-01 | Cadastro: nome, código de barras, marca, peso, unidade (un/kg), fornecedor, preço, estoque mínimo, estoque inicial + custo (só gestor) | **Cadastro completo** numa janela: nome, código de barras, marca, peso da embalagem, vendido por unidade ou kg, preço (do quilo, no kg), estoque inicial e o custo dele (o custo, só Dono e Administrador; o Vendedor cadastra sem custo, como no DaniPets). O estoque mínimo continua no botão "Mínimo". O fornecedor entra no módulo 3, já como cadastro | Adaptado |
+| PRD-04 | Aviso de produto parecido (mesmo nome, marca e peso) | Igual: pergunta "Salvar mesmo assim?" (no cadastro e na alteração); a comparação ignora maiúsculas e espaços | Criado |
+| PRD-05 | Editar, com confirmação se já tem história e auditoria do antes/depois | Igual: "Alterar" (Dono e Administrador); nome ou código de barras de produto com vendas ou movimentos pergunta antes; o histórico registra "Preço alterado" (de → para) e "Produto alterado" (quais campos) | Criado |
+| PRD-06 | Inativar/reativar; excluir só sem história | Igual: inativo some da Frente de caixa; "Excluir" só aparece (e só passa) sem vendas nem movimentos (o estoque inicial do cadastro não conta) | Criado |
+| PRD-07 | Lista com busca | Busca por nome, marca ou código (sem acento e sem maiúscula); inativos no fim da lista | Adaptado |
+| PRD-08 | Ajuste com motivos fixos + observação | Motivos **da loja** (padrão: os do DaniPets), em "Regras do estoque", e observação; a API recusa motivo fora da lista. A data do ajuste (retroativa com liberação) fica para o módulo 5, com os dias fechados | Adaptado |
+| PRD-09 | Card "Como o saldo é calculado" | Clicar no saldo abre a conta: inicial + entradas − vendas + cancelamentos + devoluções ± ajustes | Adaptado |
+| PRD-13 | Quantidades em kg com 3 casas | **kg em gramas** (inteiro, como o dinheiro em centavos): venda, estoque, devolução, mínimo, Visão geral e Relatórios. Na Frente de caixa: "1,5*código" = 1,5 kg, sem multiplicador = 1 kg, botões + e − de 0,5 kg (como o DaniPets), peso digitado com vírgula; o valor sai pelo preço do quilo; devolver o kg aos poucos dá exatamente o valor cobrado | Criado |
+| ESP-10 | Unidade "kg" pensada para ração a granel | "Regras do estoque": a loja liga ou desliga a venda por kg (e por unidade) | Adaptado |
+
+### Diferença proposital
+
+- No DaniPets, a unidade de um produto com história podia mudar (o saldo 12 virava 12 kg). Aqui **não muda**:
+  as vendas e o saldo estão guardados em unidades ou em gramas, e mudar de unidade mudaria o sentido
+  deles. A tela avisa e sugere cadastrar um produto novo e inativar o antigo.
+
+### O que ficou para outro módulo
+
+- Fornecedor no produto: módulo 3 (cadastro de fornecedores).
+- Custo médio, lotes e validade (PRD-10, 11): módulo 4 (compras). O custo do estoque inicial já fica
+  guardado para o custo médio.
+- Data retroativa no ajuste: módulo 5 (dias fechados).
+
+### Servidor
+
+Sem tabela nova (decisão P3). O servidor continua aceitando só o cadastro básico de produto (nome, código
+de barras e preço), com a mesma validação de antes; a demonstração usa o cadastro completo. Alterar,
+inativar e excluir respondem 501 no sistema real até o servidor ganhar essa parte.
+
+### Testes e conferência
+
+- Testes automáticos: núcleo 276 (+15: quantidades em kg, cadastro completo, parecido, venda e devolução
+  por kg, conta do saldo), servidor 134, tela 238 (+11: tela de produtos, kg na Frente de caixa, carrinho).
+- Navegador: exemplo a granel (25 kg, preço por kg); busca; produto parecido; alterar preço e histórico
+  "de → para"; excluir sem história; ajuste com motivo da loja e observação; conta do saldo; Frente de caixa
+  com "1,5*código", botão + de 0,5 kg e venda finalizada; Visão geral "2 kg vendidos"; regras do estoque;
+  tema escuro; celular sem rolagem lateral; console sem erros nem avisos.
+

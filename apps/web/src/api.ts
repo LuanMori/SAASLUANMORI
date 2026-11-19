@@ -20,6 +20,8 @@ import type {
   NovoCliente,
   NovoLancamentoManual,
   NovoProduto,
+  AlteracaoProduto,
+  UnidadeVenda,
   NovoUsuario,
   AlteracaoUsuario,
   PapelDeLoja,
@@ -41,10 +43,17 @@ export interface Produto {
   codigoInterno: string;
   codigoBarras: string | null;
   nome: string;
+  /** No produto vendido por kg, o preço do quilo. */
   precoCentavos: number;
   ativo: boolean;
   criadoEm: string;
   atualizadoEm: string;
+  /** Cadastro completo (DaniPets PRD-01). Sem: null / 'un' (produtos antigos e o servidor, por enquanto). */
+  marca?: string | null;
+  pesoGramas?: number | null;
+  unidade?: UnidadeVenda;
+  /** Na listagem: tem vendas, entradas ou ajustes? (com história: não exclui nem muda de unidade) */
+  temHistorico?: boolean;
 }
 
 export class ErroApi extends Error {
@@ -63,7 +72,17 @@ export class ErroApi extends Error {
 
 export interface ApiProdutos {
   listarProdutos(): Promise<Produto[]>;
-  criarProduto(dados: NovoProduto): Promise<Produto>;
+  /**
+   * Cadastro (Dono, Administrador e Vendedor; o custo do estoque inicial, só Dono e Administrador).
+   * Produto com o mesmo nome, marca e peso: 409 com codigo "produto_parecido"; `mesmoAssim` cadastra.
+   */
+  criarProduto(dados: NovoProduto, opcoes?: { mesmoAssim?: boolean }): Promise<Produto>;
+  /** Só Dono e Administrador. Com história, a unidade não muda (409). Parecido: como no cadastro. */
+  alterarProduto(id: string, mudanca: AlteracaoProduto, opcoes?: { mesmoAssim?: boolean }): Promise<Produto>;
+  /** Inativar (some da Frente de caixa) ou reativar. Só Dono e Administrador. */
+  definirProdutoAtivo(id: string, ativo: boolean): Promise<Produto>;
+  /** Só sem história (vendas, entradas, ajustes); com história, inative. Só Dono e Administrador. */
+  excluirProduto(id: string): Promise<void>;
 }
 
 // ---- Vendas (Frente de caixa, Visão geral e Relatórios)

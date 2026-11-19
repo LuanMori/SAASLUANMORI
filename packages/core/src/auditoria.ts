@@ -8,6 +8,7 @@
 import { formatarCentavos } from './dinheiro';
 import { ehObjeto } from './interno';
 import { ehPapelDeLoja, NOME_PAPEL } from './papeis';
+import { formatarQuantidade, unidadeDe } from './quantidade';
 
 /** Ações registradas no histórico, com o texto que aparece na tela (nomes do DaniPets V9.3.3). */
 export const ACOES_AUDITORIA = {
@@ -33,6 +34,11 @@ export const ACOES_AUDITORIA = {
   'venda.devolucao': 'Devolução de venda',
   // produtos e estoque
   'produto.criado': 'Produto cadastrado',
+  'produto.alterado': 'Produto alterado',
+  'produto.preco_alterado': 'Preço alterado',
+  'produto.inativado': 'Produto inativado',
+  'produto.reativado': 'Produto reativado',
+  'produto.excluido': 'Produto excluído',
   'estoque.entrada': 'Entrada de estoque',
   'estoque.ajuste': 'Ajuste de estoque',
   'estoque.minimo': 'Estoque mínimo alterado',
@@ -74,6 +80,15 @@ const NOME_CAMPO_LOJA: Record<string, string> = { nome: 'nome', descricao: 'desc
 
 const NOME_CONTA_CURTO: Record<string, string> = { caixa: 'Caixa físico', banco: 'Conta bancária' };
 
+const NOME_CAMPO_PRODUTO: Record<string, string> = {
+  nome: 'nome',
+  codigoBarras: 'código de barras',
+  precoCentavos: 'preço',
+  marca: 'marca',
+  pesoGramas: 'peso',
+  unidade: 'unidade',
+};
+
 const numeroVenda = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 ? `venda nº ${String(n).padStart(5, '0')}` : null);
 const dinheiro = (c: unknown) => (typeof c === 'number' && Number.isSafeInteger(c) ? formatarCentavos(c) : null);
 const papel = (p: unknown) => (ehPapelDeLoja(p) ? NOME_PAPEL[p] : null);
@@ -113,14 +128,31 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'venda.devolucao':
       partes.push(numeroVenda(d.numero), dinheiro(d.valorCentavos));
       break;
+    case 'produto.criado':
+      partes.push(typeof d.codigoInterno === 'string' ? `código ${d.codigoInterno}` : null);
+      break;
+    case 'produto.alterado':
+      partes.push(lista(d.campos, NOME_CAMPO_PRODUTO));
+      break;
+    case 'produto.preco_alterado':
+      partes.push(dinheiro(d.de) && dinheiro(d.para) ? `${dinheiro(d.de)} → ${dinheiro(d.para)}` : null);
+      break;
+    case 'produto.excluido':
+      partes.push(typeof d.nome === 'string' ? d.nome : null, typeof d.codigo === 'string' ? `código ${d.codigo}` : null);
+      break;
     case 'estoque.entrada':
     case 'estoque.ajuste': {
-      const q = typeof d.quantidade === 'number' && Number.isFinite(d.quantidade) ? d.quantidade : null;
-      partes.push(q === null ? null : `${q > 0 ? '+' : ''}${q} un.`, typeof d.motivo === 'string' && d.motivo ? d.motivo : null);
+      const q = typeof d.quantidade === 'number' && Number.isInteger(d.quantidade) ? d.quantidade : null;
+      const u = unidadeDe(d.unidade);
+      partes.push(
+        q === null ? null : `${q > 0 ? '+' : ''}${formatarQuantidade(q, u)}`,
+        typeof d.motivo === 'string' && d.motivo ? d.motivo : null,
+        typeof d.observacao === 'string' && d.observacao ? d.observacao : null,
+      );
       break;
     }
     case 'estoque.minimo':
-      partes.push(typeof d.minimo === 'number' ? `mínimo ${d.minimo} un.` : 'sem aviso de estoque baixo');
+      partes.push(typeof d.minimo === 'number' && Number.isInteger(d.minimo) ? `mínimo ${formatarQuantidade(d.minimo, unidadeDe(d.unidade))}` : 'sem aviso de estoque baixo');
       break;
     case 'financeiro.entrada':
     case 'financeiro.despesa':

@@ -5,7 +5,7 @@
 // própria (o desconto que o Vendedor dá sem senha; no DaniPets, fixo em 10%). As outras regras ficam nas
 // abas onde são usadas, como no DaniPets. Exportar e importar os dados da loja entram no módulo 13.
 import { type DadosDaLoja, LIMITES_LOJA, LIMITES_REGRAS, type PapelDeLoja, pode, type RegrasDaLoja } from '@saas/core';
-import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { type ApiLoja, ErroApi } from '../api';
 import { iniciais } from './BarraLateral';
 import { usarCarga } from './usarCarga';
@@ -50,6 +50,21 @@ async function reduzir(arquivo: Blob): Promise<string | null> {
   imagem.close();
   const png = tela.toDataURL('image/png');
   return png.length <= LIMITES_LOJA.logoMaxCaracteres ? png : tela.toDataURL('image/jpeg', 0.85);
+}
+
+/**
+ * Roda `aoMudar` só quando o valor gravado MUDA (salvo aqui ou em outra aba) — nunca ao abrir, para não
+ * apagar o que a pessoa já começou a digitar.
+ */
+function usarQuandoMudar(valor: unknown, aoMudar: () => void) {
+  const chave = JSON.stringify(valor);
+  const anterior = useRef(chave);
+  useEffect(() => {
+    if (anterior.current === chave) return;
+    anterior.current = chave;
+    aoMudar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só a chave importa
+  }, [chave]);
 }
 
 /** Arquivo escolhido → data URL do logo (PNG, JPEG ou WebP, reduzido). */
@@ -103,11 +118,11 @@ function CartaoDadosDaLoja({ api, dados, podeAlterar, aoSalvar }: { api: ApiLoja
   const [aviso, setAviso] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   // os dados mudaram (salvos aqui ou em outra aba): o formulário mostra o que está gravado
-  useEffect(() => {
+  usarQuandoMudar(dados, () => {
     setNome(dados.nome);
     setDescricao(dados.descricao ?? '');
     setLogo(dados.logo);
-  }, [dados]);
+  });
 
   const mudanca: Partial<DadosDaLoja> = {};
   if (nome.trim() !== dados.nome) mudanca.nome = nome;
@@ -219,7 +234,7 @@ function CartaoRegrasGerais({ api, regras, podeAlterar, aoSalvar }: { api: ApiLo
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  useEffect(() => setDesconto(String(regras.venda.descontoSemSenhaPct).replace('.', ',')), [regras.venda.descontoSemSenhaPct]);
+  usarQuandoMudar(regras.venda.descontoSemSenhaPct, () => setDesconto(String(regras.venda.descontoSemSenhaPct).replace('.', ',')));
   const valor = lerPercentual(desconto);
   const mudou = valor !== regras.venda.descontoSemSenhaPct;
 

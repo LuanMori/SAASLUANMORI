@@ -51,8 +51,8 @@ describe('estoque', () => {
 
     expect(await ana.lancarMovimentoEstoque({ produtoId: racao.id, tipo: 'entrada', quantidade: 5, motivo: 'Nota 123' })).toEqual({ produtoId: racao.id, saldo: 5, minimo: null, situacao: 'ok' });
     expect((await erro(bruno.lancarMovimentoEstoque({ produtoId: racao.id, tipo: 'entrada', quantidade: 5, motivo: '' }))).status).toBe(403);
-    expect((await erro(ana.lancarMovimentoEstoque({ produtoId: racao.id, tipo: 'ajuste', quantidade: -6, motivo: 'perda' }))).message).toBe(
-      'O ajuste deixaria o saldo de Ração 3 kg negativo (saldo atual 5 un.).',
+    expect((await erro(ana.lancarMovimentoEstoque({ produtoId: racao.id, tipo: 'ajuste', quantidade: -6, motivo: 'Perda ou avaria' }))).message).toBe(
+      'O ajuste deixaria o saldo de Ração 3 kg negativo (saldo atual 5 un).',
     );
     expect((await erro(ana.lancarMovimentoEstoque({ produtoId: 'nao-existe', tipo: 'entrada', quantidade: 1, motivo: '' }))).status).toBe(404);
     expect(await ana.definirEstoqueMinimo(racao.id, 5)).toMatchObject({ saldo: 5, minimo: 5, situacao: 'baixo' });
@@ -306,7 +306,7 @@ describe('exemplos e lojas antigas', () => {
 
   it('apagar os dados não traz exemplos nem clientes de volta', async () => {
     const ana = criarApiLocal({ lojaId: 'loja-a', operador: ANA, atrasoMs: 0, agora: () => AGORA });
-    expect((await ana.listarProdutos()).length).toBe(6);
+    expect((await ana.listarProdutos()).length).toBe(7); // 6 por unidade + a ração a granel (kg)
     apagarDadosDemo();
     expect(await ana.listarProdutos()).toEqual([]);
     expect(await ana.listarClientes()).toEqual([]);

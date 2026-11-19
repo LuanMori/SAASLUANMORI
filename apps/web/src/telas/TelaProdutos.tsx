@@ -14,7 +14,7 @@ export interface Sessao {
 }
 
 interface Props {
-  api: ApiProdutos;
+  api: Pick<ApiProdutos, 'listarProdutos' | 'criarProduto'>;
   sessao: Sessao;
   aoSair: () => void;
   /** Intervalo de atualização automática (ms). */

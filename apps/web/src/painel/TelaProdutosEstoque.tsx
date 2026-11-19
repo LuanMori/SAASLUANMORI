@@ -1,63 +1,151 @@
 // apps/web/src/painel/TelaProdutosEstoque.tsx
-// Aba Produtos e estoque:
-//   - cadastro rápido de produto (o mesmo formulário e as mesmas regras do @saas/core);
-//   - lista com o saldo de cada produto (o saldo muda sozinho a cada venda, cancelamento e devolução);
-//   - entrada (compra, reposição), ajuste com motivo (perda, avaria, contagem) e estoque mínimo:
-//     só Dono e Administrador, como no DaniPets. O Vendedor cadastra produto novo e consulta;
-//   - últimos movimentos, com a venda de origem e quem lançou.
-// Produto novo começa com estoque 0: só vende depois de uma entrada.
+// Aba Produtos e estoque (DaniPets V9.3.3, Fase 2 módulo 2):
+//   - cadastro completo (nome, código de barras, marca, peso, vendido por unidade ou kg, preço, estoque
+//     inicial e o custo dele) — todos cadastram; o custo, só Dono e Administrador;
+//   - lista com busca (nome, marca ou código), saldo na unidade do produto e situação (baixo, zerado);
+//   - Dono e Administrador: alterar, inativar/reativar, excluir (só sem história), entrada, ajuste com os
+//     motivos da loja e estoque mínimo; "Como o saldo é calculado"; Regras do estoque (un/kg e motivos);
+//   - últimos movimentos, com a venda de origem, o motivo e quem lançou.
+// O Vendedor cadastra produto novo e consulta, como no DaniPets.
 import {
-  ehGestor,
+  type ConfiguracaoDaLoja,
   formatarCentavos,
   formatarNumeroVenda,
-  LIMITES_ESTOQUE,
+  formatarQuantidade,
   NOME_MOVIMENTO_ESTOQUE,
   type PapelDeLoja,
+  pode,
+  regrasPadrao,
   type SituacaoEstoque,
-  validarMovimentoManual,
+  unidadeDe,
 } from '@saas/core';
-import { type FormEvent, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto, type SaldoEstoque } from '../api';
-import { FormNovoProduto } from '../telas/TelaProdutos';
-import { Modal } from './caixa/Modal';
 import { dataNoFuso, horaNoFuso, plural } from './formato';
+import { type AcaoEstoque, ModalEstoque, ModalRegrasEstoque, ModalSaldo } from './produtos/ModaisEstoque';
+import { ModalProduto } from './produtos/ModalProduto';
 import { usarCarga } from './usarCarga';
 
+type ApiDaTela = Pick<
+  ApiPainel,
+  | 'listarProdutos'
+  | 'criarProduto'
+  | 'alterarProduto'
+  | 'definirProdutoAtivo'
+  | 'excluirProduto'
+  | 'listarEstoque'
+  | 'listarMovimentosEstoque'
+  | 'lancarMovimentoEstoque'
+  | 'definirEstoqueMinimo'
+  | 'lerConfiguracao'
+  | 'salvarRegrasDaLoja'
+>;
+
 interface Props {
-  api: Pick<ApiPainel, 'listarProdutos' | 'criarProduto' | 'listarEstoque' | 'listarMovimentosEstoque' | 'lancarMovimentoEstoque' | 'definirEstoqueMinimo'>;
+  api: ApiDaTela;
   papel: PapelDeLoja;
   fuso: string;
   /** Atualização automática (ms): o saldo muda quando alguém vende. */
   intervaloMs?: number;
+  /** Para testes: as perguntas "tem certeza?". */
+  confirmar?: (texto: string) => boolean;
 }
 
-type Acao = 'entrada' | 'ajuste' | 'minimo';
+type Janela =
+  | { tipo: 'produto'; produto: Produto | null }
+  | { tipo: 'estoque'; acao: AcaoEstoque; produto: Produto }
+  | { tipo: 'saldo'; produto: Produto }
+  | { tipo: 'regras' };
+
 const MOVIMENTOS_NA_TELA = 20;
 const ROTULO_SITUACAO: Record<Exclude<SituacaoEstoque, 'ok'>, string> = { baixo: 'baixo', zerado: 'zerado', negativo: 'negativo' };
 
-export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Props) {
-  const gestor = ehGestor(papel);
+/** Para a busca: sem acento e sem diferença de maiúscula. */
+const simples = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+
+export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, confirmar = (t) => window.confirm(t) }: Props) {
+  const gestor = pode(papel, 'produtos.alterar');
+  const lanca = pode(papel, 'estoque.lancar');
   const { estado, recarregar } = usarCarga(
     async () => {
-      const [produtos, estoque, movimentos] = await Promise.all([api.listarProdutos(), api.listarEstoque(), api.listarMovimentosEstoque()]);
-      return { produtos, estoque: new Map(estoque.map((e) => [e.produtoId, e])), movimentos: movimentos.slice(0, MOVIMENTOS_NA_TELA) };
+      const [produtos, estoque, movimentos, config] = await Promise.all([
+        api.listarProdutos(),
+        api.listarEstoque(),
+        api.listarMovimentosEstoque(),
+        api.lerConfiguracao().catch((): ConfiguracaoDaLoja | null => null),
+      ]);
+      return { produtos, estoque: new Map(estoque.map((e) => [e.produtoId, e])), movimentos: movimentos.slice(0, MOVIMENTOS_NA_TELA), regras: config?.regras ?? regrasPadrao() };
     },
     [api],
     intervaloMs,
   );
-  const [janela, setJanela] = useState<{ acao: Acao; produto: Produto } | null>(null);
+  const [janela, setJanela] = useState<Janela | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
 
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
-  const nomeDe = (produtoId: string) => dados?.produtos.find((p) => p.id === produtoId)?.nome ?? 'Produto removido';
+  const porId = useMemo(() => new Map((dados?.produtos ?? []).map((p) => [p.id, p])), [dados]);
+  const nomeDe = (produtoId: string) => porId.get(produtoId)?.nome ?? 'Produto excluído';
+  const saldoDe = (p: Produto): SaldoEstoque => dados?.estoque.get(p.id) ?? { produtoId: p.id, saldo: 0, minimo: null, situacao: 'zerado' };
+  const termo = simples(busca.trim());
+  const visiveis = (dados?.produtos ?? [])
+    .filter((p) => !termo || [p.nome, p.marca ?? '', p.codigoInterno, p.codigoBarras ?? ''].some((t) => simples(t).includes(termo)))
+    .sort((a, b) => Number(b.ativo) - Number(a.ativo));
+
+  const concluir = (texto: string) => {
+    setErro(null);
+    setAviso(texto);
+    setJanela(null);
+    void recarregar();
+  };
+  const falhou = (e: unknown) => {
+    setAviso(null);
+    setErro(e instanceof ErroApi ? e.message : 'Não foi possível concluir. Tente de novo.');
+  };
+
+  async function alternarAtivo(p: Produto) {
+    try {
+      await api.definirProdutoAtivo(p.id, !p.ativo);
+      concluir(p.ativo ? `${p.nome} foi inativado: não aparece mais na Frente de caixa.` : `${p.nome} foi reativado.`);
+    } catch (e) {
+      falhou(e);
+    }
+  }
+
+  async function excluir(p: Produto) {
+    if (!confirmar(`Excluir o produto "${p.nome}"? Ele ainda não tem vendas nem movimentos de estoque.`)) return;
+    try {
+      await api.excluirProduto(p.id);
+      concluir(`${p.nome} foi excluído.`);
+    } catch (e) {
+      falhou(e);
+    }
+  }
 
   return (
     <div className="rel pe">
-      <header className="vg-topo">
+      <header className="vg-topo pe-topo">
         <div>
           <h1>Produtos e estoque</h1>
           <p className="suave">Cadastro dos produtos e o saldo de cada um. O saldo muda sozinho a cada venda, cancelamento e devolução.</p>
         </div>
+        {dados && (
+          <div className="pe-topo-acoes">
+            {pode(papel, 'loja.configurar') && (
+              <button type="button" className="botao" onClick={() => setJanela({ tipo: 'regras' })}>
+                Regras do estoque
+              </button>
+            )}
+            <button type="button" className="botao botao-primario" onClick={() => setJanela({ tipo: 'produto', produto: null })}>
+              + Cadastrar produto
+            </button>
+          </div>
+        )}
       </header>
 
       {estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? (
@@ -66,35 +154,36 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Pr
         </p>
       ) : (
         <>
-          <div>
-            <FormNovoProduto
-              api={api}
-              aoCriar={() => {
-                setAviso(null);
-                void recarregar();
-              }}
-            />
-            <p className="pe-dica suave">
-              Produto novo começa com estoque 0 e só vende depois de uma entrada.{' '}
-              {gestor ? 'Use “Entrada” na lista abaixo.' : 'A entrada é lançada pelo Dono ou pelo Administrador.'}
-            </p>
-          </div>
-
           {aviso && (
             <p className="alerta" role="status">
               {aviso}
             </p>
           )}
+          {erro && (
+            <p className="alerta alerta-erro" role="alert">
+              {erro}
+            </p>
+          )}
 
           <section className="card card-plano" aria-labelledby="pe-lista-titulo">
-            <div className="card-cabeca">
+            <div className="card-cabeca pe-cabeca">
               <h2 id="pe-lista-titulo">Produtos</h2>
+              <input
+                type="search"
+                className="pe-busca"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar nome, marca ou código"
+                aria-label="Buscar produto"
+              />
               {dados && <span className="suave">{plural(dados.produtos.length, 'cadastrado', 'cadastrados')}</span>}
             </div>
             {!dados ? (
               <p className="vazio">Carregando…</p>
             ) : dados.produtos.length === 0 ? (
-              <p className="vazio">Nenhum produto cadastrado ainda. Cadastre o primeiro no formulário acima.</p>
+              <p className="vazio">Nenhum produto cadastrado ainda. Use “+ Cadastrar produto”.</p>
+            ) : visiveis.length === 0 ? (
+              <p className="vazio">Nenhum produto com “{busca.trim()}”.</p>
             ) : (
               <div className="tabela-caixa">
                 <table className="tabela tabela-vendas pe-tabela">
@@ -105,43 +194,69 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Pr
                       <th className="numero">Preço</th>
                       <th className="numero">Estoque</th>
                       <th className="numero">Mínimo</th>
-                      {gestor && <th>Estoque: lançar</th>}
+                      {(gestor || lanca) && <th>Ações</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {dados.produtos.map((p) => {
-                      const e: SaldoEstoque = dados.estoque.get(p.id) ?? { produtoId: p.id, saldo: 0, minimo: null, situacao: 'zerado' };
+                    {visiveis.map((p) => {
+                      const e = saldoDe(p);
+                      const u = unidadeDe(p.unidade);
+                      const detalhe = [p.marca, p.pesoGramas ? formatarQuantidade(p.pesoGramas, 'kg') : null].filter(Boolean).join(' · ');
                       return (
-                        <tr key={p.id}>
+                        <tr key={p.id} className={p.ativo ? undefined : 'pe-inativo'}>
                           <td data-rotulo="Código" className="codigos">
                             <span className="mono">{p.codigoInterno}</span>
                             <small className={p.codigoBarras ? 'mono suave' : 'suave'}>{p.codigoBarras ?? 'sem código de barras'}</small>
                           </td>
                           <td data-rotulo="Produto" className="pe-nome">
                             {p.nome}
+                            {u === 'kg' && <span className="pe-tag">a granel (kg)</span>}
                             {!p.ativo && <span className="tag-cancelada">inativo</span>}
+                            {detalhe && <small className="suave pe-detalhe">{detalhe}</small>}
                           </td>
                           <td data-rotulo="Preço" className="numero">
                             {formatarCentavos(p.precoCentavos)}
+                            {u === 'kg' && <small className="suave"> /kg</small>}
                           </td>
                           <td data-rotulo="Estoque" className="numero">
-                            <b>{e.saldo} un</b>
+                            <button type="button" className="link pe-saldo" onClick={() => setJanela({ tipo: 'saldo', produto: p })} aria-label={`Como o saldo de ${p.nome} é calculado`}>
+                              {formatarQuantidade(e.saldo, u)}
+                            </button>
                             {e.situacao !== 'ok' && <span className={`pe-situacao pe-${e.situacao}`}>{ROTULO_SITUACAO[e.situacao]}</span>}
                           </td>
                           <td data-rotulo="Mínimo" className="numero">
-                            {e.minimo ?? '—'}
+                            {e.minimo ? formatarQuantidade(e.minimo, u) : '—'}
                           </td>
-                          {gestor && (
-                            <td data-rotulo="Estoque: lançar" className="pe-acoes">
-                              <button type="button" className="botao" onClick={() => setJanela({ acao: 'entrada', produto: p })} aria-label={`Entrada de ${p.nome}`}>
-                                Entrada
-                              </button>
-                              <button type="button" className="botao" onClick={() => setJanela({ acao: 'ajuste', produto: p })} aria-label={`Ajuste de ${p.nome}`}>
-                                Ajuste
-                              </button>
-                              <button type="button" className="botao" onClick={() => setJanela({ acao: 'minimo', produto: p })} aria-label={`Estoque mínimo de ${p.nome}`}>
-                                Mínimo
-                              </button>
+                          {(gestor || lanca) && (
+                            <td data-rotulo="Ações" className="pe-acoes">
+                              {lanca && p.ativo && (
+                                <>
+                                  <button type="button" className="botao" onClick={() => setJanela({ tipo: 'estoque', acao: 'entrada', produto: p })} aria-label={`Entrada de ${p.nome}`}>
+                                    Entrada
+                                  </button>
+                                  <button type="button" className="botao" onClick={() => setJanela({ tipo: 'estoque', acao: 'ajuste', produto: p })} aria-label={`Ajuste de ${p.nome}`}>
+                                    Ajuste
+                                  </button>
+                                  <button type="button" className="botao" onClick={() => setJanela({ tipo: 'estoque', acao: 'minimo', produto: p })} aria-label={`Estoque mínimo de ${p.nome}`}>
+                                    Mínimo
+                                  </button>
+                                </>
+                              )}
+                              {gestor && (
+                                <>
+                                  <button type="button" className="botao" onClick={() => setJanela({ tipo: 'produto', produto: p })} aria-label={`Alterar ${p.nome}`}>
+                                    Alterar
+                                  </button>
+                                  <button type="button" className="botao" onClick={() => void alternarAtivo(p)} aria-label={`${p.ativo ? 'Inativar' : 'Reativar'} ${p.nome}`}>
+                                    {p.ativo ? 'Inativar' : 'Reativar'}
+                                  </button>
+                                  {!p.temHistorico && (
+                                    <button type="button" className="botao pe-excluir" onClick={() => void excluir(p)} aria-label={`Excluir ${p.nome}`}>
+                                      Excluir
+                                    </button>
+                                  )}
+                                </>
+                              )}
                             </td>
                           )}
                         </tr>
@@ -152,8 +267,9 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Pr
               </div>
             )}
             <p className="card-rodape">
-              Saldo = estoque inicial + entradas − vendas + cancelamentos + devoluções que voltaram para a prateleira ± ajustes.
-              {!gestor && ' Entrada, ajuste e estoque mínimo: Dono ou Administrador.'}
+              Saldo = estoque inicial + entradas − vendas + cancelamentos + devoluções que voltaram para a prateleira ± ajustes (clique no saldo para ver a conta).
+              {!gestor && ' Alterar, inativar, entrada, ajuste e estoque mínimo: Dono ou Administrador.'}
+              {gestor && ' Produto com vendas ou movimentos não é excluído: inative.'}
             </p>
           </section>
 
@@ -179,26 +295,30 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Pr
                     </tr>
                   </thead>
                   <tbody>
-                    {dados.movimentos.map((m) => (
-                      <tr key={m.id}>
-                        <td data-rotulo="Data" className="mono">
-                          {dataNoFuso(m.criadoEm, fuso)}
-                        </td>
-                        <td data-rotulo="Hora" className="mono">
-                          {horaNoFuso(m.criadoEm, fuso)}
-                        </td>
-                        <td data-rotulo="Produto">{nomeDe(m.produtoId)}</td>
-                        <td data-rotulo="Movimento">
-                          {NOME_MOVIMENTO_ESTOQUE[m.tipo]}
-                          {m.vendaNumero !== null && <span className="suave"> {formatarNumeroVenda(m.vendaNumero)}</span>}
-                        </td>
-                        <td data-rotulo="Quantidade" className={`numero ${m.quantidade < 0 ? 'pe-sai' : 'pe-entra'}`}>
-                          {m.quantidade > 0 ? `+${m.quantidade}` : m.quantidade}
-                        </td>
-                        <td data-rotulo="Motivo">{m.motivo ?? '—'}</td>
-                        <td data-rotulo="Lançado por">{m.por.nome}</td>
-                      </tr>
-                    ))}
+                    {dados.movimentos.map((m) => {
+                      const u = unidadeDe(porId.get(m.produtoId)?.unidade);
+                      return (
+                        <tr key={m.id}>
+                          <td data-rotulo="Data" className="mono">
+                            {dataNoFuso(m.criadoEm, fuso)}
+                          </td>
+                          <td data-rotulo="Hora" className="mono">
+                            {horaNoFuso(m.criadoEm, fuso)}
+                          </td>
+                          <td data-rotulo="Produto">{nomeDe(m.produtoId)}</td>
+                          <td data-rotulo="Movimento">
+                            {NOME_MOVIMENTO_ESTOQUE[m.tipo]}
+                            {m.vendaNumero !== null && <span className="suave"> {formatarNumeroVenda(m.vendaNumero)}</span>}
+                          </td>
+                          <td data-rotulo="Quantidade" className={`numero ${m.quantidade < 0 ? 'pe-sai' : 'pe-entra'}`}>
+                            {m.quantidade > 0 ? '+' : ''}
+                            {formatarQuantidade(m.quantidade, u)}
+                          </td>
+                          <td data-rotulo="Motivo">{[m.motivo, m.observacao].filter(Boolean).join(' — ') || '—'}</td>
+                          <td data-rotulo="Lançado por">{m.por.nome}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -207,129 +327,30 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000 }: Pr
         </>
       )}
 
-      {janela && dados && (
-        <ModalEstoque
-          acao={janela.acao}
-          produto={janela.produto}
-          atual={dados.estoque.get(janela.produto.id) ?? { produtoId: janela.produto.id, saldo: 0, minimo: null, situacao: 'zerado' }}
+      {janela?.tipo === 'produto' && dados && (
+        <ModalProduto
           api={api}
-          aoConcluir={(texto) => {
-            setAviso(texto);
-            setJanela(null);
-            void recarregar();
-          }}
+          produto={janela.produto}
+          unidades={dados.regras.produtos.unidades}
+          podeCusto={gestor}
+          confirmar={confirmar}
+          aoSalvar={(_p, mensagem) => concluir(mensagem)}
           aoFechar={() => setJanela(null)}
         />
       )}
+      {janela?.tipo === 'estoque' && dados && (
+        <ModalEstoque
+          acao={janela.acao}
+          produto={janela.produto}
+          atual={saldoDe(janela.produto)}
+          motivos={dados.regras.estoque.motivosAjuste}
+          api={api}
+          aoConcluir={concluir}
+          aoFechar={() => setJanela(null)}
+        />
+      )}
+      {janela?.tipo === 'saldo' && <ModalSaldo produto={janela.produto} api={api} aoFechar={() => setJanela(null)} />}
+      {janela?.tipo === 'regras' && dados && <ModalRegrasEstoque regras={dados.regras} api={api} aoSalvar={concluir} aoFechar={() => setJanela(null)} />}
     </div>
-  );
-}
-
-const inteiro = (texto: string): number | null => (/^\d{1,6}$/.test(texto.trim()) ? Number(texto.trim()) : null);
-
-function ModalEstoque({
-  acao,
-  produto,
-  atual,
-  api,
-  aoConcluir,
-  aoFechar,
-}: {
-  acao: Acao;
-  produto: Produto;
-  atual: SaldoEstoque;
-  api: Pick<ApiPainel, 'lancarMovimentoEstoque' | 'definirEstoqueMinimo'>;
-  aoConcluir: (mensagem: string) => void;
-  aoFechar: () => void;
-}) {
-  const [quantidade, setQuantidade] = useState(acao === 'minimo' ? String(atual.minimo ?? '') : '');
-  const [sentido, setSentido] = useState<'tirar' | 'por'>('tirar');
-  const [motivo, setMotivo] = useState('');
-  const [erro, setErro] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-
-  const n = inteiro(quantidade);
-  const variacao = n === null ? null : acao === 'ajuste' && sentido === 'tirar' ? -n : n;
-
-  async function confirmar(ev: FormEvent) {
-    ev.preventDefault();
-    setErro(null);
-    try {
-      if (acao === 'minimo') {
-        const minimo = quantidade.trim() === '' ? 0 : n;
-        if (minimo === null) return setErro('Informe um número inteiro (0 = sem aviso de estoque baixo).');
-        setEnviando(true);
-        const novo = await api.definirEstoqueMinimo(produto.id, minimo);
-        return aoConcluir(novo.minimo ? `Estoque mínimo de ${produto.nome}: ${novo.minimo} un.` : `${produto.nome} ficou sem aviso de estoque baixo.`);
-      }
-      if (variacao === null || variacao === 0) return setErro('Informe uma quantidade inteira maior que zero.');
-      const local = validarMovimentoManual({ produtoId: produto.id, tipo: acao, quantidade: variacao, motivo });
-      if (!local.ok) return setErro(local.erros[0]!.mensagem);
-      setEnviando(true);
-      const novo = await api.lancarMovimentoEstoque(local.valor);
-      aoConcluir(`${acao === 'entrada' ? 'Entrada lançada' : 'Ajuste lançado'}: ${produto.nome} ${variacao > 0 ? '+' : ''}${variacao} un. Saldo agora: ${novo.saldo} un.`);
-    } catch (e) {
-      setErro(e instanceof ErroApi ? e.message : 'Não foi possível gravar. Tente de novo.');
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  const titulo = acao === 'entrada' ? 'Entrada de estoque' : acao === 'ajuste' ? 'Ajuste de estoque' : 'Estoque mínimo';
-  return (
-    <Modal titulo={`${titulo}: ${produto.nome}`} aoFechar={aoFechar}>
-      <p className="modal-sub">
-        Saldo atual: <b>{atual.saldo} un</b>
-        {acao !== 'minimo' && variacao !== null && variacao !== 0 && (
-          <>
-            {' '}
-            → depois: <b>{atual.saldo + variacao} un</b>
-          </>
-        )}
-        {acao === 'minimo' && '. Quando o saldo chegar no mínimo ou abaixo, o produto aparece como estoque baixo.'}
-      </p>
-      <form className="modal-form" onSubmit={confirmar} noValidate autoComplete="off">
-        {acao === 'ajuste' && (
-          <fieldset className="dev-acao">
-            <legend>O que o ajuste faz</legend>
-            <label>
-              <input type="radio" name="pe-sentido" checked={sentido === 'tirar'} onChange={() => setSentido('tirar')} /> Tirar do estoque (perda, avaria, vencido)
-            </label>
-            <label>
-              <input type="radio" name="pe-sentido" checked={sentido === 'por'} onChange={() => setSentido('por')} /> Pôr no estoque (sobra na contagem)
-            </label>
-          </fieldset>
-        )}
-        <div className="campo">
-          <label htmlFor="pe-quantidade">{acao === 'minimo' ? 'Estoque mínimo (0 = sem aviso)' : 'Quantidade (unidades)'}</label>
-          <input id="pe-quantidade" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} inputMode="numeric" maxLength={6} placeholder="0" />
-        </div>
-        {acao !== 'minimo' && (
-          <div className="campo">
-            <label htmlFor="pe-motivo">{acao === 'ajuste' ? 'Motivo' : 'Observação (opcional)'}</label>
-            <input
-              id="pe-motivo"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              maxLength={LIMITES_ESTOQUE.motivoMax}
-              placeholder={acao === 'ajuste' ? 'Ex.: embalagem rasgada, contagem do dia 16' : 'Ex.: nota 1234 do fornecedor'}
-            />
-          </div>
-        )}
-        {erro && (
-          <p className="alerta alerta-erro" role="alert">
-            {erro}
-          </p>
-        )}
-        <div className="modal-acoes">
-          <button type="submit" className="botao botao-primario" disabled={enviando}>
-            {enviando ? 'Gravando…' : acao === 'entrada' ? 'Lançar entrada' : acao === 'ajuste' ? 'Lançar ajuste' : 'Salvar mínimo'}
-          </button>
-          <button type="button" className="botao" onClick={aoFechar}>
-            Cancelar
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }

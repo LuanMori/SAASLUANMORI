@@ -10,6 +10,7 @@ import {
   lerCarrinhoSalvo,
   sugestoesDeDinheiro,
   lerEntrada,
+  quantidadeDaEntrada,
   type LinhaCarrinho,
   montarPedido,
   pagamentoInicial,
@@ -38,17 +39,28 @@ beforeEach(() => localStorage.clear());
 
 describe('lerEntrada (leitor)', () => {
   it.each([
-    ['7891000100103', { quantidade: 1, codigo: '7891000100103' }],
-    ['  0002 ', { quantidade: 1, codigo: '0002' }],
-    ['3*7891000100103', { quantidade: 3, codigo: '7891000100103' }],
-    ['3x 0002', { quantidade: 3, codigo: '0002' }],
-    ['12 X 0002', { quantidade: 12, codigo: '0002' }],
+    ['7891000100103', { multiplicador: null, codigo: '7891000100103' }],
+    ['  0002 ', { multiplicador: null, codigo: '0002' }],
+    ['3*7891000100103', { multiplicador: '3', codigo: '7891000100103' }],
+    ['3x 0002', { multiplicador: '3', codigo: '0002' }],
+    ['12 X 0002', { multiplicador: '12', codigo: '0002' }],
+    ['1,5*0003', { multiplicador: '1,5', codigo: '0003' }],
   ])('"%s"', (texto, esperado) => expect(lerEntrada(texto)).toEqual(esperado));
 
-  it('quantidade quebrada ou grande demais é recusada', () => {
-    expect(lerEntrada('0,5*0002')).toEqual({ erro: expect.stringMatching(/quantidade inteira/) });
-    expect(lerEntrada('0*0002')).toEqual({ erro: expect.stringMatching(/quantidade inteira/) });
-    expect(lerEntrada('10000*0002')).toEqual({ erro: expect.stringMatching(/No máximo 9999/) });
+  it('a quantidade sai com a unidade do produto: unidades ou gramas', () => {
+    expect(quantidadeDaEntrada(null, 'un')).toBe(1);
+    expect(quantidadeDaEntrada(null, 'kg')).toBe(1000); // sem multiplicador: 1 kg
+    expect(quantidadeDaEntrada('3', 'un')).toBe(3);
+    expect(quantidadeDaEntrada('1,5', 'kg')).toBe(1500);
+    expect(quantidadeDaEntrada('0,25', 'kg')).toBe(250);
+  });
+
+  it('quantidade quebrada (na unidade), zero ou grande demais é recusada', () => {
+    expect(quantidadeDaEntrada('0,5', 'un')).toEqual({ erro: expect.stringMatching(/quantidade inteira/) });
+    expect(quantidadeDaEntrada('0', 'un')).toEqual({ erro: expect.stringMatching(/quantidade inteira/) });
+    expect(quantidadeDaEntrada('10000', 'un')).toEqual({ erro: expect.stringMatching(/No máximo 9999/) });
+    expect(quantidadeDaEntrada('1,2345', 'kg')).toEqual({ erro: expect.stringMatching(/até 3 casas/) });
+    expect(quantidadeDaEntrada('1000', 'kg')).toEqual({ erro: expect.stringMatching(/No máximo 999,999 kg/) });
   });
 });
 
@@ -74,6 +86,21 @@ describe('totais e desconto', () => {
   ];
   it('soma itens, produtos, desconto e total com o preço com desconto', () => {
     expect(totaisDoCarrinho(linhas, porId)).toEqual({ itens: 5, produtos: 2, totalCentavos: 17000 + 3000, descontoCentavos: 1990 });
+  });
+
+  it('produto por kg: ao preço do quilo, e conta como um item', () => {
+    const granel = produto({ id: 'g', nome: 'Ração a granel', precoCentavos: 1990, unidade: 'kg' });
+    const r = totaisDoCarrinho(
+      [
+        { produtoId: 'g', quantidade: 1250, desconto: null },
+        { produtoId: 'g2', quantidade: 2000, desconto: { precoFinalCentavos: 1800, motivo: 'x', responsavelNome: 'Ana', autorizacao: null } },
+      ],
+      new Map([
+        ['g', granel],
+        ['g2', { ...granel, id: 'g2' }],
+      ]),
+    );
+    expect(r).toEqual({ itens: 2, produtos: 2, totalCentavos: 2488 + 3600, descontoCentavos: 380 });
   });
   it('quem precisa autorizar depende do papel de quem opera', () => {
     expect(autorizacaoNecessaria(linhas[0]!, racao, 'vendedor')).toBe('gestor'); // 10,5% de desconto

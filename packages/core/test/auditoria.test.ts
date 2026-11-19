@@ -35,9 +35,15 @@ describe('resumo dos detalhes', () => {
     expect(resumirAuditoria('usuario.alterado', { campos: ['nome'] })).toBe('');
     expect(resumirAuditoria('loja.dados_alterados', { campos: ['nome', 'logo'] })).toBe('nome, logo');
     expect(resumirAuditoria('loja.regras_alteradas', { secoes: ['fiado', 'cashback'] })).toBe('fiado, cashback');
-    expect(resumirAuditoria('estoque.ajuste', { quantidade: -2, motivo: 'Perda ou avaria' })).toBe('-2 un. • Perda ou avaria');
-    expect(resumirAuditoria('estoque.entrada', { quantidade: 10 })).toBe('+10 un.');
-    expect(resumirAuditoria('estoque.minimo', { minimo: 4 })).toBe('mínimo 4 un.');
+    expect(resumirAuditoria('estoque.ajuste', { quantidade: -2, motivo: 'Perda ou avaria' })).toBe('-2 un • Perda ou avaria');
+    expect(resumirAuditoria('estoque.ajuste', { quantidade: -1500, unidade: 'kg', motivo: 'Outro', observacao: 'saco rasgado' })).toBe('-1,5 kg • Outro • saco rasgado');
+    expect(resumirAuditoria('estoque.entrada', { quantidade: 10 })).toBe('+10 un');
+    expect(resumirAuditoria('estoque.minimo', { minimo: 4 })).toBe('mínimo 4 un');
+    expect(resumirAuditoria('estoque.minimo', { minimo: 2500, unidade: 'kg' })).toBe('mínimo 2,5 kg');
+    expect(limpo(resumirAuditoria('produto.preco_alterado', { de: 1500, para: 1690 }))).toBe('R$ 15,00 → R$ 16,90');
+    expect(resumirAuditoria('produto.alterado', { campos: ['nome', 'codigoBarras', 'unidade'] })).toBe('nome, código de barras, unidade');
+    expect(resumirAuditoria('produto.excluido', { nome: 'Coleira M', codigo: '0007' })).toBe('Coleira M • código 0007');
+    expect(resumirAuditoria('produto.criado', { codigoInterno: '0012' })).toBe('código 0012');
     expect(resumirAuditoria('estoque.minimo', { minimo: null })).toBe('sem aviso de estoque baixo');
     expect(limpo(resumirAuditoria('financeiro.despesa', { valorCentavos: 12000, conta: 'caixa', categoria: 'Aluguel' }))).toBe('R$ 120,00 • Caixa físico • Aluguel');
     expect(limpo(resumirAuditoria('financeiro.transferencia', { valorCentavos: 5000, de: 'caixa', para: 'banco' }))).toBe('R$ 50,00 • Caixa físico → Conta bancária');

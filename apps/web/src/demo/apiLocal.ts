@@ -53,6 +53,7 @@ import {
   efeitosFinanceirosDoEstorno,
   fiadoEmAberto,
   formatarCodigoInterno,
+  formatarQuantidade,
   FUSO_PADRAO,
   type Lancamento,
   lancamentosManuais,
@@ -60,6 +61,7 @@ import {
   mascararCpf,
   mensagemSemPermissao,
   type MovimentoEstoque,
+  movimentoInicial,
   movimentoManual,
   movimentosDaDevolucao,
   movimentosDaVenda,
@@ -74,6 +76,8 @@ import {
   type Pagamento,
   type Permissao,
   pode,
+  produtoParecido,
+  produtoTemHistorico,
   type ProdutoParaVenda,
   type Recebivel,
   receberRecebivel,
@@ -89,6 +93,8 @@ import {
   TAXAS_CARTAO_PADRAO,
   tirarNomeDoCliente,
   type TaxasCartao,
+  unidadeDe,
+  validarAlteracaoProduto,
   validarEstoqueMinimo,
   validarLancamentoManual,
   validarMovimentoManual,
@@ -193,19 +199,30 @@ export function normalizarVenda(bruta: Venda & { formaPagamento?: Pagamento['for
   };
 }
 
+/** Produtos gravados antes do cadastro completo: sem marca, sem peso e vendidos por unidade. */
+export function normalizarProduto(p: Produto): Produto {
+  const { temHistorico: _calculado, ...guardado } = p;
+  return { ...guardado, marca: p.marca ?? null, pesoGramas: p.pesoGramas ?? null, unidade: unidadeDe(p.unidade) };
+}
+
 // ------------------------------------------------------------------ autorizações dadas com senha
 // Ficam só na memória desta aba (como no DaniPets): recarregar a página não cria autorização.
 const autorizacoes = new Map<string, Autorizacao & { lojaId: string }>();
 
 // ------------------------------------------------------------------ exemplos
-/** estoque = quanto o produto tem depois das vendas de exemplo; minimo = aviso de estoque baixo. */
-const PRODUTOS_EXEMPLO: { nome: string; codigoBarras: string | null; precoCentavos: number; estoque: number; minimo: number }[] = [
+/**
+ * estoque = quanto o produto tem depois das vendas de exemplo; minimo = aviso de estoque baixo (no produto
+ * por kg, em gramas).
+ */
+const PRODUTOS_EXEMPLO: { nome: string; codigoBarras: string | null; precoCentavos: number; estoque: number; minimo: number; unidade?: 'kg'; marca?: string }[] = [
   { nome: 'Ração Premium Cães Adultos 15 kg', codigoBarras: '7891000100103', precoCentavos: 18990, estoque: 12, minimo: 4 },
   { nome: 'Ração Gatos Castrados 3 kg', codigoBarras: '7891000200209', precoCentavos: 7990, estoque: 18, minimo: 5 },
   { nome: 'Areia Sanitária 4 kg', codigoBarras: '7896000300306', precoCentavos: 2490, estoque: 25, minimo: 6 },
   { nome: 'Petisco Bifinho Carne 65 g', codigoBarras: '7897000400403', precoCentavos: 750, estoque: 60, minimo: 12 },
   { nome: 'Shampoo Neutro 500 ml', codigoBarras: null, precoCentavos: 3200, estoque: 8, minimo: 3 },
   { nome: 'Coleira Ajustável M', codigoBarras: null, precoCentavos: 2990, estoque: 3, minimo: 5 },
+  // vendida a granel, por kg (DaniPets: ração a granel); preço do quilo
+  { nome: 'Ração a granel Cães Adultos', codigoBarras: '2000000000015', precoCentavos: 1990, estoque: 25_000, minimo: 5000, unidade: 'kg', marca: 'Granel da casa' },
 ];
 
 /** Produto que não é dos exemplos, numa loja antiga: começa com este estoque. */
@@ -285,6 +302,9 @@ function criarExemplos(lojaId: string, agora: Date, fuso: string): void {
           codigoBarras: p.codigoBarras,
           nome: p.nome,
           precoCentavos: p.precoCentavos,
+          marca: p.marca ?? null,
+          pesoGramas: null,
+          unidade: p.unidade ?? 'un',
           ativo: true,
           criadoEm,
           atualizadoEm: criadoEm,
@@ -489,7 +509,7 @@ export function criarApiLocal({
     }
   };
 
-  const produtosDaLoja = () => lerDaLoja<Produto>(CHAVES.produtos, lojaId);
+  const produtosDaLoja = () => lerDaLoja<Produto>(CHAVES.produtos, lojaId).map(normalizarProduto);
   const vendasDaLoja = () => lerDaLoja<Venda>(CHAVES.vendas, lojaId).map(normalizarVenda);
   const gravarVendas = (vendas: Venda[]) => gravarDaLoja(CHAVES.vendas, lojaId, vendas);
   const movimentosDaLoja = () => lerDaLoja<MovimentoEstoque>(CHAVES.estoque, lojaId);
@@ -523,6 +543,22 @@ export function criarApiLocal({
     const p = produtosDaLoja().find((x) => x.id === produtoId);
     if (!p) throw new ErroApi(404, 'Produto não encontrado.');
     return p;
+  };
+  /** A loja vende por kg? (Produtos e estoque → Regras do estoque) */
+  const exigirUnidadeDaLoja = (unidade: 'un' | 'kg') => {
+    if (!regras().produtos.unidades.includes(unidade)) {
+      throw new ErroApi(400, unidade === 'kg' ? 'Esta loja não vende por quilo. Ligue o kg em Produtos e estoque → Regras do estoque.' : 'Esta loja não vende por unidade.', [
+        { campo: 'unidade', mensagem: 'Unidade desligada nas regras da loja.' },
+      ]);
+    }
+  };
+  /** Código de barras único na loja e diferente de qualquer código interno (DaniPets). */
+  const conferirCodigoDeBarras = (codigo: string | null, daLoja: readonly Produto[], excetoId: string | null) => {
+    if (!codigo) return;
+    const dono = daLoja.find((p) => p.id !== excetoId && (p.codigoInterno === codigo || p.codigoBarras === codigo));
+    if (dono) {
+      throw new ErroApi(409, `Código de barras repetido: ${codigo} já está vinculado ao produto "${dono.nome}".`, [{ campo: 'codigoBarras', mensagem: `Já usado em "${dono.nome}".` }]);
+    }
   };
 
   /**
@@ -560,32 +596,36 @@ export function criarApiLocal({
     // ---------------------------------------------------------------- produtos
     async listarProdutos() {
       await preparar();
-      return [...produtosDaLoja()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR') || a.id.localeCompare(b.id));
+      const movimentos = movimentosDaLoja();
+      const vendas = vendasDaLoja();
+      return produtosDaLoja()
+        .map((p) => ({ ...p, temHistorico: produtoTemHistorico(p.id, movimentos, vendas) }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR') || a.id.localeCompare(b.id));
     },
 
-    async criarProduto(dados) {
+    async criarProduto(dados, opcoes = {}) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
-        const validacao = validarNovoProduto(dados);
-        if (!validacao.ok) throw new ErroApi(400, 'Dados do produto inválidos.', validacao.erros);
-        const novo = validacao.valor;
+        const quem = exigir('produtos.cadastrar');
+        const validacao = validarNovoProduto(dados, { completo: true });
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do produto inválidos.', validacao.erros);
+        const { estoqueInicial = 0, custoInicialCentavos = null, ...novo } = validacao.valor;
+        const unidade = unidadeDe(novo.unidade);
+        exigirUnidadeDaLoja(unidade);
+        // DaniPets: o custo do estoque inicial é só do Dono e do Administrador
+        if (custoInicialCentavos !== null && !pode(quem.papel, 'produtos.alterar')) {
+          throw new ErroApi(403, 'Custo do estoque inicial: só o Dono ou o Administrador.', [{ campo: 'custoInicialCentavos', mensagem: 'Só o Dono ou o Administrador.' }]);
+        }
 
         const daLoja = produtosDaLoja();
-        const comCodigo = (codigo: string) =>
-          daLoja.find((p) => p.codigoInterno === codigo || p.codigoBarras === codigo) ?? null;
-
-        if (novo.codigoBarras) {
-          const dono = comCodigo(novo.codigoBarras);
-          if (dono) {
-            throw new ErroApi(
-              409,
-              `Código de barras repetido: ${novo.codigoBarras} já está vinculado ao produto "${dono.nome}".`,
-              [{ campo: 'codigoBarras', mensagem: `Já usado em "${dono.nome}".` }],
-            );
-          }
+        conferirCodigoDeBarras(novo.codigoBarras, daLoja, null);
+        const parecido = produtoParecido(novo, daLoja);
+        if (parecido && !opcoes.mesmoAssim) {
+          throw new ErroApi(409, `Já existe produto com o mesmo nome, marca e peso: "${parecido.nome}" (código ${parecido.codigoInterno}).`, [], 'produto_parecido');
         }
 
         // Maior código interno da loja + 1, pulando números já usados como código de barras.
+        const comCodigo = (codigo: string) => daLoja.find((p) => p.codigoInterno === codigo || p.codigoBarras === codigo) ?? null;
         let numero = daLoja.reduce((maior, p) => Math.max(maior, Number(p.codigoInterno)), 0) + 1;
         let codigoInterno = formatarCodigoInterno(numero);
         while (codigoInterno === novo.codigoBarras || comCodigo(codigoInterno)) {
@@ -594,10 +634,99 @@ export function criarApiLocal({
         }
 
         const quando = agora().toISOString();
-        const produto: Produto = { id: novoId(), codigoInterno, ...novo, ativo: true, criadoEm: quando, atualizadoEm: quando };
-        gravarDaLoja(CHAVES.produtos, lojaId, [...daLoja, produto]);
-        auditar('produto.criado', { tipo: 'produto', id: produto.id }, { codigoInterno });
+        const produto: Produto = {
+          id: novoId(),
+          codigoInterno,
+          nome: novo.nome,
+          codigoBarras: novo.codigoBarras,
+          precoCentavos: novo.precoCentavos,
+          marca: novo.marca ?? null,
+          pesoGramas: novo.pesoGramas ?? null,
+          unidade,
+          ativo: true,
+          criadoEm: quando,
+          atualizadoEm: quando,
+        };
+        gravarDaLoja(CHAVES.produtos, lojaId, [...lerDaLoja<Produto>(CHAVES.produtos, lojaId), produto]);
+        if (estoqueInicial > 0) {
+          juntarMovimentos([movimentoInicial({ produtoId: produto.id, quantidade: estoqueInicial, custoUnitarioCentavos: custoInicialCentavos }, { em: quando, por: pessoa(quem) })]);
+        }
+        auditar('produto.criado', { tipo: 'produto', id: produto.id }, { codigoInterno, ...(estoqueInicial > 0 ? { estoqueInicial, unidade } : {}) });
         return produto;
+      });
+    },
+
+    async alterarProduto(id, mudanca, opcoes = {}) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('produtos.alterar');
+        const validacao = validarAlteracaoProduto(mudanca);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do produto inválidos.', validacao.erros);
+        const guardados = lerDaLoja<Produto>(CHAVES.produtos, lojaId);
+        const i = guardados.findIndex((p) => p.id === id);
+        if (i < 0) throw new ErroApi(404, 'Produto não encontrado.');
+        const antes = normalizarProduto(guardados[i]!);
+        const depois: Produto = { ...antes, ...validacao.valor };
+        const campos = (Object.keys(validacao.valor) as (keyof typeof validacao.valor)[]).filter((k) => antes[k] !== depois[k]);
+        if (campos.length === 0) return antes;
+
+        const daLoja = guardados.map(normalizarProduto);
+        if (campos.includes('codigoBarras')) conferirCodigoDeBarras(depois.codigoBarras, daLoja, id);
+        if (campos.includes('unidade')) {
+          exigirUnidadeDaLoja(unidadeDe(depois.unidade));
+          if (produtoTemHistorico(id, movimentosDaLoja(), vendasDaLoja())) {
+            throw new ErroApi(
+              409,
+              `${antes.nome} já tem vendas ou movimentos de estoque: a unidade não pode mudar (o saldo e as vendas estão em ${antes.unidade === 'kg' ? 'kg' : 'unidades'}). Para vender de outro jeito, cadastre um produto novo e inative este.`,
+              [{ campo: 'unidade', mensagem: 'Não muda com história.' }],
+            );
+          }
+        }
+        const parecido = campos.some((k) => k === 'nome' || k === 'marca' || k === 'pesoGramas') ? produtoParecido(depois, daLoja, id) : null;
+        if (parecido && !opcoes.mesmoAssim) {
+          throw new ErroApi(409, `Já existe produto com o mesmo nome, marca e peso: "${parecido.nome}" (código ${parecido.codigoInterno}).`, [], 'produto_parecido');
+        }
+        const salvo: Produto = { ...depois, atualizadoEm: agora().toISOString() };
+        guardados[i] = salvo;
+        gravarDaLoja(CHAVES.produtos, lojaId, guardados);
+        if (campos.includes('precoCentavos')) auditar('produto.preco_alterado', { tipo: 'produto', id }, { de: antes.precoCentavos, para: salvo.precoCentavos });
+        const outros = campos.filter((k) => k !== 'precoCentavos');
+        if (outros.length > 0) auditar('produto.alterado', { tipo: 'produto', id }, { campos: outros });
+        return salvo;
+      });
+    },
+
+    async definirProdutoAtivo(id, ativo) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('produtos.alterar');
+        const guardados = lerDaLoja<Produto>(CHAVES.produtos, lojaId);
+        const i = guardados.findIndex((p) => p.id === id);
+        if (i < 0) throw new ErroApi(404, 'Produto não encontrado.');
+        const antes = normalizarProduto(guardados[i]!);
+        if (antes.ativo === (ativo === true)) return antes;
+        const salvo: Produto = { ...antes, ativo: ativo === true, atualizadoEm: agora().toISOString() };
+        guardados[i] = salvo;
+        gravarDaLoja(CHAVES.produtos, lojaId, guardados);
+        auditar(salvo.ativo ? 'produto.reativado' : 'produto.inativado', { tipo: 'produto', id });
+        return salvo;
+      });
+    },
+
+    async excluirProduto(id) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('produtos.alterar');
+        const p = produtosDaLoja().find((x) => x.id === id);
+        if (!p) throw new ErroApi(404, 'Produto não encontrado.');
+        if (produtoTemHistorico(id, movimentosDaLoja(), vendasDaLoja())) {
+          throw new ErroApi(409, `${p.nome} tem vendas ou movimentos de estoque e não pode ser excluído. Use “Inativar”.`);
+        }
+        gravarDaLoja(CHAVES.produtos, lojaId, lerDaLoja<Produto>(CHAVES.produtos, lojaId).filter((x) => x.id !== id));
+        gravarDaLoja(CHAVES.estoque, lojaId, movimentosDaLoja().filter((m) => m.produtoId !== id)); // o estoque inicial do cadastro
+        const { [id]: _minimo, ...outros } = minimosDaLoja();
+        gravar(CHAVES.minimos, { ...ler<Record<string, Record<string, number>>>(CHAVES.minimos, {}), [lojaId]: outros });
+        auditar('produto.excluido', null, { nome: p.nome, codigo: p.codigoBarras ?? p.codigoInterno });
       });
     },
 
@@ -791,14 +920,20 @@ export function criarApiLocal({
         const validacao = validarMovimentoManual(dados);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Movimento inválido.', validacao.erros);
         const p = exigirProduto(validacao.valor.produtoId);
+        const unidade = unidadeDe(p.unidade);
+        if (validacao.valor.tipo === 'ajuste' && !regras().estoque.motivosAjuste.includes(validacao.valor.motivo)) {
+          throw new ErroApi(400, `Escolha o motivo do ajuste: ${regras().estoque.motivosAjuste.join(', ')}.`, [{ campo: 'motivo', mensagem: 'Motivo fora da lista da loja.' }]);
+        }
         const antes = saldoDoProduto(p.id).saldo;
         if (antes + validacao.valor.quantidade < 0) {
-          throw new ErroApi(409, `O ajuste deixaria o saldo de ${p.nome} negativo (saldo atual ${antes} un.).`, [{ campo: 'quantidade', mensagem: 'Saldo negativo.' }]);
+          throw new ErroApi(409, `O ajuste deixaria o saldo de ${p.nome} negativo (saldo atual ${formatarQuantidade(antes, unidade)}).`, [{ campo: 'quantidade', mensagem: 'Saldo negativo.' }]);
         }
         juntarMovimentos([movimentoManual(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) })]);
         auditar(validacao.valor.tipo === 'entrada' ? 'estoque.entrada' : 'estoque.ajuste', { tipo: 'produto', id: p.id }, {
           quantidade: validacao.valor.quantidade,
+          unidade,
           motivo: validacao.valor.motivo,
+          ...(validacao.valor.observacao ? { observacao: validacao.valor.observacao } : {}),
         });
         return saldoDoProduto(p.id);
       });
@@ -814,7 +949,7 @@ export function criarApiLocal({
         const { [p.id]: _antigo, ...outros } = minimosDaLoja();
         const novos = validacao.valor === null ? outros : { ...outros, [p.id]: validacao.valor };
         gravar(CHAVES.minimos, { ...ler<Record<string, Record<string, number>>>(CHAVES.minimos, {}), [lojaId]: novos });
-        auditar('estoque.minimo', { tipo: 'produto', id: p.id }, { minimo: validacao.valor });
+        auditar('estoque.minimo', { tipo: 'produto', id: p.id }, { minimo: validacao.valor, unidade: unidadeDe(p.unidade) });
         return saldoDoProduto(p.id);
       });
     },

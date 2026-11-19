@@ -9,6 +9,7 @@ export * from './auditoria';
 export * from './configuracao';
 export * from './dinheiro';
 export * from './texto';
+export * from './quantidade';
 export * from './produto';
 export * from './venda';
 export * from './estoque';

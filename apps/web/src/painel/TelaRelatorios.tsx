@@ -21,7 +21,7 @@ import {
 } from '@saas/core';
 import { useMemo, useState } from 'react';
 import type { ApiFinanceiro, ApiVendas } from '../api';
-import { dataNoFuso, horaNoFuso, plural, totalItens } from './formato';
+import { dataNoFuso, horaNoFuso, itensVendidos, plural, quantidadeDoItem, totalItens } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
@@ -192,7 +192,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
             <Cartao rotulo="Total vendido" valor={formatarCentavos(r.totalCentavos)} />
             <Cartao rotulo="Vendas" valor={String(r.quantidadeVendas)} />
             <Cartao rotulo="Ticket médio" valor={formatarCentavos(r.ticketMedioCentavos)} />
-            <Cartao rotulo="Itens vendidos" valor={String(r.itensVendidos)} />
+            <Cartao rotulo="Itens vendidos" valor={itensVendidos(r.itensVendidos, r.gramasVendidas)} />
           </section>
           {(r.descontoCentavos > 0 || dev.quantidade > 0 || r.canceladas > 0 || taxas > 0) && (
             <p className="rel-extra suave" data-testid="rel-extra">
@@ -291,7 +291,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date() }: Props) {
                             <ul>
                               {v.itens.map((i) => (
                                 <li key={i.produtoId}>
-                                  {i.quantidade}× {i.nome} <span className="suave">({formatarCentavos(i.precoCentavos)} cada)</span>
+                                  {quantidadeDoItem(i)} {i.nome} <span className="suave">({formatarCentavos(i.precoCentavos)}{i.unidade === 'kg' ? ' o kg' : ' cada'})</span>
                                   {i.desconto && (
                                     <span className="vg-tag-desc">
                                       {' '}

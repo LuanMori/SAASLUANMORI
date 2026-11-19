@@ -123,9 +123,9 @@ describe('histórico de todas as ações (DaniPets ACE-17)', () => {
 
     const hist = await ana.listarAuditoria();
     const de = (acao: string) => hist.filter((h) => h.acao === acao);
-    expect(de('estoque.ajuste')[0]).toMatchObject({ alvo: { tipo: 'produto', nome: 'Ração 3 kg' }, resumo: '-2 un. • Perda ou avaria' });
+    expect(de('estoque.ajuste')[0]).toMatchObject({ alvo: { tipo: 'produto', nome: 'Ração 3 kg' }, resumo: '-2 un • Perda ou avaria' });
     expect(de('estoque.entrada')).toHaveLength(1); // a do darEstoque
-    expect(de('estoque.minimo')[0]!.resumo).toBe('mínimo 4 un.');
+    expect(de('estoque.minimo')[0]!.resumo).toBe('mínimo 4 un');
     expect(de('cliente.cadastrado')[0]!.alvo).toMatchObject({ tipo: 'cliente', nome: 'Maria Souza Lima' });
     expect(de('cliente.alterado')).toHaveLength(1);
     expect(de('cliente.alterado')[0]!.detalhes).toEqual({ campos: ['nome'] });

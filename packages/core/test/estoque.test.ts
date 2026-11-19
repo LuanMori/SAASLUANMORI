@@ -155,6 +155,7 @@ describe('entrada e ajuste à mão', () => {
       quantidade: -1,
       criadoEm: 'agora',
       motivo: 'perda',
+      observacao: null,
       vendaId: null,
       vendaNumero: null,
       por: ANA,

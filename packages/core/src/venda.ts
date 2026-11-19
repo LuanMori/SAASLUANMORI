@@ -22,6 +22,7 @@
 import type { ClienteParaVenda } from './cliente';
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import { conferirEstoque } from './estoque';
+import { formatarQuantidade, QUANTIDADE_MAX, type UnidadeVenda, unidadeDe, valorDaQuantidade } from './quantidade';
 import { CONTROLE, ehObjeto } from './interno';
 import type { PapelDeLoja } from './papeis';
 import { pode } from './permissoes';
@@ -125,9 +126,12 @@ export interface ItemVendido {
   nome: string;
   /** Preço do cadastro na hora da venda. */
   precoListaCentavos: number;
-  /** Preço cobrado (com desconto, se houver). */
+  /** Preço cobrado (com desconto, se houver). No kg, o preço do quilo. */
   precoCentavos: number;
+  /** Unidades, ou gramas no produto vendido por kg. */
   quantidade: number;
+  /** Como o produto era vendido na hora da venda (sem: unidade, como nas vendas antigas). */
+  unidade?: UnidadeVenda;
   subtotalCentavos: number;
   desconto?: DescontoAplicado | null;
 }
@@ -146,7 +150,9 @@ export interface ItemDevolvido {
   linha: number;
   produtoId: string;
   nome: string;
+  /** Unidades, ou gramas no produto vendido por kg. */
   quantidade: number;
+  unidade?: UnidadeVenda;
   valorCentavos: number;
   /** true = voltou para a prateleira (soma no estoque); false = descartado (avaria, vencido). */
   voltaAoEstoque: boolean;
@@ -196,6 +202,8 @@ export interface ProdutoParaVenda {
   nome: string;
   precoCentavos: number;
   ativo: boolean;
+  /** Sem: unidade. */
+  unidade?: UnidadeVenda;
 }
 
 /** O que uma autorização dada com senha permite fazer (uma vez só). */
@@ -369,9 +377,10 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
     else if (ja.desconto || l.desconto) erros.push({ campo: 'itens', mensagem: 'Produto repetido na venda: junte as quantidades numa linha só.' });
     else ja.quantidade += l.quantidade;
   }
+  // o limite de cada unidade (9999 un ou 999,999 kg) é conferido no cálculo, que conhece o produto
   for (const [id, l] of porProduto) {
-    if (l.quantidade > LIMITES_VENDA.quantidadeMax) {
-      erros.push({ campo: 'itens', mensagem: `Quantidade acima de ${LIMITES_VENDA.quantidadeMax} unidades num mesmo produto (${id}).` });
+    if (l.quantidade > QUANTIDADE_MAX.kg) {
+      erros.push({ campo: 'itens', mensagem: `Quantidade acima do limite num mesmo produto (${id}).` });
     }
   }
   if (porProduto.size > LIMITES_VENDA.itensMax) {
@@ -483,6 +492,14 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       erros.push({ campo: `itens.${i}.produtoId`, mensagem: 'Produto não encontrado ou desativado.' });
       return;
     }
+    const unidade = unidadeDe(p.unidade);
+    if (item.quantidade > QUANTIDADE_MAX[unidade]) {
+      erros.push({
+        campo: `itens.${i}.quantidade`,
+        mensagem: unidade === 'kg' ? `Quantidade acima de ${formatarQuantidade(QUANTIDADE_MAX.kg, 'kg')} de ${p.nome} numa venda.` : `Quantidade acima de ${QUANTIDADE_MAX.un} unidades num mesmo produto (${p.nome}).`,
+      });
+      return;
+    }
     let preco = p.precoCentavos;
     let aplicado: DescontoAplicado | null = null;
     if (item.desconto) {
@@ -517,9 +534,9 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       }
       preco = item.desconto.precoFinalCentavos;
       aplicado = { motivo: item.desconto.motivo, responsavel, autorizadoComSenha: comSenha };
-      desconto += (p.precoCentavos - preco) * item.quantidade;
     }
-    const subtotal = preco * item.quantidade;
+    const subtotal = valorDaQuantidade(preco, item.quantidade, unidade);
+    desconto += valorDaQuantidade(p.precoCentavos, item.quantidade, unidade) - subtotal;
     total += subtotal;
     itens.push({
       produtoId: p.id,
@@ -528,6 +545,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       precoListaCentavos: p.precoCentavos,
       precoCentavos: preco,
       quantidade: item.quantidade,
+      unidade,
       subtotalCentavos: subtotal,
       desconto: aplicado,
     });
@@ -746,15 +764,19 @@ export function calcularDevolucao(
     if (!item) return void erros.push({ campo: `itens.${i}`, mensagem: 'Item da venda não encontrado.' });
     if (vistas.has(x.linha)) return void erros.push({ campo: `itens.${i}`, mensagem: 'Item repetido na devolução.' });
     vistas.add(x.linha);
+    const unidade = unidadeDe(item.unidade);
     if (x.quantidade > restante[x.linha]!) {
-      return void erros.push({ campo: `itens.${i}`, mensagem: `De ${item.nome} ainda dá para devolver no máximo ${restante[x.linha]} un.` });
+      return void erros.push({ campo: `itens.${i}`, mensagem: `De ${item.nome} ainda dá para devolver no máximo ${formatarQuantidade(restante[x.linha]!, unidade)}.` });
     }
+    // no kg, o valor é a diferença entre o já devolvido com e sem esta parte: devolver tudo, aos poucos, dá o subtotal exato
+    const jaDevolvido = item.quantidade - restante[x.linha]!;
     itens.push({
       linha: x.linha,
       produtoId: item.produtoId,
       nome: item.nome,
       quantidade: x.quantidade,
-      valorCentavos: item.precoCentavos * x.quantidade,
+      unidade,
+      valorCentavos: valorDaQuantidade(item.precoCentavos, jaDevolvido + x.quantidade, unidade) - valorDaQuantidade(item.precoCentavos, jaDevolvido, unidade),
       voltaAoEstoque: x.voltaAoEstoque !== false,
     });
   });
@@ -794,7 +816,10 @@ export interface ResumoVendas {
   /** Só vendas finalizadas (canceladas não entram). */
   totalCentavos: number;
   quantidadeVendas: number;
+  /** Unidades vendidas dos produtos vendidos por unidade. */
   itensVendidos: number;
+  /** Gramas vendidas dos produtos vendidos por kg (DaniPets: "un + kg"). */
+  gramasVendidas: number;
   descontoCentavos: number;
   /** Total ÷ número de vendas, arredondado ao centavo. 0 sem vendas. */
   ticketMedioCentavos: number;
@@ -808,6 +833,7 @@ export interface ResumoVendas {
 export function resumirVendas(vendas: readonly Venda[]): ResumoVendas {
   let total = 0;
   let itens = 0;
+  let gramas = 0;
   let desconto = 0;
   let canceladas = 0;
   let quantidade = 0;
@@ -822,7 +848,10 @@ export function resumirVendas(vendas: readonly Venda[]): ResumoVendas {
     quantidade += 1;
     total += v.totalCentavos;
     desconto += v.descontoCentavos;
-    itens += v.itens.reduce((s, i) => s + i.quantidade, 0);
+    for (const i of v.itens) {
+      if (unidadeDe(i.unidade) === 'kg') gramas += i.quantidade;
+      else itens += i.quantidade;
+    }
     const usadas = new Set<FormaPagamento>();
     for (const p of v.pagamentos) {
       const f = formas.get(p.forma) ?? { totalCentavos: 0, quantidade: 0 };
@@ -841,6 +870,7 @@ export function resumirVendas(vendas: readonly Venda[]): ResumoVendas {
     totalCentavos: total,
     quantidadeVendas: quantidade,
     itensVendidos: itens,
+    gramasVendidas: gramas,
     descontoCentavos: desconto,
     ticketMedioCentavos: quantidade ? Math.round(total / quantidade) : 0,
     canceladas,

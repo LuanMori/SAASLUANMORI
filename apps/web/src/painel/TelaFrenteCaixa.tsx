@@ -24,7 +24,14 @@ import {
   formatarCentavos,
   formatarNumeroVenda,
   formaPrecisaDeCliente,
+  formatarQuantidade,
+  lerQuantidade,
   LIMITES_VENDA,
+  PASSO_QUANTIDADE,
+  QUANTIDADE_MAX,
+  quantidadeParaTexto,
+  unidadeDe,
+  valorDaQuantidade,
   MENSAGEM_FIADO_SEM_CLIENTE,
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
@@ -35,6 +42,7 @@ import { type ApiPainel, ErroApi, type Produto } from '../api';
 import {
   acharPorCodigo,
   autorizacaoNecessaria,
+  quantidadeDaEntrada,
   centavosParaTexto,
   type ClienteNaVenda,
   contaDoPagamento,
@@ -130,15 +138,16 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
   // ------------------------------------------------------------------ itens
   function adicionar(p: Produto, quantidade: number) {
+    const u = unidadeDe(p.unidade);
     const atual = linhas.find((l) => l.produtoId === p.id);
-    if ((atual?.quantidade ?? 0) + quantidade > LIMITES_VENDA.quantidadeMax) {
-      erro(`No máximo ${LIMITES_VENDA.quantidadeMax} unidades de ${p.nome} numa venda.`);
+    if ((atual?.quantidade ?? 0) + quantidade > QUANTIDADE_MAX[u]) {
+      erro(`No máximo ${formatarQuantidade(QUANTIDADE_MAX[u], u)} de ${p.nome} numa venda.`);
       return;
     }
     // como no DaniPets: não passa do estoque (descontando o que já está no carrinho)
     const disponivel = disponivelParaVenda(saldos, linhas, p.id);
     if (quantidade > disponivel) {
-      erro(`Estoque insuficiente para ${p.nome}. Disponível: ${disponivel} un.`);
+      erro(`Estoque insuficiente para ${p.nome}. Disponível: ${formatarQuantidade(Math.max(0, disponivel), u)}.`);
       return;
     }
     setLinhas((ls) =>
@@ -157,10 +166,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     focarCodigo();
     if (!bruto.trim()) return;
     const e = lerEntrada(bruto);
-    if ('erro' in e) return erro(e.erro);
     const p = acharPorCodigo(produtos, e.codigo);
     if (!p) return erro(`Código "${e.codigo}" não encontrado (ou produto inativo).`);
-    adicionar(p, e.quantidade);
+    const q = quantidadeDaEntrada(e.multiplicador, unidadeDe(p.unidade));
+    if (typeof q !== 'number') return erro(q.erro);
+    adicionar(p, q);
   }
 
   const termo = semAcento(busca);
@@ -169,7 +179,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     : [];
 
   function escolher(p: Produto) {
-    adicionar(p, 1);
+    adicionar(p, unidadeDe(p.unidade) === 'kg' ? 1000 : 1); // 1 unidade ou 1 kg, como o leitor sem multiplicador
     setBusca('');
     focarCodigo();
   }
@@ -184,16 +194,17 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   }
 
   function mudarQuantidade(produtoId: string, quantidade: number) {
+    const u = unidadeDe(porId.get(produtoId)?.unidade);
     const atual = linhas.find((l) => l.produtoId === produtoId)?.quantidade ?? 0;
     const saldo = saldos.get(produtoId) ?? 0;
     if (quantidade > atual && quantidade > saldo) {
-      erro(`Estoque insuficiente para ${porId.get(produtoId)?.nome ?? 'o produto'}. Disponível: ${Math.max(0, saldo)} un.`);
+      erro(`Estoque insuficiente para ${porId.get(produtoId)?.nome ?? 'o produto'}. Disponível: ${formatarQuantidade(Math.max(0, saldo), u)}.`);
       return;
     }
     setLinhas((ls) =>
       quantidade <= 0
         ? ls.filter((l) => l.produtoId !== produtoId) // quantidade 0 tira o item (como no DaniPets)
-        : ls.map((l) => (l.produtoId === produtoId ? { ...l, quantidade: Math.min(LIMITES_VENDA.quantidadeMax, quantidade) } : l)),
+        : ls.map((l) => (l.produtoId === produtoId ? { ...l, quantidade: Math.min(QUANTIDADE_MAX[u], quantidade) } : l)),
     );
   }
   const remover = (produtoId: string) => setLinhas((ls) => ls.filter((l) => l.produtoId !== produtoId));
@@ -475,6 +486,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     const p = porId.get(l.produtoId);
                     if (!p) return null;
                     const preco = precoDaLinha(l, p);
+                    const u = unidadeDe(p.unidade);
+                    const passo = PASSO_QUANTIDADE[u];
                     const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel, limiteDescontoPct) !== null && !l.desconto?.autorizacao;
                     return (
                       <tr key={l.produtoId} className={ultimaLinha?.produtoId === l.produtoId ? 'pdv-ultima' : undefined}>
@@ -486,35 +499,40 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                             {l.desconto && <span className="pdv-tag"> · com desconto</span>}
                             {semAutorizacao && <span className="pdv-tag pdv-tag-erro"> · autorize o desconto de novo</span>}
                             {l.quantidade > (saldos.get(p.id) ?? 0) && (
-                              <span className="pdv-tag pdv-tag-erro"> · estoque: {Math.max(0, saldos.get(p.id) ?? 0)} un.</span>
+                              <span className="pdv-tag pdv-tag-erro"> · estoque: {formatarQuantidade(Math.max(0, saldos.get(p.id) ?? 0), u)}</span>
                             )}
                           </small>
                         </td>
                         <td className="numero">
                           <span className="pdv-qtd" role="group" aria-label={`Quantidade de ${p.nome}`}>
-                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade - 1)} aria-label={`Diminuir ${p.nome}`}>
+                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade - passo)} aria-label={`Diminuir ${p.nome}`}>
                               −
                             </button>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              min={0}
-                              max={LIMITES_VENDA.quantidadeMax}
-                              value={l.quantidade}
-                              aria-label={`Quantidade de ${p.nome}`}
-                              onChange={(e) => {
-                                const n = Number.parseInt(e.target.value, 10);
-                                if (Number.isFinite(n)) mudarQuantidade(p.id, n);
-                              }}
-                            />
-                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade + 1)} aria-label={`Aumentar ${p.nome}`}>
+                            {u === 'kg' ? (
+                              <QuantidadeKg gramas={l.quantidade} nome={p.nome} aoMudar={(q) => mudarQuantidade(p.id, q)} />
+                            ) : (
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={QUANTIDADE_MAX.un}
+                                value={l.quantidade}
+                                aria-label={`Quantidade de ${p.nome}`}
+                                onChange={(e) => {
+                                  const n = Number.parseInt(e.target.value, 10);
+                                  if (Number.isFinite(n)) mudarQuantidade(p.id, n);
+                                }}
+                              />
+                            )}
+                            <button type="button" onClick={() => mudarQuantidade(p.id, l.quantidade + passo)} aria-label={`Aumentar ${p.nome}`}>
                               +
                             </button>
-                            <small>un</small>
+                            <small>{u}</small>
                           </span>
                         </td>
                         <td className="numero pdv-preco">
                           <b>{formatarCentavos(preco)}</b>
+                          {u === 'kg' && <small className="pdv-por-kg">/kg</small>}
                           {l.desconto && (
                             <small className="pdv-tag">
                               de {formatarCentavos(p.precoCentavos)} · {l.desconto.responsavelNome}
@@ -531,7 +549,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                             )}
                           </span>
                         </td>
-                        <td className="numero pdv-sub">{formatarCentavos(preco * l.quantidade)}</td>
+                        <td className="numero pdv-sub">{formatarCentavos(valorDaQuantidade(preco, l.quantidade, u))}</td>
                         <td>
                           <button type="button" className="pdv-remover" onClick={() => remover(p.id)} aria-label={`Remover ${p.nome}`}>
                             ×
@@ -566,9 +584,13 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             </div>
             <div className="pdv-visor-conta">
               {ultimaLinha && ultimoProduto
-                ? `${ultimaLinha.quantidade} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))} = ${formatarCentavos(
-                    precoDaLinha(ultimaLinha, ultimoProduto) * ultimaLinha.quantidade,
-                  )}`
+                ? unidadeDe(ultimoProduto.unidade) === 'kg'
+                  ? `${formatarQuantidade(ultimaLinha.quantidade, 'kg')} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))}/kg = ${formatarCentavos(
+                      valorDaQuantidade(precoDaLinha(ultimaLinha, ultimoProduto), ultimaLinha.quantidade, 'kg'),
+                    )}`
+                  : `${ultimaLinha.quantidade} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))} = ${formatarCentavos(
+                      precoDaLinha(ultimaLinha, ultimoProduto) * ultimaLinha.quantidade,
+                    )}`
                 : 'Aguardando leitura'}
             </div>
           </div>
@@ -744,7 +766,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             setLinhas((ls) => ls.map((l) => (l.produtoId === produtoDaJanela.id ? { ...l, desconto } : l)));
             setAviso({
               tipo: 'ok',
-              texto: `Desconto aplicado: ${formatarCentavos(produtoDaJanela.precoCentavos - desconto.precoFinalCentavos)} por unidade${
+              texto: `Desconto aplicado: ${formatarCentavos(produtoDaJanela.precoCentavos - desconto.precoFinalCentavos)} ${produtoDaJanela.unidade === 'kg' ? 'por kg' : 'por unidade'}${
                 desconto.autorizacao ? ` (autorizado por ${desconto.responsavelNome})` : ''
               }.`,
             });
@@ -779,5 +801,39 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         />
       )}
     </div>
+  );
+}
+
+/** Quantidade em kg no carrinho: aceita "1,25"; vale ao sair do campo ou com Enter (o texto pela metade não some). */
+function QuantidadeKg({ gramas, nome, aoMudar }: { gramas: number; nome: string; aoMudar: (gramas: number) => void }) {
+  const [texto, setTexto] = useState(quantidadeParaTexto(gramas, 'kg'));
+  // a quantidade mudou por fora (botões + e −): o campo mostra a nova; ao abrir, não mexe
+  const anterior = useRef(gramas);
+  useEffect(() => {
+    if (anterior.current === gramas) return;
+    anterior.current = gramas;
+    setTexto(quantidadeParaTexto(gramas, 'kg'));
+  }, [gramas]);
+  const confirmar = () => {
+    const q = lerQuantidade(texto, 'kg');
+    if (q === null) setTexto(quantidadeParaTexto(gramas, 'kg'));
+    else if (q !== gramas) aoMudar(q);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className="pdv-qtd-kg"
+      value={texto}
+      aria-label={`Quantidade de ${nome} em kg`}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={confirmar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          confirmar();
+        }
+      }}
+    />
   );
 }

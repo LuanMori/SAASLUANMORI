@@ -172,7 +172,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     );
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Produtos e estoque' }));
     expect(screen.getByRole('heading', { level: 1, name: 'Produtos e estoque' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Novo produto' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '+ Cadastrar produto' })).toBeTruthy();
     expect(await screen.findByText(/Nenhum produto cadastrado ainda/)).toBeTruthy();
   });
 

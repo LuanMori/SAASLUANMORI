@@ -93,7 +93,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
             {tipo === 'brinde'
               ? 'Brinde: o produto sai de graça.'
               : tipo === 'dentro-do-limite' || tipo === 'acima-do-limite'
-                ? `Desconto de ${pctTexto(pct)} (${formatarCentavos(produto.precoCentavos - (centavos ?? 0))} por unidade).`
+                ? `Desconto de ${pctTexto(pct)} (${formatarCentavos(produto.precoCentavos - (centavos ?? 0))} ${produto.unidade === 'kg' ? 'por kg' : 'por unidade'}).`
                 : 'Use 0 para brinde.'}
           </span>
         </div>

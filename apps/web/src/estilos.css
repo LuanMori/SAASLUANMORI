@@ -544,6 +544,8 @@ h2 { font-size: 1.05rem; }
 .pdv-qtd button { width: 34px; height: 36px; border: 0; background: var(--superficie-2); font: inherit; font-size: 1.1rem; cursor: pointer; color: var(--texto); }
 .pdv-qtd button:hover { background: var(--primaria-clara); }
 .pdv-qtd input { width: 52px; height: 36px; border: 0; text-align: center; font: inherit; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.pdv-qtd .pdv-qtd-kg { width: 64px; }
+.pdv-por-kg { margin-left: 2px; color: var(--suave); font-weight: 600; }
 .pdv-qtd input::-webkit-outer-spin-button, .pdv-qtd input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pdv-qtd small { padding: 0 8px; color: var(--suave); font-size: 0.78rem; }
 .pdv-preco { white-space: nowrap; }
@@ -674,11 +676,24 @@ h2 { font-size: 1.05rem; }
 
 /* ------------------------------------------------------------------ Produtos e estoque */
 .pe-dica { margin: 8px 4px 0; font-size: 0.86rem; }
+.pe-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.pe-topo-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.pe-cabeca { flex-wrap: wrap; align-items: center; }
+.pe-busca {
+  flex: 1 1 220px; max-width: 360px; font: inherit; padding: 8px 12px; border: 1px solid var(--borda-campo); border-radius: 10px;
+  background: var(--superficie); color: var(--texto); min-width: 0;
+}
+.pe-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 5px; font-size: 0.75rem; font-weight: 700; background: var(--primaria-clara); color: var(--primaria-texto-forte); }
+.pe-detalhe { display: block; margin-top: 2px; }
+.pe-saldo { font-weight: 700; color: var(--texto); text-decoration: underline dotted; }
+.pe-inativo td { color: var(--suave); }
+.pe-excluir { color: var(--erro); }
+.pe-motivos { font: inherit; padding: 10px 12px; border: 1px solid var(--borda-campo); border-radius: 10px; background: var(--superficie); color: var(--texto); width: 100%; resize: vertical; }
 .pe-tabela .pe-nome { white-space: normal; min-width: 180px; }
 .pe-situacao { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 5px; font-size: 0.75rem; font-weight: 700; }
 .pe-baixo { background: var(--aviso-chip); color: var(--aviso); }
 .pe-zerado, .pe-negativo { background: var(--erro-fundo); color: var(--erro); }
-.pe-acoes { display: flex; gap: 6px; }
+.pe-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
 .pe-acoes .botao { padding: 5px 10px; font-size: 0.82rem; border-radius: 8px; }
 .pe-entra { color: var(--primaria-texto-forte); font-weight: 600; }
 .pe-sai { color: var(--erro); font-weight: 600; }

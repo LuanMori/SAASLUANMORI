@@ -17,7 +17,7 @@ export const PERMISSOES = {
   clientes: 'Cadastrar e consultar clientes',
   'clientes.desativar': 'Desativar e reativar cliente',
   'produtos.cadastrar': 'Cadastrar produto novo',
-  'produtos.alterar': 'Alterar preço e inativar produto',
+  'produtos.alterar': 'Alterar, inativar e excluir produto',
   'estoque.lancar': 'Lançar entrada, ajuste e estoque mínimo',
   compras: 'Compras',
   financeiro: 'Financeiro',

@@ -14,6 +14,7 @@ import {
   estornavelPorForma,
   formatarNumeroVenda,
   LIMITES_VENDA,
+  QUANTIDADE_MAX,
   NOME_FORMA_PAGAMENTO,
   NOME_PAPEL,
   type NovaVenda,
@@ -149,16 +150,18 @@ describe('validarNovaVenda', () => {
     expect(campos(validarNovaVenda(entrada))).toContain(campo);
   });
 
-  it('limita unidades por produto (somadas), produtos diferentes e partes do pagamento', () => {
+  it('limita a quantidade por produto (somada), produtos diferentes e partes do pagamento', () => {
+    // o limite de cada unidade (9999 un ou 999,999 kg) vem no cálculo; aqui, o maior de todos
     expect(
       validarNovaVenda({
         itens: [
-          { produtoId: 'p', quantidade: LIMITES_VENDA.quantidadeMax },
+          { produtoId: 'p', quantidade: QUANTIDADE_MAX.kg },
           { produtoId: 'p', quantidade: 1 },
         ],
         pagamentos: pix,
       }).ok,
     ).toBe(false);
+    expect(validarNovaVenda({ itens: [{ produtoId: 'p', quantidade: LIMITES_VENDA.quantidadeMax + 1 }], pagamentos: pix }).ok).toBe(true);
     const itens = Array.from({ length: LIMITES_VENDA.itensMax + 1 }, (_, i) => ({ produtoId: `p${i}`, quantidade: 1 }));
     expect(validarNovaVenda({ itens, pagamentos: pix }).ok).toBe(false);
     expect(validarNovaVenda({ itens: itens.slice(1), pagamentos: pix }).ok).toBe(true);
@@ -272,8 +275,8 @@ describe('calcularVenda', () => {
       cliente: null,
       autorizacoesUsadas: [],
       itens: [
-        { produtoId: 'p1', codigoInterno: '0001', nome: 'Ração', precoListaCentavos: 18990, precoCentavos: 18990, quantidade: 1, subtotalCentavos: 18990, desconto: null },
-        { produtoId: 'p2', codigoInterno: '0002', nome: 'Petisco', precoListaCentavos: 750, precoCentavos: 750, quantidade: 4, subtotalCentavos: 3000, desconto: null },
+        { produtoId: 'p1', codigoInterno: '0001', nome: 'Ração', precoListaCentavos: 18990, precoCentavos: 18990, quantidade: 1, unidade: 'un', subtotalCentavos: 18990, desconto: null },
+        { produtoId: 'p2', codigoInterno: '0002', nome: 'Petisco', precoListaCentavos: 750, precoCentavos: 750, quantidade: 4, unidade: 'un', subtotalCentavos: 3000, desconto: null },
       ],
     });
   });
@@ -593,6 +596,7 @@ describe('resumirVendas e resumirDevolucoes', () => {
       totalCentavos: 0,
       quantidadeVendas: 0,
       itensVendidos: 0,
+      gramasVendidas: 0,
       descontoCentavos: 0,
       ticketMedioCentavos: 0,
       canceladas: 0,

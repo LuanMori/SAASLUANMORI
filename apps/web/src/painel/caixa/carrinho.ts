@@ -5,13 +5,19 @@ import {
   classificarDesconto,
   type FormaPagamento,
   FORMAS_PAGAMENTO,
+  formatarQuantidade,
   LIMITES_VENDA,
+  lerQuantidade,
   type NovaVenda,
   type Pagamento,
   type PapelDeLoja,
+  QUANTIDADE_MAX,
   type QuemAutoriza,
   quemAutorizaDesconto,
   reaisParaCentavos,
+  type UnidadeVenda,
+  unidadeDe,
+  valorDaQuantidade,
 } from '@saas/core';
 import type { Produto } from '../../api';
 
@@ -57,15 +63,27 @@ export interface EstadoPagamento {
 export const pagamentoInicial = (forma: FormaPagamento = 'pix'): EstadoPagamento => ({ dividido: false, forma, partes: [], recebidoTexto: '' });
 
 // ------------------------------------------------------------------ leitura do código
-/** "3*7891000100103" ou "3x 0001" = 3 unidades; sem multiplicador = 1 (como no DaniPets). */
-export function lerEntrada(texto: string): { quantidade: number; codigo: string } | { erro: string } {
+/**
+ * "3*7891000100103" ou "3x 0001" = 3 unidades; "1,5*0002" = 1,5 kg (produto vendido por kg); sem
+ * multiplicador = 1 unidade ou 1 kg (como no DaniPets). A quantidade sai depois, com a unidade do produto.
+ */
+export function lerEntrada(texto: string): { multiplicador: string | null; codigo: string } {
   const t = texto.trim();
   const m = t.match(/^(\d+(?:[.,]\d+)?)\s*[*xX]\s*(.+)$/);
-  if (!m) return { quantidade: 1, codigo: t };
-  const quantidade = Number(m[1]!.replace(',', '.'));
-  if (!Number.isInteger(quantidade) || quantidade < 1) return { erro: 'Os produtos são vendidos por unidade: use quantidade inteira (ex.: 3*7891000100103).' };
-  if (quantidade > LIMITES_VENDA.quantidadeMax) return { erro: `No máximo ${LIMITES_VENDA.quantidadeMax} unidades de uma vez.` };
-  return { quantidade, codigo: m[2]!.trim() };
+  return m ? { multiplicador: m[1]!, codigo: m[2]!.trim() } : { multiplicador: null, codigo: t };
+}
+
+/** O multiplicador lido na unidade do produto: unidades ou gramas. */
+export function quantidadeDaEntrada(multiplicador: string | null, unidade: UnidadeVenda): number | { erro: string } {
+  if (multiplicador === null) return unidade === 'kg' ? 1000 : 1;
+  const q = lerQuantidade(multiplicador, unidade);
+  if (q === null || q < 1) {
+    return { erro: unidade === 'kg' ? 'Peso inválido: use até 3 casas (ex.: 1,5*código = 1,5 kg).' : 'Este produto é vendido por unidade: use quantidade inteira (ex.: 3*7891000100103).' };
+  }
+  if (q > QUANTIDADE_MAX[unidade]) {
+    return { erro: unidade === 'kg' ? `No máximo ${formatarQuantidade(QUANTIDADE_MAX.kg, 'kg')} de uma vez.` : `No máximo ${QUANTIDADE_MAX.un} unidades de uma vez.` };
+  }
+  return q;
 }
 
 /** Código de barras primeiro; depois o código interno (só produtos ativos). */
@@ -85,9 +103,11 @@ export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: Readon
   for (const l of linhas) {
     const p = porId.get(l.produtoId);
     if (!p) continue;
-    itens += l.quantidade;
-    total += precoDaLinha(l, p) * l.quantidade;
-    desconto += (p.precoCentavos - precoDaLinha(l, p)) * l.quantidade;
+    const u = unidadeDe(p.unidade);
+    itens += u === 'kg' ? 1 : l.quantidade; // no kg, cada produto conta como um item
+    const cobrado = valorDaQuantidade(precoDaLinha(l, p), l.quantidade, u);
+    total += cobrado;
+    desconto += valorDaQuantidade(p.precoCentavos, l.quantidade, u) - cobrado;
   }
   return { itens, produtos: linhas.length, totalCentavos: total, descontoCentavos: desconto };
 }

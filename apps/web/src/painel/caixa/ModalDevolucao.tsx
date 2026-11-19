@@ -14,12 +14,16 @@ import {
   estornavelPorForma,
   formatarCentavos,
   formatarNumeroVenda,
+  formatarQuantidade,
+  lerQuantidade,
   NOME_PAPEL,
   type PapelDeLoja,
   podeCancelarVenda,
   quemAutorizaEstorno,
   repartirEstorno,
   restanteParaDevolver,
+  unidadeDe,
+  valorDaQuantidade,
   type Venda,
 } from '@saas/core';
 import { type FormEvent, useEffect, useState } from 'react';
@@ -179,15 +183,24 @@ function PassoVenda({
     // só ao abrir a janela
   }, []);
 
+  // quantidade na unidade de cada item: unidades, ou kg com até 3 casas (guardado em gramas)
+  const unidadeDaLinha = (linha: number) => unidadeDe(venda.itens[linha]?.unidade);
   const itens = venda.itens
     .map((_, linha) => ({
       linha,
-      quantidade: Math.max(0, Math.min(restante[linha]!, Number.parseInt(qtds[linha] || '0', 10) || 0)),
+      quantidade: Math.max(0, Math.min(restante[linha]!, lerQuantidade(qtds[linha] || '0', unidadeDaLinha(linha)) ?? 0)),
       voltaAoEstoque: voltam[linha] !== false,
     }))
     .filter((x) => x.quantidade > 0);
   const descartados = itens.filter((x) => !x.voltaAoEstoque);
-  const totalDevolver = acao === 'cancelar' ? venda.totalCentavos : itens.reduce((s, x) => s + venda.itens[x.linha]!.precoCentavos * x.quantidade, 0);
+  // a mesma conta da API (no kg, a diferença entre o já devolvido com e sem esta parte)
+  const valorDevolvido = (x: { linha: number; quantidade: number }) => {
+    const item = venda.itens[x.linha]!;
+    const ja = item.quantidade - restante[x.linha]!;
+    const u = unidadeDaLinha(x.linha);
+    return valorDaQuantidade(item.precoCentavos, ja + x.quantidade, u) - valorDaQuantidade(item.precoCentavos, ja, u);
+  };
+  const totalDevolver = acao === 'cancelar' ? venda.totalCentavos : itens.reduce((s, x) => s + valorDevolvido(x), 0);
   const previa = acao === 'cancelar' ? { ok: true as const, valor: venda.pagamentos } : repartirEstorno(venda, totalDevolver);
   const disponivel = estornavelPorForma(venda);
 
@@ -265,16 +278,17 @@ function PassoVenda({
                   <tr key={linha}>
                     <td data-rotulo="Produto">{item.nome}</td>
                     <td data-rotulo="Vendido" className="numero">
-                      {item.quantidade} un
+                      {formatarQuantidade(item.quantidade, unidadeDaLinha(linha))}
                     </td>
                     <td data-rotulo="Já devolvido" className="numero">
-                      {item.quantidade - restante[linha]! || '—'}
+                      {item.quantidade - restante[linha]! ? formatarQuantidade(item.quantidade - restante[linha]!, unidadeDaLinha(linha)) : '—'}
                     </td>
                     <td data-rotulo="Devolver" className="numero">
                       <input
-                        type="number"
+                        type={unidadeDaLinha(linha) === 'kg' ? 'text' : 'number'}
+                        inputMode={unidadeDaLinha(linha) === 'kg' ? 'decimal' : 'numeric'}
                         min={0}
-                        max={restante[linha]}
+                        max={unidadeDaLinha(linha) === 'kg' ? undefined : restante[linha]}
                         value={qtds[linha]}
                         disabled={restante[linha] === 0}
                         aria-label={`Quantidade a devolver de ${item.nome}`}
@@ -314,7 +328,11 @@ function PassoVenda({
               Volta para o cliente: <b>{formatarCentavos(totalDevolver)}</b> ({comValores(previa.valor)}).
               {previa.valor.some((p) => p.forma === 'fiado') && ' A parte no fiado sai do que o cliente deve.'}
               {descartados.length > 0 && (
-                <> Não volta ao estoque (avaria ou vencido): {descartados.map((x) => `${x.quantidade}× ${venda.itens[x.linha]!.nome}`).join(', ')}.</>
+                <>
+                  {' '}
+                  Não volta ao estoque (avaria ou vencido):{' '}
+                  {descartados.map((x) => `${unidadeDaLinha(x.linha) === 'kg' ? formatarQuantidade(x.quantidade, 'kg') : `${x.quantidade}×`} ${venda.itens[x.linha]!.nome}`).join(', ')}.
+                </>
               )}
             </>
           ) : (
