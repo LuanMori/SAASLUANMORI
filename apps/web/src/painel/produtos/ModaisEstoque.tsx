@@ -169,6 +169,7 @@ export function ModalSaldo({ produto, api, aoFechar }: { produto: Produto; api: 
   const linhas: [string, string][] = c
     ? [
         ['Estoque inicial', q(c.inicial)],
+        ['+ Compras (menos as estornadas)', q(c.compras)],
         ['+ Entradas', q(c.entradas)],
         ['− Vendas', q(c.vendas)],
         ['+ Vendas canceladas', q(c.cancelamentos)],

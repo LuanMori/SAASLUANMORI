@@ -95,7 +95,16 @@ describe('Produtos e estoque · cadastro completo e kg', () => {
     const conta = within(janela())
       .getAllByRole('row')
       .map((r) => txt(r.textContent));
-    expect(conta).toEqual(['Estoque inicial25 kg', '+ Entradas2,5 kg', '− Vendas0 kg', '+ Vendas canceladas0 kg', '+ Devoluções que voltaram para a prateleira0 kg', '± Ajustes-0,5 kg', '= Saldo27 kg']);
+    expect(conta).toEqual([
+      'Estoque inicial25 kg',
+      '+ Compras (menos as estornadas)0 kg',
+      '+ Entradas2,5 kg',
+      '− Vendas0 kg',
+      '+ Vendas canceladas0 kg',
+      '+ Devoluções que voltaram para a prateleira0 kg',
+      '± Ajustes-0,5 kg',
+      '= Saldo27 kg',
+    ]);
   });
 
   it('produto parecido (mesmo nome, marca e peso): pergunta antes; cancelar não cadastra', async () => {

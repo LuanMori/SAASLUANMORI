@@ -59,7 +59,10 @@ export type TipoLancamento =
   | 'despesa'
   | 'retirada'
   | 'transferencia_saida'
-  | 'transferencia_entrada';
+  | 'transferencia_entrada'
+  | 'pagamento_compra'
+  | 'estorno_compra'
+  | 'pagamento_conta';
 
 export const NOME_LANCAMENTO: Record<TipoLancamento, string> = {
   saldo_inicial: 'Saldo inicial',
@@ -72,6 +75,9 @@ export const NOME_LANCAMENTO: Record<TipoLancamento, string> = {
   retirada: 'Retirada do dono',
   transferencia_saida: 'Transferência (saída)',
   transferencia_entrada: 'Transferência (entrada)',
+  pagamento_compra: 'Pagamento de compra',
+  estorno_compra: 'Estorno de compra',
+  pagamento_conta: 'Conta paga',
 };
 
 export interface Lancamento {
@@ -91,6 +97,9 @@ export interface Lancamento {
   categoria: string | null;
   /** Quem lançou (na venda, quem vendeu). */
   por: Operador;
+  /** Compra (à vista ou estornada) e conta a pagar que originaram o lançamento. */
+  compraId?: string | null;
+  contaPagarId?: string | null;
 }
 
 export type NovoLancamento = Omit<Lancamento, 'id'>;

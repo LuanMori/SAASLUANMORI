@@ -10,7 +10,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 1. Base | **Concluído** (19/11/2026) |
 | 2. Produtos e estoque | **Concluído** (19/11/2026) |
 | 3. Fornecedores | **Concluído** (19/11/2026) |
-| 4. Compras e contas a pagar | a fazer |
+| 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
 | 5. Caixa do dia | a fazer |
 | 6. Clientes | a fazer |
 | 7. Fidelidade | a fazer |
@@ -128,3 +128,55 @@ Testes: núcleo 281 (+5), servidor 134, tela 243 (+5). Navegador: cadastro com C
 formatados, fornecedor principal no produto, histórico "Produto alterado (fornecedor)", celular sem
 rolagem lateral, console sem erros.
 
+---
+
+## Módulo 4 — Compras e contas a pagar
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| CMP-01 | Compra por nota fiscal (fornecedor, NF, data) com vários itens (produto, quantidade, custo > 0, validade); só gestor | Janela **"Registrar compra"** na aba Compras: fornecedor do cadastro (ou sem fornecedor), NF (opcional), data (hoje ou antes; a trava dos dias fechados entra no módulo 5) e vários itens com produto, quantidade (unidades ou kg), custo (do quilo, no kg) e validade (opcional). Só Dono e Administrador (permissão "Compras") | Criado |
+| CMP-02 | À vista (escolhe a conta) ou a prazo (vencimento vira conta a pagar) | Igual: à vista sai do Caixa físico ou da Conta bancária (o Caixa físico não fica negativo, como no resto do sistema); a prazo vira **conta a pagar** com o vencimento (padrão: daqui a 30 dias) | Criado |
+| CMP-03 | NF repetida do mesmo fornecedor pede confirmação | Igual: "Já existe a NF 5001 de *fornecedor* (compra nº 1)" e a pergunta "Registrar mesmo assim?" | Criado |
+| CMP-04 | Custo diferente do último: mostra custo, preço e margem e oferece mudar o preço na mesma gravação | Igual: um passo a mais mostra o custo de antes e o novo, o preço de venda e a margem antes e depois, e o **preço sugerido que mantém a margem**. Marcando, o preço muda junto com a compra (no histórico: "Preço alterado", com o nº da compra); sem marcar, o preço continua | Criado |
+| CMP-05 | Ao escolher o produto, sugere o último custo e o fornecedor | Igual: o custo da última compra já vem preenchido e o fornecedor principal do produto entra se o campo estiver vazio | Criado |
+| CMP-06 | Estornar compra com motivo; não deixa o estoque negativo; conta a pagar cancelada na proporção | **Estorno por item** (no DaniPets cada linha da compra é um registro), com motivo; recusa se o estoque ficaria negativo. À vista: o dinheiro volta para a conta de onde saiu. A prazo em aberto: a conta diminui o valor do item e é cancelada se zerar. A prazo já paga: o dinheiro volta para a conta usada no pagamento | Adaptado |
+| CMP-07 | Bonificação: entrada de estoque sem custo | Mantido como "Entrada" em Produtos e estoque, com a explicação na janela da compra e no rodapé do histórico | Mantido |
+| CMP-08 | Histórico de compras | Card **"Histórico de compras"**: nº, data, fornecedor, NF, total, pagamento e situação; clicar nos itens mostra quantidade, custo, validade e situação de cada um, com o botão "Estornar" | Criado |
+| CMP-09 | Contas a pagar: lista, pagar escolhendo a conta, vencidas no painel | Card **"Contas a pagar"** na aba Compras: as abertas por vencimento, o total e as vencidas marcadas; "Pagar" escolhe a Conta bancária ou o Caixa físico. As vencidas na Visão geral entram no módulo 11, e a mesma lista no Financeiro no módulo 9 | Criado (painel no M11) |
+| PRD-10 | Custo médio móvel a cada compra; custo guardado no item vendido | **Custo médio** recalculado a partir da história (custo do estoque inicial e as compras, sem as estornadas), mostrado em Produtos e estoque só para Dono e Administrador. Cada venda guarda o custo médio do momento em cada item, para o lucro dos Relatórios (módulo 10) | Criado |
+| PRD-11 | Lotes e validade (o mais antigo sai primeiro), avisos de vencido e de vencendo em 30 dias, "Dar baixa no lote" | Card **"Validade"** na aba Compras: lotes vencidos ou vencendo em 30 dias que ainda têm saldo. Pela regra "o mais antigo sai primeiro", o saldo de hoje é das compras mais novas. "Dar baixa" pergunta quanto ainda está na prateleira e lança como ajuste "Produto vencido"; zero quer dizer que o lote já acabou, e o aviso some | Criado |
+
+Outros pontos:
+
+- A conta do saldo (Produtos e estoque) ganhou a linha "+ Compras (menos as estornadas)".
+- O Vendedor não vê compras, custos nem contas a pagar: a API responde 403, como no DaniPets.
+- Tudo entra no histórico: "Compra registrada", "Compra estornada", "Baixa de lote (validade)", "Conta
+  paga" e "Preço alterado".
+- Cada compra é uma operação só (tudo ou nada): estoque, dinheiro, conta a pagar e preço gravam juntos, ou
+  nada grava.
+
+### O que ficou para outro módulo
+
+- **Caixa aberto** para a compra à vista paga pelo Caixa físico e **dias fechados** (compra com data de um
+  dia já fechado): módulo 5.
+- **Vencidas na Visão geral**: módulo 11. **Contas a pagar no Financeiro** (e outras despesas a prazo):
+  módulo 9.
+- **Lucro com o custo guardado na venda**: módulo 10.
+
+### Servidor
+
+Sem tabela nova (decisão P3). A parte de compras, contas a pagar e lotes responde 501 no sistema real até o
+servidor ganhar essa parte.
+
+### Testes e conferência
+
+- Testes automáticos: núcleo 298 (+17: compra, nota repetida, custo médio, margem e preço sugerido,
+  estorno, contas a pagar, lotes), servidor 134, tela 258 (+15: API das compras, tela Compras, conta do
+  saldo).
+- Navegador: compra a prazo com 2 itens (unidade e kg) de R$ 938,00, conta a pagar e lote com validade no
+  aviso; conta paga pela Conta bancária; estorno do item a granel (a conta já estava paga, então o dinheiro
+  volta para a Conta bancária); custo médio R$ 118,00 em Produtos e estoque; conta do saldo com as compras;
+  histórico com as ações novas; celular (390 px) sem rolagem lateral, com os itens da nota em cartões;
+  console sem erros nem avisos.

@@ -14,11 +14,13 @@ import { formatarQuantidade, type UnidadeVenda } from './quantidade';
 import type { ErroCampo, Resultado } from './resultado';
 import type { Devolucao, Operador, Venda } from './venda';
 
-export type TipoMovimentoEstoque = 'inicial' | 'entrada' | 'ajuste' | 'venda' | 'cancelamento' | 'devolucao';
+export type TipoMovimentoEstoque = 'inicial' | 'entrada' | 'compra' | 'estorno_compra' | 'ajuste' | 'venda' | 'cancelamento' | 'devolucao';
 
 export const NOME_MOVIMENTO_ESTOQUE: Record<TipoMovimentoEstoque, string> = {
   inicial: 'Estoque inicial',
   entrada: 'Entrada',
+  compra: 'Compra',
+  estorno_compra: 'Compra estornada',
   ajuste: 'Ajuste',
   venda: 'Venda',
   cancelamento: 'Venda cancelada',
@@ -36,8 +38,11 @@ export interface MovimentoEstoque {
   motivo: string | null;
   /** Observação do ajuste (DaniPets: "Outro" + observação). */
   observacao?: string | null;
-  /** Custo de cada unidade (ou kg) no estoque inicial, quando informado (para o custo médio). */
+  /** Custo de cada unidade (ou kg) no estoque inicial ou na compra, quando há (para o custo médio). */
   custoUnitarioCentavos?: number | null;
+  /** Compra (e o item dela) que originou o movimento. */
+  compraId?: string | null;
+  compraLinha?: number | null;
   vendaId: string | null;
   vendaNumero: number | null;
   por: Operador;
@@ -172,9 +177,11 @@ export function movimentoInicial(
   };
 }
 
-/** "Como o saldo é calculado" (DaniPets PRD-09): inicial + entradas − vendas + cancelamentos + devoluções ± ajustes. */
+/** "Como o saldo é calculado" (DaniPets PRD-09): inicial + compras + entradas − vendas + cancelamentos + devoluções ± ajustes. */
 export interface ComposicaoSaldo {
   inicial: number;
+  /** Compras menos as estornadas. */
+  compras: number;
   entradas: number;
   vendas: number;
   cancelamentos: number;
@@ -184,9 +191,11 @@ export interface ComposicaoSaldo {
 }
 
 export function composicaoDoSaldo(movimentos: readonly Pick<MovimentoEstoque, 'produtoId' | 'tipo' | 'quantidade'>[], produtoId: string): ComposicaoSaldo {
-  const c: ComposicaoSaldo = { inicial: 0, entradas: 0, vendas: 0, cancelamentos: 0, devolucoes: 0, ajustes: 0, saldo: 0 };
+  const c: ComposicaoSaldo = { inicial: 0, compras: 0, entradas: 0, vendas: 0, cancelamentos: 0, devolucoes: 0, ajustes: 0, saldo: 0 };
   const campo: Record<TipoMovimentoEstoque, Exclude<keyof ComposicaoSaldo, 'saldo'>> = {
     inicial: 'inicial',
+    compra: 'compras',
+    estorno_compra: 'compras',
     entrada: 'entradas',
     venda: 'vendas',
     cancelamento: 'cancelamentos',

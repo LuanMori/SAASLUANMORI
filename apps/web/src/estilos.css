@@ -906,6 +906,32 @@ h2 { font-size: 1.05rem; }
 .db-campo-curto input { max-width: 160px; }
 .db-rodape { margin: 18px -20px -20px; }
 
+/* Compras (Fase 2, módulo 4) */
+.compra-cabeca { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr); }
+.compra-itens select, .compra-itens input { width: 100%; min-width: 0; font: inherit; padding: 7px 9px; border: 1px solid var(--borda-campo); border-radius: 8px; background: var(--superficie); color: var(--texto); }
+.compra-itens td:first-child { min-width: 200px; }
+.compra-qtd { display: flex; align-items: center; gap: 4px; }
+.compra-qtd input { width: 80px; }
+.compra-qtd small { color: var(--suave); }
+.compra-linha-acoes { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.compra-efeitos { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.compra-estornar { margin-left: 8px; font-size: 0.82rem; }
+.compra-novo-preco { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.compra-novo-preco input[inputmode] { width: 90px; font: inherit; padding: 5px 8px; border: 1px solid var(--borda-campo); border-radius: 8px; background: var(--superficie); color: var(--texto); }
+@media (max-width: 760px) {
+  .compra-cabeca { grid-template-columns: minmax(0, 1fr); }
+  /* cada item da nota vira um cartão: produto em cima; quantidade, custo e validade embaixo */
+  .compra-itens thead { display: none; }
+  .compra-itens, .compra-itens tbody { display: block; }
+  .compra-itens tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--borda); }
+  .compra-itens td { display: block; padding: 0 !important; border: 0 !important; min-width: 0 !important; }
+  .compra-itens td[data-rotulo='Produto'] { grid-column: 1 / -1; }
+  .compra-itens td[data-rotulo]::before { content: attr(data-rotulo); display: block; margin-bottom: 3px; font-size: 0.75rem; color: var(--suave); }
+  .compra-itens td[data-rotulo='Total'] { align-self: end; text-align: left; font-weight: 700; }
+  .compra-itens td:last-child { align-self: end; justify-self: end; }
+  .compra-qtd input { width: 100%; }
+}
+
 /* Tema escuro (DaniPets ACE-15): as mesmas variáveis, com outras cores. O verde dos botões continua
    #0b7f55 (texto branco por cima); o verde usado como TEXTO fica mais claro para dar contraste. */
 :root[data-tema='escuro'] {

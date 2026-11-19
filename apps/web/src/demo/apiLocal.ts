@@ -32,6 +32,18 @@ import {
   type AcaoAuditoria,
   type AcaoAutorizada,
   anonimizarCliente,
+  calcularBaixaDoLote,
+  calcularEstornoDoItem,
+  type Compra,
+  type ContaPagar,
+  custosMedios,
+  DIAS_AVISO_VALIDADE,
+  efeitosDaCompra,
+  lotesVencendo,
+  montarItensDaCompra,
+  notaRepetida,
+  pagarConta,
+  validarNovaCompra,
   aplicarMudancaNasRegras,
   aplicarMudancaNosDados,
   type Autorizacao,
@@ -141,6 +153,9 @@ const CHAVES = {
   configuracao: 'saas-demo:configuracao:v1',
   /** Fornecedores de cada loja (módulo 3). */
   fornecedores: 'saas-demo:fornecedores:v1',
+  /** Compras por nota fiscal e contas a pagar (módulo 4). */
+  compras: 'saas-demo:compras:v1',
+  contasPagar: 'saas-demo:contas-pagar:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -173,6 +188,8 @@ export function apagarDadosDemo(): void {
     CHAVES.taxas,
     CHAVES.configuracao,
     CHAVES.fornecedores,
+    CHAVES.compras,
+    CHAVES.contasPagar,
   ]) {
     gravar(chave, {});
   }
@@ -191,6 +208,14 @@ function novoId(): string {
 }
 
 const comId = <T extends object>(x: T): T & { id: string } => ({ ...x, id: novoId() });
+
+/** Do mais novo para o mais antigo; no mesmo instante, o gravado por último vem primeiro. */
+function maisNovosPrimeiro<T extends { criadoEm: string }>(lista: readonly T[]): T[] {
+  return lista
+    .map((x, i) => [x, i] as const)
+    .sort((a, b) => b[0].criadoEm.localeCompare(a[0].criadoEm) || b[1] - a[1])
+    .map(([x]) => x);
+}
 
 /**
  * Vendas gravadas por versões anteriores da demonstração (uma forma de pagamento só, sem
@@ -569,6 +594,8 @@ export function criarApiLocal({
     }
   };
   const fornecedoresDaLoja = () => lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId);
+  const comprasDaLoja = () => lerDaLoja<Compra>(CHAVES.compras, lojaId);
+  const contasPagarDaLoja = () => lerDaLoja<ContaPagar>(CHAVES.contasPagar, lojaId);
   /** O fornecedor escolhido existe nesta loja e está ativo. */
   const exigirFornecedorAtivo = (id: string | null | undefined) => {
     if (!id) return;
@@ -794,6 +821,7 @@ export function criarApiLocal({
           estoque: saldosDeEstoque(movimentosDaLoja()),
           clientes: new Map(clientesDaLoja().map((c) => [c.id, c])),
           limiteDescontoPct: regras().venda.descontoSemSenhaPct,
+          custos: custosMedios(movimentosDaLoja()),
         });
         if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
         calculo.valor.autorizacoesUsadas.forEach((id) => autorizacoes.delete(id)); // uso único
@@ -928,22 +956,30 @@ export function criarApiLocal({
     // ---------------------------------------------------------------- estoque
     async listarEstoque() {
       await preparar();
-      exigirOperador();
-      const saldos = saldosDeEstoque(movimentosDaLoja());
+      const quem = exigirOperador();
+      const movimentos = movimentosDaLoja();
+      const saldos = saldosDeEstoque(movimentos);
       const minimos = minimosDaLoja();
+      // custo é só do Dono e do Administrador (DaniPets: o Vendedor não vê custo)
+      const custos = pode(quem.papel, 'compras') ? custosMedios(movimentos) : null;
       return produtosDaLoja().map((p) => {
         const saldo = saldos.get(p.id) ?? 0;
         const minimo = minimos[p.id] ?? null;
-        return { produtoId: p.id, saldo, minimo, situacao: situacaoEstoque(saldo, minimo) };
+        const custo = custos?.get(p.id);
+        return {
+          produtoId: p.id,
+          saldo,
+          minimo,
+          situacao: situacaoEstoque(saldo, minimo),
+          ...(custos ? { custoMedioCentavos: custo == null ? null : Math.round(custo) } : {}),
+        };
       });
     },
 
     async listarMovimentosEstoque(filtro = {}) {
       await preparar();
       exigirOperador();
-      return movimentosDaLoja()
-        .filter((m) => (!filtro.produtoId || m.produtoId === filtro.produtoId) && noPeriodo(m.criadoEm, filtro))
-        .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+      return maisNovosPrimeiro(movimentosDaLoja().filter((m) => (!filtro.produtoId || m.produtoId === filtro.produtoId) && noPeriodo(m.criadoEm, filtro)));
     },
 
     async lancarMovimentoEstoque(dados) {
@@ -1122,9 +1158,7 @@ export function criarApiLocal({
     async listarLancamentos(filtro = {}) {
       await preparar();
       exigir('financeiro');
-      return lancamentosDaLoja()
-        .filter((l) => (!filtro.conta || l.conta === filtro.conta) && noPeriodo(l.criadoEm, filtro))
-        .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+      return maisNovosPrimeiro(lancamentosDaLoja().filter((l) => (!filtro.conta || l.conta === filtro.conta) && noPeriodo(l.criadoEm, filtro)));
     },
 
     async listarRecebiveis(filtro = {}) {
@@ -1210,6 +1244,163 @@ export function criarApiLocal({
         gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
         auditar('financeiro.taxas');
         return validacao.valor;
+      });
+    },
+
+    // ---------------------------------------------------------------- compras e contas a pagar (módulo 4)
+    async listarCompras(filtro = {}) {
+      await preparar();
+      exigir('compras');
+      return comprasDaLoja()
+        .filter((c) => (!filtro.de || c.data >= filtro.de) && (!filtro.ate || c.data <= filtro.ate))
+        .sort((a, b) => b.data.localeCompare(a.data) || b.numero - a.numero);
+    },
+
+    async registrarCompra(dados, opcoes = {}) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('compras');
+        const v = validarNovaCompra(dados, { hoje: diaNoFuso(agora(), fuso) });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]?.mensagem ?? 'Compra inválida.', v.erros);
+        const pedido = v.valor;
+        let fornecedor: Compra['fornecedor'] = null;
+        if (pedido.fornecedorId) {
+          const f = fornecedoresDaLoja().find((x) => x.id === pedido.fornecedorId && x.ativo);
+          if (!f) throw new ErroApi(400, 'Fornecedor não encontrado ou desativado. Escolha outro na lista.', [{ campo: 'fornecedorId', mensagem: 'Fornecedor inválido.' }]);
+          fornecedor = { id: f.id, nome: f.nome };
+        }
+        const produtos = produtosDaLoja();
+        const montados = montarItensDaCompra(pedido.itens, new Map(produtos.map((p) => [p.id, p])));
+        if (!montados.ok) throw new ErroApi(400, montados.erros[0]?.mensagem ?? 'Itens inválidos.', montados.erros);
+        const daLoja = comprasDaLoja();
+        const repetida = notaRepetida(daLoja, fornecedor?.id ?? null, pedido.notaFiscal ?? null);
+        if (repetida && !opcoes.mesmoAssim) {
+          throw new ErroApi(409, `Já existe a NF ${pedido.notaFiscal}${fornecedor ? ` de ${fornecedor.nome}` : ''} (compra nº ${repetida.numero}).`, [], 'nf_repetida');
+        }
+        const compra: Compra = {
+          id: novoId(),
+          numero: daLoja.reduce((m, c) => Math.max(m, c.numero), 0) + 1,
+          data: pedido.data,
+          criadaEm: agora().toISOString(),
+          fornecedor,
+          notaFiscal: pedido.notaFiscal ?? null,
+          itens: montados.valor.itens,
+          totalCentavos: montados.valor.totalCentavos,
+          pagamento: pedido.pagamento,
+          por: pessoa(quem),
+        };
+        const efeitos = efeitosDaCompra(compra);
+        if (efeitos.lancamentos.length) {
+          const saida = conferirSaida(efeitos.lancamentos, saldosDasContas(lancamentosDaLoja()));
+          if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
+          juntarLancamentos(efeitos.lancamentos);
+        }
+        if (efeitos.contaPagar) gravarDaLoja(CHAVES.contasPagar, lojaId, [...contasPagarDaLoja(), { id: novoId(), ...efeitos.contaPagar }]);
+        juntarMovimentos(efeitos.movimentos);
+        gravarDaLoja(CHAVES.compras, lojaId, [...daLoja, compra]);
+        // o custo mudou e a pessoa escolheu mudar o preço de venda junto (DaniPets CMP-04)
+        const precos = Object.entries(pedido.precos ?? {});
+        if (precos.length) {
+          exigir('produtos.alterar');
+          const guardados = lerDaLoja<Produto>(CHAVES.produtos, lojaId);
+          for (const [pid, novo] of precos) {
+            const i = guardados.findIndex((p) => p.id === pid);
+            if (i < 0 || guardados[i]!.precoCentavos === novo) continue;
+            const de = guardados[i]!.precoCentavos;
+            guardados[i] = { ...guardados[i]!, precoCentavos: novo, atualizadoEm: compra.criadaEm };
+            auditar('produto.preco_alterado', { tipo: 'produto', id: pid }, { de, para: novo, compra: compra.numero });
+          }
+          gravarDaLoja(CHAVES.produtos, lojaId, guardados);
+        }
+        auditar('compra.registrada', null, { numero: compra.numero, notaFiscal: compra.notaFiscal, totalCentavos: compra.totalCentavos, pagamento: compra.pagamento.tipo });
+        return compra;
+      });
+    },
+
+    async estornarItemDaCompra(compraId, linha, motivo) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('compras');
+        const daLoja = comprasDaLoja();
+        const i = daLoja.findIndex((c) => c.id === compraId);
+        if (i < 0) throw new ErroApi(404, 'Compra não encontrada.');
+        const compra = daLoja[i]!;
+        const item = compra.itens[linha];
+        const contas = contasPagarDaLoja();
+        const cp = contas.find((x) => x.compraId === compra.id) ?? null;
+        const r = calcularEstornoDoItem(compra, linha, {
+          motivo,
+          em: agora().toISOString(),
+          por: pessoa(quem),
+          saldoEstoque: item ? saldoDoProduto(item.produtoId).saldo : 0,
+          contaPagar: cp,
+        });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+        const atualizada: Compra = { ...compra, itens: compra.itens.map((x, j) => (j === linha ? r.valor.item : x)) };
+        daLoja[i] = atualizada;
+        gravarDaLoja(CHAVES.compras, lojaId, daLoja);
+        juntarMovimentos([r.valor.movimento]);
+        if (r.valor.lancamento) juntarLancamentos([r.valor.lancamento]);
+        if (r.valor.contaPagar && cp) gravarDaLoja(CHAVES.contasPagar, lojaId, contas.map((x) => (x.id === cp.id ? r.valor.contaPagar! : x)));
+        auditar('compra.estornada', { tipo: 'produto', id: r.valor.item.produtoId }, { numero: compra.numero, valorCentavos: r.valor.item.totalCentavos });
+        return atualizada;
+      });
+    },
+
+    async listarContasAPagar(filtro = {}) {
+      await preparar();
+      exigir('financeiro');
+      return contasPagarDaLoja()
+        .filter((c) => !filtro.situacao || c.situacao === filtro.situacao)
+        .sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.criadoEm.localeCompare(b.criadoEm));
+    },
+
+    async pagarContaAPagar(id, conta) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        const contas = contasPagarDaLoja();
+        const cp = contas.find((x) => x.id === id);
+        if (!cp) throw new ErroApi(404, 'Conta a pagar não encontrada.');
+        const r = pagarConta(cp, { conta, em: agora().toISOString(), por: pessoa(quem), saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+        gravarDaLoja(CHAVES.contasPagar, lojaId, contas.map((x) => (x.id === id ? r.valor.contaPagar : x)));
+        juntarLancamentos([r.valor.lancamento]);
+        auditar('conta_pagar.paga', null, { valorCentavos: cp.valorCentavos, conta: r.valor.lancamento.conta });
+        return r.valor.contaPagar;
+      });
+    },
+
+    async listarLotesVencendo() {
+      await preparar();
+      exigir('compras');
+      const hoje = diaNoFuso(agora(), fuso);
+      return lotesVencendo(comprasDaLoja(), saldosDeEstoque(movimentosDaLoja()), hoje, somarDias(hoje, DIAS_AVISO_VALIDADE));
+    },
+
+    async darBaixaNoLote(compraId, linha, dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('compras');
+        const daLoja = comprasDaLoja();
+        const i = daLoja.findIndex((c) => c.id === compraId);
+        if (i < 0) throw new ErroApi(404, 'Compra não encontrada.');
+        const compra = daLoja[i]!;
+        const item = compra.itens[linha];
+        const r = calcularBaixaDoLote(compra, linha, {
+          quantidade: dados?.quantidade,
+          observacao: dados?.observacao,
+          em: agora().toISOString(),
+          por: pessoa(quem),
+          saldoEstoque: item ? saldoDoProduto(item.produtoId).saldo : 0,
+        });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+        const atualizada: Compra = { ...compra, itens: compra.itens.map((x, j) => (j === linha ? r.valor.item : x)) };
+        daLoja[i] = atualizada;
+        gravarDaLoja(CHAVES.compras, lojaId, daLoja);
+        if (r.valor.movimento) juntarMovimentos([r.valor.movimento]);
+        auditar('compra.lote_baixado', { tipo: 'produto', id: r.valor.item.produtoId }, { quantidade: r.valor.item.loteBaixado!.quantidade, unidade: r.valor.item.unidade });
+        return atualizada;
       });
     },
 

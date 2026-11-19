@@ -42,6 +42,11 @@ export const ACOES_AUDITORIA = {
   'estoque.entrada': 'Entrada de estoque',
   'estoque.ajuste': 'Ajuste de estoque',
   'estoque.minimo': 'Estoque mínimo alterado',
+  // compras e contas a pagar
+  'compra.registrada': 'Compra registrada',
+  'compra.estornada': 'Compra estornada',
+  'compra.lote_baixado': 'Baixa de lote (validade)',
+  'conta_pagar.paga': 'Conta paga',
   // fornecedores
   'fornecedor.cadastrado': 'Fornecedor cadastrado',
   'fornecedor.alterado': 'Fornecedor alterado',
@@ -144,6 +149,25 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
       break;
     case 'produto.preco_alterado':
       partes.push(dinheiro(d.de) && dinheiro(d.para) ? `${dinheiro(d.de)} → ${dinheiro(d.para)}` : null);
+      break;
+    case 'compra.registrada':
+      partes.push(
+        typeof d.numero === 'number' ? `compra nº ${d.numero}` : null,
+        typeof d.notaFiscal === 'string' && d.notaFiscal ? `NF ${d.notaFiscal}` : null,
+        dinheiro(d.totalCentavos),
+        d.pagamento === 'avista' ? 'à vista' : d.pagamento === 'aprazo' ? 'a prazo' : null,
+      );
+      break;
+    case 'compra.estornada':
+      partes.push(typeof d.numero === 'number' ? `compra nº ${d.numero}` : null, dinheiro(d.valorCentavos));
+      break;
+    case 'compra.lote_baixado': {
+      const q = typeof d.quantidade === 'number' && Number.isInteger(d.quantidade) ? d.quantidade : null;
+      partes.push(q === null ? null : q === 0 ? 'o lote já tinha acabado' : `-${formatarQuantidade(q, unidadeDe(d.unidade))} vencido`);
+      break;
+    }
+    case 'conta_pagar.paga':
+      partes.push(dinheiro(d.valorCentavos), typeof d.conta === 'string' ? (NOME_CONTA_CURTO[d.conta] ?? null) : null);
       break;
     case 'fornecedor.alterado':
       partes.push(lista(d.campos, NOME_CAMPO_FORNECEDOR));

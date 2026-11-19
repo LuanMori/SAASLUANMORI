@@ -162,7 +162,7 @@ export function TelaPainel({
         {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
         {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
         {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
-        {ver('compras') && <TelaCompras api={api} />}
+        {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
       </main>
       {trocandoSenha && (
         <ModalTrocarSenha

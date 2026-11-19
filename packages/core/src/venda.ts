@@ -134,6 +134,8 @@ export interface ItemVendido {
   unidade?: UnidadeVenda;
   subtotalCentavos: number;
   desconto?: DescontoAplicado | null;
+  /** Custo médio de cada unidade (ou kg) na hora da venda (DaniPets PRD-10), para o lucro. null = sem custo. */
+  custoCentavos?: number | null;
 }
 
 export interface Cancelamento {
@@ -458,6 +460,8 @@ export interface ContextoVenda {
   agora?: Date;
   /** Desconto que o Vendedor dá sem senha, em % (regra da loja; padrão 10, como o DaniPets). */
   limiteDescontoPct?: number;
+  /** Custo médio de cada produto (compra.ts custosMedios): fica guardado no item vendido. */
+  custos?: ReadonlyMap<string, number | null>;
 }
 
 export interface VendaCalculada {
@@ -548,6 +552,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       unidade,
       subtotalCentavos: subtotal,
       desconto: aplicado,
+      ...(ctx.custos ? { custoCentavos: ctx.custos.get(p.id) == null ? null : Math.round(ctx.custos.get(p.id)!) } : {}),
     });
   });
 

@@ -230,7 +230,7 @@ describe('estoque do módulo 2', () => {
       { produtoId: 'p', tipo: 'ajuste' as const, quantidade: -2 },
       { produtoId: 'outro', tipo: 'entrada' as const, quantidade: 99 },
     ];
-    expect(composicaoDoSaldo(movs, 'p')).toEqual({ inicial: 10, entradas: 5, vendas: 4, cancelamentos: 1, devolucoes: 1, ajustes: -2, saldo: 11 });
+    expect(composicaoDoSaldo(movs, 'p')).toEqual({ inicial: 10, compras: 0, entradas: 5, vendas: 4, cancelamentos: 1, devolucoes: 1, ajustes: -2, saldo: 11 });
   });
 
   it('história: só o estoque inicial não conta', () => {

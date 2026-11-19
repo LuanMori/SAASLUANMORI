@@ -212,7 +212,8 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, conf
                       const e = saldoDe(p);
                       const u = unidadeDe(p.unidade);
                       const fornecedor = p.fornecedorId ? dados.fornecedores?.find((f) => f.id === p.fornecedorId)?.nome : null;
-                      const detalhe = [p.marca, p.pesoGramas ? formatarQuantidade(p.pesoGramas, 'kg') : null, fornecedor ? `fornecedor: ${fornecedor}` : null].filter(Boolean).join(' · ');
+                      const custo = gestor && typeof e.custoMedioCentavos === 'number' ? `custo médio ${formatarCentavos(e.custoMedioCentavos)}${u === 'kg' ? '/kg' : ''}` : null;
+                      const detalhe = [p.marca, p.pesoGramas ? formatarQuantidade(p.pesoGramas, 'kg') : null, fornecedor ? `fornecedor: ${fornecedor}` : null, custo].filter(Boolean).join(' · ');
                       return (
                         <tr key={p.id} className={p.ativo ? undefined : 'pe-inativo'}>
                           <td data-rotulo="Código" className="codigos">

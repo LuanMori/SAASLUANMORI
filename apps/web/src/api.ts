@@ -14,6 +14,11 @@ import type {
   ErroCampo,
   Fornecedor,
   NovoFornecedor,
+  Compra,
+  ContaPagar,
+  LoteVencendo,
+  NovaCompra,
+  SituacaoContaPagar,
   Lancamento,
   MovimentoEstoque,
   MovimentoManual,
@@ -141,6 +146,8 @@ export interface SaldoEstoque {
   /** null = sem aviso de estoque baixo. */
   minimo: number | null;
   situacao: SituacaoEstoque;
+  /** Custo médio (por unidade ou kg), só para Dono e Administrador; null = sem custo ainda. */
+  custoMedioCentavos?: number | null;
 }
 
 export interface FiltroMovimentosEstoque extends FiltroVendas {
@@ -245,6 +252,24 @@ export interface ApiFornecedores {
   definirFornecedorAtivo(id: string, ativo: boolean): Promise<Fornecedor>;
 }
 
+// ---- Compras e contas a pagar (Fase 2, módulo 4): Dono e Administrador.
+
+export interface ApiCompras {
+  /** Da mais nova para a mais antiga (pelo dia da compra). */
+  listarCompras(filtro?: FiltroVendas): Promise<Compra[]>;
+  /** Nota repetida do mesmo fornecedor: 409 com codigo "nf_repetida"; `mesmoAssim` registra. */
+  registrarCompra(dados: NovaCompra, opcoes?: { mesmoAssim?: boolean }): Promise<Compra>;
+  /** Compra lançada errada: estorna um item (estoque, dinheiro ou conta a pagar voltam). */
+  estornarItemDaCompra(compraId: string, linha: number, motivo: string): Promise<Compra>;
+  /** Contas a pagar (das compras a prazo), do vencimento mais próximo para o mais distante. */
+  listarContasAPagar(filtro?: { situacao?: SituacaoContaPagar | null }): Promise<ContaPagar[]>;
+  pagarContaAPagar(id: string, conta: ContaId): Promise<ContaPagar>;
+  /** Lotes vencidos ou vencendo nos próximos 30 dias, com saldo e sem baixa. */
+  listarLotesVencendo(): Promise<LoteVencendo[]>;
+  /** O que ainda estava na prateleira sai do estoque como "Produto vencido" (0 = o lote já tinha acabado). */
+  darBaixaNoLote(compraId: string, linha: number, dados: { quantidade: number; observacao?: string }): Promise<Compra>;
+}
+
 // ---- Dados e regras da loja (Fase 2, módulo 1): todos os logados leem; Dono e Administrador alteram.
 
 export interface ApiLoja {
@@ -261,7 +286,7 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 
