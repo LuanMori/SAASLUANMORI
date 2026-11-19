@@ -9,7 +9,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 |---|---|
 | 1. Base | **Concluído** (19/11/2026) |
 | 2. Produtos e estoque | **Concluído** (19/11/2026) |
-| 3. Fornecedores | a fazer |
+| 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | a fazer |
 | 5. Caixa do dia | a fazer |
 | 6. Clientes | a fazer |
@@ -110,4 +110,21 @@ inativar e excluir respondem 501 no sistema real até o servidor ganhar essa par
   "de → para"; excluir sem história; ajuste com motivo da loja e observação; conta do saldo; Frente de caixa
   com "1,5*código", botão + de 0,5 kg e venda finalizada; Visão geral "2 kg vendidos"; regras do estoque;
   tema escuro; celular sem rolagem lateral; console sem erros nem avisos.
+
+---
+
+## Módulo 3 — Fornecedores
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| CMP-10 | Fornecedor como texto livre no produto e na compra | **Cadastro simples de fornecedores por loja** (decisão P9), na aba Compras: nome, CNPJ ou CPF (com os dígitos conferidos), telefone com DDD, contato e observação; o documento não se repete na loja; alterar, desativar e reativar; tudo no histórico. No produto, **"Fornecedor principal"** escolhido da lista (só Dono e Administrador veem a lista, como a aba Compras do DaniPets); fornecedor desativado sai da lista de escolha e a API recusa usá-lo | Criado |
+
+- Quem cuida: Dono e Administrador (permissão "Compras"); o Vendedor recebe 403 e não vê a lista.
+- Isolamento: cada loja tem os seus fornecedores (o mesmo CNPJ pode existir em lojas diferentes).
+- Servidor: sem tabela nova (P3); a parte de fornecedores responde 501 no sistema real até lá.
+- Nas compras (módulo 4), a nota fiscal vai apontar para o fornecedor do cadastro.
+
+Testes: núcleo 281 (+5), servidor 134, tela 243 (+5). Navegador: cadastro com CNPJ e telefone
+formatados, fornecedor principal no produto, histórico "Produto alterado (fornecedor)", celular sem
+rolagem lateral, console sem erros.
 

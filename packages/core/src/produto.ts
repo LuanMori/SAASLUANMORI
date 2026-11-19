@@ -35,6 +35,8 @@ export interface NovoProduto {
   estoqueInicial?: number;
   /** Custo de cada unidade (ou de cada kg) do estoque inicial. Só Dono e Administrador informam. */
   custoInicialCentavos?: number | null;
+  /** Fornecedor principal (cadastro de fornecedores da loja). */
+  fornecedorId?: string | null;
 }
 
 /** O que pode mudar num produto já cadastrado (o código interno nunca muda). */
@@ -45,6 +47,7 @@ export interface AlteracaoProduto {
   marca?: string | null;
   pesoGramas?: number | null;
   unidade?: UnidadeVenda;
+  fornecedorId?: string | null;
 }
 
 export const LIMITES_PRODUTO = {
@@ -62,8 +65,8 @@ export const LIMITES_PRODUTO = {
 } as const;
 
 const CAMPOS_BASICOS = ['nome', 'codigoBarras', 'precoCentavos'];
-const CAMPOS_COMPLETOS = [...CAMPOS_BASICOS, 'marca', 'pesoGramas', 'unidade', 'estoqueInicial', 'custoInicialCentavos'];
-const CAMPOS_ALTERACAO = [...CAMPOS_BASICOS, 'marca', 'pesoGramas', 'unidade'];
+const CAMPOS_COMPLETOS = [...CAMPOS_BASICOS, 'marca', 'pesoGramas', 'unidade', 'estoqueInicial', 'custoInicialCentavos', 'fornecedorId'];
+const CAMPOS_ALTERACAO = [...CAMPOS_BASICOS, 'marca', 'pesoGramas', 'unidade', 'fornecedorId'];
 // Caracteres de controle (CONTROLE): o leitor de código costuma mandar \r\n no fim;
 // o trim() remove nas pontas; no meio é recusado.
 const SO_DIGITOS = /^[0-9]+$/;
@@ -139,6 +142,15 @@ function lerPeso(valor: unknown, erros: ErroCampo[]): number | null {
   return valor;
 }
 
+function lerFornecedorId(valor: unknown, erros: ErroCampo[]): string | null {
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (typeof valor !== 'string' || valor.trim().length > 64) {
+    erros.push({ campo: 'fornecedorId', mensagem: 'Escolha o fornecedor na lista.' });
+    return null;
+  }
+  return valor.trim();
+}
+
 function lerUnidade(valor: unknown, erros: ErroCampo[]): UnidadeVenda {
   if (valor === undefined) return 'un';
   if (!ehUnidadeVenda(valor)) erros.push({ campo: 'unidade', mensagem: 'Escolha como o produto é vendido: por unidade (un) ou por quilo (kg).' });
@@ -173,6 +185,7 @@ export function validarNovoProduto(entrada: unknown, opcoes: { completo?: boolea
   const marca = lerMarca(dados.marca, erros);
   const pesoGramas = lerPeso(dados.pesoGramas, erros);
   const unidade = lerUnidade(dados.unidade, erros);
+  const fornecedorId = lerFornecedorId(dados.fornecedorId, erros);
   let estoqueInicial = 0;
   const ini = dados.estoqueInicial;
   if (ini !== undefined && ini !== null) {
@@ -194,7 +207,7 @@ export function validarNovoProduto(entrada: unknown, opcoes: { completo?: boolea
     erros.push({ campo: 'custoInicialCentavos', mensagem: 'Informe o custo só quando houver estoque inicial.' });
   }
   if (erros.length > 0) return { ok: false, erros };
-  return { ok: true, valor: { nome, codigoBarras, precoCentavos, marca, pesoGramas, unidade, estoqueInicial, custoInicialCentavos } };
+  return { ok: true, valor: { nome, codigoBarras, precoCentavos, marca, pesoGramas, unidade, estoqueInicial, custoInicialCentavos, fornecedorId } };
 }
 
 /** Alteração do cadastro: só os campos enviados (pelo menos um). */
@@ -209,6 +222,7 @@ export function validarAlteracaoProduto(entrada: unknown): Resultado<AlteracaoPr
   if (entrada.marca !== undefined) mudanca.marca = lerMarca(entrada.marca, erros);
   if (entrada.pesoGramas !== undefined) mudanca.pesoGramas = lerPeso(entrada.pesoGramas, erros);
   if (entrada.unidade !== undefined) mudanca.unidade = lerUnidade(entrada.unidade, erros);
+  if (entrada.fornecedorId !== undefined) mudanca.fornecedorId = lerFornecedorId(entrada.fornecedorId, erros);
   if (!erros.length && Object.keys(mudanca).length === 0) erros.push({ campo: '_', mensagem: 'Nada para alterar.' });
   return erros.length ? { ok: false, erros } : { ok: true, valor: mudanca };
 }

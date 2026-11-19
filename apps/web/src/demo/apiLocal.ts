@@ -41,6 +41,7 @@ import {
   calcularVenda,
   type Cliente,
   conferirCpfUnico,
+  conferirDocumentoUnico,
   conferirExclusaoDeCliente,
   conferirSaida,
   type ConfiguracaoDaLoja,
@@ -48,6 +49,7 @@ import {
   type DadosDaLoja,
   diaNoFuso,
   type Devolucao,
+  type Fornecedor,
   devolucoesComVenda,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
@@ -96,6 +98,7 @@ import {
   unidadeDe,
   validarAlteracaoProduto,
   validarEstoqueMinimo,
+  validarFornecedor,
   validarLancamentoManual,
   validarMovimentoManual,
   validarNovaVenda,
@@ -136,6 +139,8 @@ const CHAVES = {
   ecossistema: 'saas-demo:ecossistema:v1',
   /** Dados (nome, descrição, logo) e regras de cada loja: loja -> { dados, regras }. */
   configuracao: 'saas-demo:configuracao:v1',
+  /** Fornecedores de cada loja (módulo 3). */
+  fornecedores: 'saas-demo:fornecedores:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -157,7 +162,18 @@ function gravarConfiguracao(lojaId: string, c: ConfiguracaoDaLoja): void {
 /** Apaga produtos, vendas, estoque, clientes e financeiro de todas as lojas (os exemplos não voltam). */
 export function apagarDadosDemo(): void {
   const lojas = Object.keys(ler<PorLoja<Produto>>(CHAVES.produtos, {}));
-  for (const chave of [CHAVES.produtos, CHAVES.vendas, CHAVES.estoque, CHAVES.minimos, CHAVES.clientes, CHAVES.lancamentos, CHAVES.recebiveis, CHAVES.taxas, CHAVES.configuracao]) {
+  for (const chave of [
+    CHAVES.produtos,
+    CHAVES.vendas,
+    CHAVES.estoque,
+    CHAVES.minimos,
+    CHAVES.clientes,
+    CHAVES.lancamentos,
+    CHAVES.recebiveis,
+    CHAVES.taxas,
+    CHAVES.configuracao,
+    CHAVES.fornecedores,
+  ]) {
     gravar(chave, {});
   }
   const apagadas = [...new Set([...ler<string[]>(CHAVES.exemplos, []), ...lojas, 'loja-a', 'loja-b'])];
@@ -199,10 +215,10 @@ export function normalizarVenda(bruta: Venda & { formaPagamento?: Pagamento['for
   };
 }
 
-/** Produtos gravados antes do cadastro completo: sem marca, sem peso e vendidos por unidade. */
+/** Produtos gravados antes do cadastro completo: sem marca, sem peso, sem fornecedor e vendidos por unidade. */
 export function normalizarProduto(p: Produto): Produto {
   const { temHistorico: _calculado, ...guardado } = p;
-  return { ...guardado, marca: p.marca ?? null, pesoGramas: p.pesoGramas ?? null, unidade: unidadeDe(p.unidade) };
+  return { ...guardado, marca: p.marca ?? null, pesoGramas: p.pesoGramas ?? null, unidade: unidadeDe(p.unidade), fornecedorId: p.fornecedorId ?? null };
 }
 
 // ------------------------------------------------------------------ autorizações dadas com senha
@@ -552,6 +568,14 @@ export function criarApiLocal({
       ]);
     }
   };
+  const fornecedoresDaLoja = () => lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId);
+  /** O fornecedor escolhido existe nesta loja e está ativo. */
+  const exigirFornecedorAtivo = (id: string | null | undefined) => {
+    if (!id) return;
+    if (!fornecedoresDaLoja().some((f) => f.id === id && f.ativo)) {
+      throw new ErroApi(400, 'Fornecedor não encontrado ou desativado. Escolha outro na lista.', [{ campo: 'fornecedorId', mensagem: 'Fornecedor inválido.' }]);
+    }
+  };
   /** Código de barras único na loja e diferente de qualquer código interno (DaniPets). */
   const conferirCodigoDeBarras = (codigo: string | null, daLoja: readonly Produto[], excetoId: string | null) => {
     if (!codigo) return;
@@ -587,7 +611,13 @@ export function criarApiLocal({
     agora,
     atrasoMs,
     nomeDoAlvo: (tipo, id) =>
-      tipo === 'produto' ? (produtosDaLoja().find((p) => p.id === id)?.nome ?? null) : tipo === 'cliente' ? (clientesDaLoja().find((c) => c.id === id)?.nome ?? null) : null,
+      tipo === 'produto'
+        ? (produtosDaLoja().find((p) => p.id === id)?.nome ?? null)
+        : tipo === 'cliente'
+          ? (clientesDaLoja().find((c) => c.id === id)?.nome ?? null)
+          : tipo === 'fornecedor'
+            ? (lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId).find((f) => f.id === id)?.nome ?? null)
+            : null,
   });
 
   return {
@@ -617,6 +647,7 @@ export function criarApiLocal({
           throw new ErroApi(403, 'Custo do estoque inicial: só o Dono ou o Administrador.', [{ campo: 'custoInicialCentavos', mensagem: 'Só o Dono ou o Administrador.' }]);
         }
 
+        exigirFornecedorAtivo(novo.fornecedorId);
         const daLoja = produtosDaLoja();
         conferirCodigoDeBarras(novo.codigoBarras, daLoja, null);
         const parecido = produtoParecido(novo, daLoja);
@@ -643,6 +674,7 @@ export function criarApiLocal({
           marca: novo.marca ?? null,
           pesoGramas: novo.pesoGramas ?? null,
           unidade,
+          fornecedorId: novo.fornecedorId ?? null,
           ativo: true,
           criadoEm: quando,
           atualizadoEm: quando,
@@ -671,6 +703,7 @@ export function criarApiLocal({
         if (campos.length === 0) return antes;
 
         const daLoja = guardados.map(normalizarProduto);
+        if (campos.includes('fornecedorId')) exigirFornecedorAtivo(depois.fornecedorId);
         if (campos.includes('codigoBarras')) conferirCodigoDeBarras(depois.codigoBarras, daLoja, id);
         if (campos.includes('unidade')) {
           exigirUnidadeDaLoja(unidadeDe(depois.unidade));
@@ -1177,6 +1210,68 @@ export function criarApiLocal({
         gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
         auditar('financeiro.taxas');
         return validacao.valor;
+      });
+    },
+
+    // ---------------------------------------------------------------- fornecedores (módulo 3)
+    async listarFornecedores() {
+      await preparar();
+      exigir('compras');
+      return [...fornecedoresDaLoja()].sort((a, b) => Number(b.ativo) - Number(a.ativo) || a.nome.localeCompare(b.nome, 'pt-BR'));
+    },
+
+    async cadastrarFornecedor(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('compras');
+        const v = validarFornecedor(dados);
+        if (!v.ok) throw new ErroApi(400, v.erros[0]?.mensagem ?? 'Dados do fornecedor inválidos.', v.erros);
+        const daLoja = fornecedoresDaLoja();
+        const unico = conferirDocumentoUnico(v.valor.documento, daLoja);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        const quando = agora().toISOString();
+        const f: Fornecedor = { id: novoId(), ...v.valor, ativo: true, criadoEm: quando, atualizadoEm: quando };
+        gravarDaLoja(CHAVES.fornecedores, lojaId, [...daLoja, f]);
+        auditar('fornecedor.cadastrado', { tipo: 'fornecedor', id: f.id });
+        return f;
+      });
+    },
+
+    async alterarFornecedor(id, dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('compras');
+        const v = validarFornecedor(dados);
+        if (!v.ok) throw new ErroApi(400, v.erros[0]?.mensagem ?? 'Dados do fornecedor inválidos.', v.erros);
+        const daLoja = fornecedoresDaLoja();
+        const i = daLoja.findIndex((f) => f.id === id);
+        if (i < 0) throw new ErroApi(404, 'Fornecedor não encontrado.');
+        const unico = conferirDocumentoUnico(v.valor.documento, daLoja, id);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        const antes = daLoja[i]!;
+        const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => antes[k] !== v.valor[k]);
+        if (campos.length === 0) return antes;
+        const salvo: Fornecedor = { ...antes, ...v.valor, atualizadoEm: agora().toISOString() };
+        daLoja[i] = salvo;
+        gravarDaLoja(CHAVES.fornecedores, lojaId, daLoja);
+        auditar('fornecedor.alterado', { tipo: 'fornecedor', id }, { campos });
+        return salvo;
+      });
+    },
+
+    async definirFornecedorAtivo(id, ativo) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('compras');
+        const daLoja = fornecedoresDaLoja();
+        const i = daLoja.findIndex((f) => f.id === id);
+        if (i < 0) throw new ErroApi(404, 'Fornecedor não encontrado.');
+        if (daLoja[i]!.ativo === (ativo === true)) return daLoja[i]!;
+        const salvo: Fornecedor = { ...daLoja[i]!, ativo: ativo === true, atualizadoEm: agora().toISOString() };
+        daLoja[i] = salvo;
+        gravarDaLoja(CHAVES.fornecedores, lojaId, daLoja);
+        auditar(salvo.ativo ? 'fornecedor.reativado' : 'fornecedor.desativado', { tipo: 'fornecedor', id });
+        return salvo;
       });
     },
 

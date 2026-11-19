@@ -82,6 +82,7 @@ describe('cadastro completo (DaniPets PRD-01)', () => {
       unidade: 'kg',
       estoqueInicial: 25000,
       custoInicialCentavos: 1200,
+      fornecedorId: null,
     });
     const minimo = validarNovoProduto({ nome: 'Coleira', precoCentavos: 2990 }, { completo: true });
     expect(minimo.ok && minimo.valor).toMatchObject({ unidade: 'un', estoqueInicial: 0, marca: null, pesoGramas: null, custoInicialCentavos: null });

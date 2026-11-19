@@ -221,7 +221,7 @@ describe('Produtos e estoque · regras do estoque', () => {
     expect([regras.produtos.unidades, regras.estoque.motivosAjuste]).toEqual([['un'], ['Furto', 'Perda ou avaria']]);
 
     await userEvent.click(screen.getByRole('button', { name: '+ Cadastrar produto' }));
-    expect(within(janela()).getAllByRole('option').map((o) => o.textContent)).toEqual(['Unidade (un)']);
+    expect(within(within(janela()).getByLabelText('Vendido por')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Unidade (un)']);
     await userEvent.click(within(janela()).getByRole('button', { name: 'Cancelar' }));
     await expect(a.lancarMovimentoEstoque({ produtoId: id, tipo: 'ajuste', quantidade: -1, motivo: 'Outro' })).rejects.toMatchObject({ status: 400 });
     await expect(a.lancarMovimentoEstoque({ produtoId: id, tipo: 'ajuste', quantidade: -1, motivo: 'Furto' })).resolves.toMatchObject({ saldo: 4 });

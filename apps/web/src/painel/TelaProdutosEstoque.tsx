@@ -9,6 +9,7 @@
 // O Vendedor cadastra produto novo e consulta, como no DaniPets.
 import {
   type ConfiguracaoDaLoja,
+  type Fornecedor,
   formatarCentavos,
   formatarNumeroVenda,
   formatarQuantidade,
@@ -39,6 +40,7 @@ type ApiDaTela = Pick<
   | 'definirEstoqueMinimo'
   | 'lerConfiguracao'
   | 'salvarRegrasDaLoja'
+  | 'listarFornecedores'
 >;
 
 interface Props {
@@ -72,13 +74,21 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, conf
   const lanca = pode(papel, 'estoque.lancar');
   const { estado, recarregar } = usarCarga(
     async () => {
-      const [produtos, estoque, movimentos, config] = await Promise.all([
+      const [produtos, estoque, movimentos, config, fornecedores] = await Promise.all([
         api.listarProdutos(),
         api.listarEstoque(),
         api.listarMovimentosEstoque(),
         api.lerConfiguracao().catch((): ConfiguracaoDaLoja | null => null),
+        // fornecedores: só Dono e Administrador (como a aba Compras); sem essa parte no servidor, nenhum
+        pode(papel, 'compras') ? api.listarFornecedores().catch((): Fornecedor[] => []) : Promise.resolve(null),
       ]);
-      return { produtos, estoque: new Map(estoque.map((e) => [e.produtoId, e])), movimentos: movimentos.slice(0, MOVIMENTOS_NA_TELA), regras: config?.regras ?? regrasPadrao() };
+      return {
+        produtos,
+        estoque: new Map(estoque.map((e) => [e.produtoId, e])),
+        movimentos: movimentos.slice(0, MOVIMENTOS_NA_TELA),
+        regras: config?.regras ?? regrasPadrao(),
+        fornecedores,
+      };
     },
     [api],
     intervaloMs,
@@ -201,7 +211,8 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, conf
                     {visiveis.map((p) => {
                       const e = saldoDe(p);
                       const u = unidadeDe(p.unidade);
-                      const detalhe = [p.marca, p.pesoGramas ? formatarQuantidade(p.pesoGramas, 'kg') : null].filter(Boolean).join(' · ');
+                      const fornecedor = p.fornecedorId ? dados.fornecedores?.find((f) => f.id === p.fornecedorId)?.nome : null;
+                      const detalhe = [p.marca, p.pesoGramas ? formatarQuantidade(p.pesoGramas, 'kg') : null, fornecedor ? `fornecedor: ${fornecedor}` : null].filter(Boolean).join(' · ');
                       return (
                         <tr key={p.id} className={p.ativo ? undefined : 'pe-inativo'}>
                           <td data-rotulo="Código" className="codigos">
@@ -333,6 +344,7 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, conf
           produto={janela.produto}
           unidades={dados.regras.produtos.unidades}
           podeCusto={gestor}
+          fornecedores={dados.fornecedores?.filter((f) => f.ativo).map((f) => ({ id: f.id, nome: f.nome })) ?? null}
           confirmar={confirmar}
           aoSalvar={(_p, mensagem) => concluir(mensagem)}
           aoFechar={() => setJanela(null)}

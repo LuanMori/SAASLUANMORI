@@ -42,6 +42,11 @@ export const ACOES_AUDITORIA = {
   'estoque.entrada': 'Entrada de estoque',
   'estoque.ajuste': 'Ajuste de estoque',
   'estoque.minimo': 'Estoque mínimo alterado',
+  // fornecedores
+  'fornecedor.cadastrado': 'Fornecedor cadastrado',
+  'fornecedor.alterado': 'Fornecedor alterado',
+  'fornecedor.desativado': 'Fornecedor desativado',
+  'fornecedor.reativado': 'Fornecedor reativado',
   // clientes
   'cliente.cadastrado': 'Cliente cadastrado',
   'cliente.alterado': 'Cadastro do cliente alterado',
@@ -87,7 +92,10 @@ const NOME_CAMPO_PRODUTO: Record<string, string> = {
   marca: 'marca',
   pesoGramas: 'peso',
   unidade: 'unidade',
+  fornecedorId: 'fornecedor',
 };
+
+const NOME_CAMPO_FORNECEDOR: Record<string, string> = { nome: 'nome', documento: 'documento', telefone: 'telefone', contato: 'contato', observacao: 'observação' };
 
 const numeroVenda = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 ? `venda nº ${String(n).padStart(5, '0')}` : null);
 const dinheiro = (c: unknown) => (typeof c === 'number' && Number.isSafeInteger(c) ? formatarCentavos(c) : null);
@@ -136,6 +144,9 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
       break;
     case 'produto.preco_alterado':
       partes.push(dinheiro(d.de) && dinheiro(d.para) ? `${dinheiro(d.de)} → ${dinheiro(d.para)}` : null);
+      break;
+    case 'fornecedor.alterado':
+      partes.push(lista(d.campos, NOME_CAMPO_FORNECEDOR));
       break;
     case 'produto.excluido':
       partes.push(typeof d.nome === 'string' ? d.nome : null, typeof d.codigo === 'string' ? `código ${d.codigo}` : null);

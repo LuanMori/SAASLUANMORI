@@ -1,8 +1,8 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
 // Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Produtos e estoque,
-// Relatórios (todas as vendas), Usuários e Dados e backup (dados da loja). As outras seções ficam em
-// branco até chegar a vez delas.
+// Relatórios (todas as vendas), Usuários, Dados e backup (dados da loja) e Compras (fornecedores). As
+// outras seções ficam em branco até chegar a vez delas.
 // Os dados da loja (nome, descrição, logo) e as regras (desconto sem senha...) vêm da API
 // (lerConfiguracao); enquanto não chegam, ou se o servidor ainda não tiver essa parte, valem o nome
 // da sessão e os padrões do DaniPets.
@@ -17,6 +17,7 @@ import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
+import { TelaCompras } from './TelaCompras';
 import { TelaDadosBackup } from './TelaDadosBackup';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
@@ -161,6 +162,7 @@ export function TelaPainel({
         {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
         {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
         {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
+        {ver('compras') && <TelaCompras api={api} />}
       </main>
       {trocandoSenha && (
         <ModalTrocarSenha

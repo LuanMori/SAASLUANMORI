@@ -12,6 +12,8 @@ import type {
   Devolucao,
   DevolucaoComVenda,
   ErroCampo,
+  Fornecedor,
+  NovoFornecedor,
   Lancamento,
   MovimentoEstoque,
   MovimentoManual,
@@ -52,6 +54,8 @@ export interface Produto {
   marca?: string | null;
   pesoGramas?: number | null;
   unidade?: UnidadeVenda;
+  /** Fornecedor principal (cadastro de fornecedores da loja). */
+  fornecedorId?: string | null;
   /** Na listagem: tem vendas, entradas ou ajustes? (com história: não exclui nem muda de unidade) */
   temHistorico?: boolean;
 }
@@ -229,6 +233,18 @@ export interface ApiFinanceiro {
   salvarTaxasCartao(taxas: TaxasCartao): Promise<TaxasCartao>;
 }
 
+// ---- Fornecedores (Fase 2, módulo 3): cadastro simples da loja; Dono e Administrador (como Compras).
+
+export interface ApiFornecedores {
+  /** Ativos primeiro, por nome. */
+  listarFornecedores(): Promise<Fornecedor[]>;
+  /** Nome obrigatório; CNPJ/CPF e telefone conferidos; o documento não se repete na loja. */
+  cadastrarFornecedor(dados: NovoFornecedor): Promise<Fornecedor>;
+  alterarFornecedor(id: string, dados: NovoFornecedor): Promise<Fornecedor>;
+  /** Desativado some das listas de escolha (o que já aponta para ele continua). */
+  definirFornecedorAtivo(id: string, ativo: boolean): Promise<Fornecedor>;
+}
+
 // ---- Dados e regras da loja (Fase 2, módulo 1): todos os logados leem; Dono e Administrador alteram.
 
 export interface ApiLoja {
@@ -245,7 +261,7 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

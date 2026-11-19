@@ -29,6 +29,8 @@ interface Props {
   unidades: readonly UnidadeVenda[];
   /** Dono e Administrador: informam o custo do estoque inicial. */
   podeCusto: boolean;
+  /** Fornecedores ativos para escolher (null = não mostra o campo: o Vendedor não vê a lista). */
+  fornecedores?: readonly { id: string; nome: string }[] | null;
   aoSalvar: (p: Produto, mensagem: string) => void;
   aoFechar: () => void;
   /** Para testes: a pergunta "mesmo assim?". */
@@ -37,7 +39,7 @@ interface Props {
 
 const centavosParaReais = (c: number | null | undefined) => (c ? (c / 100).toFixed(2).replace('.', ',') : '');
 
-export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFechar, confirmar = (t) => window.confirm(t) }: Props) {
+export function ModalProduto({ api, produto, unidades, podeCusto, fornecedores = null, aoSalvar, aoFechar, confirmar = (t) => window.confirm(t) }: Props) {
   const editando = produto !== null;
   const [nome, setNome] = useState(produto?.nome ?? '');
   const [codigoBarras, setCodigoBarras] = useState(produto?.codigoBarras ?? '');
@@ -47,6 +49,7 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
   const [preco, setPreco] = useState(centavosParaReais(produto?.precoCentavos));
   const [estoque, setEstoque] = useState('');
   const [custo, setCusto] = useState('');
+  const [fornecedorId, setFornecedorId] = useState(produto?.fornecedorId ?? '');
   const [erros, setErros] = useState<ErroCampo[]>([]);
   const [enviando, setEnviando] = useState(false);
   const erroDe = (campo: string) => erros.find((e) => e.campo === campo)?.mensagem;
@@ -69,6 +72,7 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
         marca: marca.trim() || null,
         pesoGramas,
         unidade,
+        fornecedorId: fornecedores ? fornecedorId || null : (produto.fornecedorId ?? null),
       };
       const antes: Required<AlteracaoProduto> = {
         nome: produto.nome,
@@ -77,6 +81,7 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
         marca: produto.marca ?? null,
         pesoGramas: produto.pesoGramas ?? null,
         unidade: produto.unidade ?? 'un',
+        fornecedorId: produto.fornecedorId ?? null,
       };
       const norm = (v: unknown) => (typeof v === 'string' ? v.normalize('NFC').trim() : v);
       const mudanca = Object.fromEntries(Object.entries(base).filter(([k, v]) => norm(v) !== norm(antes[k as keyof AlteracaoProduto])));
@@ -99,6 +104,7 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
       unidade,
       estoqueInicial: estoqueInicial!,
       custoInicialCentavos: podeCusto ? custoInicialCentavos : null,
+      fornecedorId: fornecedorId || null,
     };
     const v = validarNovoProduto(dados, { completo: true });
     if (!v.ok) return setErros(v.erros), null;
@@ -136,7 +142,12 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
     }
   }
 
-  const erroGeral = erros.find((e) => !['nome', 'codigoBarras', 'precoCentavos', 'marca', 'pesoGramas', 'unidade', 'estoqueInicial', 'custoInicialCentavos'].includes(e.campo));
+  const erroGeral = erros.find((e) => !['nome', 'codigoBarras', 'precoCentavos', 'marca', 'pesoGramas', 'unidade', 'estoqueInicial', 'custoInicialCentavos', 'fornecedorId'].includes(e.campo));
+  // fornecedor desativado que já estava no produto continua aparecendo
+  const opcoesFornecedor =
+    fornecedores && produto?.fornecedorId && !fornecedores.some((f) => f.id === produto.fornecedorId)
+      ? [...fornecedores, { id: produto.fornecedorId, nome: 'Fornecedor desativado' }]
+      : (fornecedores ?? []);
   const campo = (id: string, rotulo: string, nomeCampo: string, valor: string, mudar: (v: string) => void, extra: InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div className={`campo${erroDe(nomeCampo) ? ' campo-com-erro' : ''}`}>
       <label htmlFor={id}>{rotulo}</label>
@@ -173,7 +184,23 @@ export function ModalProduto({ api, produto, unidades, podeCusto, aoSalvar, aoFe
           </div>
           {campo('prod-peso', 'Peso da embalagem em kg (opcional)', 'pesoGramas', peso, setPeso, { inputMode: 'decimal', placeholder: 'Ex.: 15 ou 0,5' })}
         </div>
-        {campo('prod-preco', unidade === 'kg' ? 'Preço do quilo (R$)' : 'Preço de venda (R$)', 'precoCentavos', preco, setPreco, { inputMode: 'decimal', placeholder: '0,00' })}
+        <div className={fornecedores ? 'modal-grade' : undefined}>
+          {campo('prod-preco', unidade === 'kg' ? 'Preço do quilo (R$)' : 'Preço de venda (R$)', 'precoCentavos', preco, setPreco, { inputMode: 'decimal', placeholder: '0,00' })}
+          {fornecedores && (
+            <div className={`campo${erroDe('fornecedorId') ? ' campo-com-erro' : ''}`}>
+              <label htmlFor="prod-fornecedor">Fornecedor principal (opcional)</label>
+              <select id="prod-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)}>
+                <option value="">Nenhum</option>
+                {opcoesFornecedor.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                  </option>
+                ))}
+              </select>
+              {erroDe('fornecedorId') && <span className="campo-erro">{erroDe('fornecedorId')}</span>}
+            </div>
+          )}
+        </div>
         {!editando && (
           <div className="modal-grade">
             {campo('prod-estoque', unidade === 'kg' ? 'Estoque inicial em kg (opcional)' : 'Estoque inicial em unidades (opcional)', 'estoqueInicial', estoque, setEstoque, {
