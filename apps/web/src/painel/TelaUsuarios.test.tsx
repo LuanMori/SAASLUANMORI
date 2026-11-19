@@ -119,6 +119,10 @@ describe('descreverAuditoria e senha sorteada', () => {
       'Usuário alterado: Joana (papel: Vendedor → Administrador)',
     );
     expect(descreverAuditoria({ ...base, acao: 'sessao.entrou', texto: 'Entrou no sistema', alvo: null, detalhes: {} })).toBe('Entrou no sistema');
+    // o resumo vem pronto da API quando ela manda (servidor e demonstração usam o mesmo @saas/core)
+    expect(descreverAuditoria({ ...base, acao: 'venda.cancelada', texto: 'Venda cancelada', alvo: null, detalhes: {}, resumo: 'venda nº 00012 • autorizado por Ana' })).toBe(
+      'Venda cancelada (venda nº 00012 • autorizado por Ana)',
+    );
   });
 
   it('a senha sorteada não tem letras que confundem', () => {

@@ -4,14 +4,19 @@
 // ficam no próprio navegador (usuariosDemo.ts), com as mesmas regras do servidor:
 // senha com hash, senha provisória no primeiro acesso, bloqueio por senhas erradas e
 // saída automática depois de 30 minutos sem uso.
-import { useMemo, useState } from 'react';
+// Várias abas abertas ficam sincronizadas (Fase 2, módulo 1): o que uma grava, as outras recarregam;
+// quem foi desativado ou teve a senha redefinida em outra aba sai, e papel mudado vale na hora.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { UsuarioDaLoja } from '../api';
 import { TelaPainel } from '../painel/TelaPainel';
 import { TelaCriarSenha } from '../painel/TrocarSenha';
+import { avisarQueOsDadosMudaram } from '../sincronizacao';
 import { TelaEntrada } from '../telas/TelaEntrada';
-import { apagarDadosDemo, criarApiLocal } from './apiLocal';
+import { apagarDadosDemo, configuracaoDemo, criarApiLocal } from './apiLocal';
+import { aoMudarEmOutraAba } from './armazenamento';
+import { AvisosDaDemo } from './AvisosDaDemo';
 import { pendenciasExemplo } from './pendenciasExemplo';
-import { apagarUsuariosDemo, entrarDemo, LOJAS_DEMO, registrarSaidaDemo, SENHA_DEMO } from './usuariosDemo';
+import { apagarUsuariosDemo, entrarDemo, LOJAS_DEMO, registrarSaidaDemo, SENHA_DEMO, usuarioGuardadoDemo } from './usuariosDemo';
 
 /** Minutos sem uso até sair sozinho (DaniPets: IDLE_MINUTES). */
 export const INATIVIDADE_MIN = 30;
@@ -27,16 +32,49 @@ export function DemoApp() {
   const [aviso, setAviso] = useState<string | null>(null);
   // Pendências ainda não foram definidas: por padrão o card diz isso; o exemplo é só para ver o visual.
   const [exemplos, setExemplos] = useState(false);
+  /** Muda quando outra aba grava algo (para reler o nome da loja e a pessoa logada). */
+  const [versao, setVersao] = useState(0);
   const loja = LOJAS_DEMO.find((l) => l.subdominio === subdominio) ?? null;
+  // nome da loja como está nos Dados da loja (pode ter sido mudado)
+  const dadosDaLoja = useMemo(() => (loja ? configuracaoDemo(loja.id).dados : null), [loja, versao, sessao]);
 
+  // a sessão de agora (a tela pode pedir para sair várias vezes ao mesmo tempo: só a primeira vale)
+  const sessaoAtual = useRef<Sessao | null>(sessao);
+  sessaoAtual.current = sessao;
   const sair = (mensagem: string | null = null) => {
-    if (sessao) registrarSaidaDemo(sessao.lojaId, sessao.usuario.id);
+    const s = sessaoAtual.current;
+    if (!s) return;
+    sessaoAtual.current = null;
+    void registrarSaidaDemo(s.lojaId, s.usuario.id);
     setSessao(null);
     setAviso(mensagem);
   };
 
+  useEffect(
+    () =>
+      aoMudarEmOutraAba(() => {
+        setVersao((v) => v + 1);
+        avisarQueOsDadosMudaram();
+      }),
+    [],
+  );
+
+  // a pessoa logada mudou em outra aba? (como no servidor: desativar e redefinir a senha encerram a sessão)
+  useEffect(() => {
+    if (!sessao) return;
+    const atual = usuarioGuardadoDemo(sessao.lojaId, sessao.usuario.id);
+    if (!atual) return;
+    if (!atual.ativo) sair('Seu acesso a esta loja foi desativado. Fale com o Dono da loja.');
+    else if (atual.senhaProvisoria && !sessao.usuario.senhaProvisoria) sair('Sua senha foi redefinida pelo Dono ou pelo Administrador. Entre com a senha provisória.');
+    else if (atual.papel !== sessao.usuario.papel || atual.nome !== sessao.usuario.nome) {
+      setSessao({ ...sessao, usuario: { ...sessao.usuario, papel: atual.papel, nome: atual.nome } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- confere só quando outra aba grava
+  }, [versao]);
+
   return (
     <>
+      <AvisosDaDemo />
       <FaixaDemo
         subdominio={subdominio}
         aoTrocar={(s) => {
@@ -50,7 +88,7 @@ export function DemoApp() {
       />
       {sessao && loja ? (
         <AreaLogada
-          loja={loja}
+          loja={{ ...loja, nome: dadosDaLoja?.nome ?? loja.nome, descricao: dadosDaLoja?.descricao ?? loja.descricao }}
           usuario={sessao.usuario}
           exemplos={exemplos}
           aoSair={sair}
@@ -58,7 +96,7 @@ export function DemoApp() {
         />
       ) : (
         <TelaEntrada
-          loja={loja}
+          loja={loja && dadosDaLoja ? { nome: dadosDaLoja.nome } : null}
           aviso={aviso}
           aoEntrar={async (usuario, senha) => {
             const r = await entrarDemo(subdominio, usuario, senha).catch((e: unknown) => ({ ok: false as const, mensagem: e instanceof Error ? e.message : String(e) }));
@@ -81,7 +119,7 @@ function AreaLogada({
   aoSair,
   aoCriarSenha,
 }: {
-  loja: (typeof LOJAS_DEMO)[number];
+  loja: { id: string; nome: string; descricao: string | null };
   usuario: UsuarioDaLoja;
   exemplos: boolean;
   aoSair: (mensagem?: string | null) => void;
@@ -89,7 +127,14 @@ function AreaLogada({
 }) {
   // O operador da API é quem entrou: é ele que fica registrado em cada venda.
   const api = useMemo(
-    () => criarApiLocal({ lojaId: loja.id, operador: { id: usuario.id, nome: usuario.nome, papel: usuario.papel } }),
+    () =>
+      criarApiLocal({
+        lojaId: loja.id,
+        operador: { id: usuario.id, nome: usuario.nome, papel: usuario.papel },
+        // desativada em outra aba: volta para a entrada (o servidor faz o mesmo com o 401)
+        aoSessaoEncerrada: (mensagem) => aoSair(mensagem),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- aoSair muda a cada render; a API só muda com a pessoa
     [loja.id, usuario.id, usuario.nome, usuario.papel],
   );
   if (usuario.senhaProvisoria) {

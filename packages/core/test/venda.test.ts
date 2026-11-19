@@ -298,6 +298,14 @@ describe('calcularVenda', () => {
     expect(mensagens(r)).toMatch(/passa de 10% e precisa da autorização do Dono ou do Administrador/);
   });
 
+  it('o limite vem da regra da loja: com 25%, o Vendedor dá 20% sozinho; com 5%, 10% já pede senha', () => {
+    const pedidoVinte = pedido({ itens: [{ produtoId: 'p2', quantidade: 1, desconto: { precoFinalCentavos: 600, motivo: 'x' } }], pagamentos: [{ forma: 'pix', valorCentavos: 600 }] });
+    const livre = calcularVenda(pedidoVinte, catalogo, { operador: BRUNO, agora: AGORA, limiteDescontoPct: 25 });
+    expect(livre.ok && livre.valor.itens[0]!.desconto?.autorizadoComSenha).toBe(false);
+    const pedidoDez = pedido({ itens: [{ produtoId: 'p1', quantidade: 1, desconto: { precoFinalCentavos: 17091, motivo: 'x' } }], pagamentos: [{ forma: 'pix', valorCentavos: 17091 }] });
+    expect(mensagens(calcularVenda(pedidoDez, catalogo, { operador: BRUNO, agora: AGORA, limiteDescontoPct: 5.5 }))).toMatch(/passa de 5,5% e precisa da autorização/);
+  });
+
   it('desconto acima de 10% com autorização do Administrador: quem autorizou vira o responsável', () => {
     const a = autorizacao('tok', CAIO, { tipo: 'desconto', produtoId: 'p2', precoFinalCentavos: 600 });
     const r = calc(

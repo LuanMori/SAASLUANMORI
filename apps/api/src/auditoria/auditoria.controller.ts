@@ -2,7 +2,7 @@
 // GET /auditoria?limite=40 -> { itens } da loja da sessão, do mais novo para o mais antigo.
 // Só Dono e Administrador (os mesmos que cuidam dos usuários).
 import { BadRequestException, Controller, Get, Injectable, Module, Query } from '@nestjs/common';
-import { ACOES_AUDITORIA, type AcaoAuditoria } from '@saas/core';
+import { ACOES_AUDITORIA, type AcaoAuditoria, resumirAuditoria } from '@saas/core';
 import { Contexto, type ContextoRequisicao } from '../auth/contexto.js';
 import { Exige } from '../auth/decoradores.js';
 import { BancoService } from '../banco/banco.service.js';
@@ -16,6 +16,8 @@ export interface ItemAuditoria {
   quem: string | null;
   alvo: { tipo: string; id: string; nome: string | null } | null;
   detalhes: unknown;
+  /** Resumo dos detalhes para a tela ("venda nº 00012 • R$ 5,00 • autorizado por Ana"), igual ao da demonstração. */
+  resumo: string;
   criadoEm: Date;
 }
 
@@ -35,6 +37,8 @@ export class AuditoriaService {
       for (const l of linhas) {
         if (l.usuarioId) ids.add(l.usuarioId);
         if (l.alvoTipo === 'usuario' && l.alvoId) ids.add(l.alvoId);
+        const d = l.detalhes as { autorizadoPor?: unknown } | null;
+        if (d && typeof d.autorizadoPor === 'string') ids.add(d.autorizadoPor);
       }
       const produtos = linhas.filter((l) => l.alvoTipo === 'produto' && l.alvoId).map((l) => l.alvoId!);
       const [pessoas, itens] = await Promise.all([
@@ -49,6 +53,7 @@ export class AuditoriaService {
         quem: l.usuarioId ? (nome.get(l.usuarioId) ?? null) : null,
         alvo: l.alvoTipo && l.alvoId ? { tipo: l.alvoTipo, id: l.alvoId, nome: nome.get(l.alvoId) ?? null } : null,
         detalhes: l.detalhes,
+        resumo: resumirAuditoria(l.acao, l.detalhes, (id) => nome.get(id) ?? null),
         criadoEm: l.criadoEm,
       }));
     });

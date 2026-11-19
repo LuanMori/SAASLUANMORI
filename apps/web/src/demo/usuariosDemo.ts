@@ -4,6 +4,7 @@
 // troca no primeiro acesso, 5 senhas erradas = 5 minutos bloqueado (login e autorização com senha),
 // só o Dono e o Administrador cadastram, só o Dono mexe em Dono e exclui dados (LGPD), e o histórico
 // de quem fez o quê. Não é segurança de verdade: tudo roda no navegador e qualquer pessoa pode ler.
+// Cada operação que grava pega a trava entre abas e grava tudo ou nada (armazenamento.ts).
 import {
   type AcaoAuditoria,
   ACOES_AUDITORIA,
@@ -18,6 +19,7 @@ import {
   normalizarLogin,
   type PapelDeLoja,
   pode,
+  resumirAuditoria,
   SEM_TENTATIVAS,
   situacaoBloqueio,
   type UsuarioParaRegra,
@@ -26,7 +28,7 @@ import {
   validarSenhaNova,
 } from '@saas/core';
 import { type ApiConta, type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
-import { gravar, gravarDaLoja, ler, lerDaLoja } from './armazenamento';
+import { comTrava, gravar, gravarDaLoja, ler, lerDaLoja, transacao } from './armazenamento';
 
 export const SENHA_DEMO = 'demo1234';
 
@@ -45,7 +47,7 @@ const EQUIPE_INICIAL: { usuario: string; nome: string; papel: PapelDeLoja; ativo
 
 const CHAVES = { usuarios: 'saas-demo:usuarios:v1', auditoria: 'saas-demo:auditoria:v1' } as const;
 /** O histórico da demonstração guarda só os últimos registros de cada loja. */
-const MAX_AUDITORIA = 500;
+export const MAX_AUDITORIA = 2000;
 
 interface UsuarioGuardado extends UsuarioDaLoja {
   /** pbkdf2$<iterações>$<sal base64>$<hash base64>; null = sem senha (não entra). */
@@ -186,6 +188,11 @@ export async function entrarDemo(
   await esperar(atrasoMs);
   const loja = LOJAS_DEMO.find((l) => l.subdominio === subdominio);
   if (!loja) return { ok: false, mensagem: 'Loja não encontrada. Confira o endereço.' };
+  return comTrava(() => entrarNaLoja(loja.id, usuario, senha, agora));
+}
+
+async function entrarNaLoja(lojaId: string, usuario: string, senha: string, agora: () => Date): Promise<ResultadoEntradaDemo> {
+  const loja = { id: lojaId };
   const login = normalizarLogin(usuario);
   const u = (await usuariosDaLoja(loja.id)).find((x) => x.usuario === login);
 
@@ -204,20 +211,37 @@ export async function entrarDemo(
   if (sit.bloqueado) return { ok: false, mensagem: mensagemBloqueado(sit.restanteSegundos) };
   if (!(await conferirHashDemo(senha, u.senhaHash))) {
     const r = aposSenhaErrada(estadoDe(u), agora());
-    salvarUsuario(loja.id, comEstado(u, r.estado));
-    registrarAuditoriaDemo(loja.id, null, r.bloqueou ? 'sessao.bloqueado' : 'sessao.senha_errada', { tipo: 'usuario', id: u.id }, {}, agora());
+    transacao(() => {
+      salvarUsuario(loja.id, comEstado(u, r.estado));
+      registrarAuditoriaDemo(loja.id, null, r.bloqueou ? 'sessao.bloqueado' : 'sessao.senha_errada', { tipo: 'usuario', id: u.id }, {}, agora());
+    });
     return { ok: false, mensagem: r.bloqueou ? MENSAGEM_ACABOU_DE_BLOQUEAR : MENSAGEM_CREDENCIAIS };
   }
   if (!u.ativo) return { ok: false, mensagem: 'Seu acesso a esta loja está desativado. Fale com o Dono da loja.' };
   const entrou: UsuarioGuardado = { ...u, tentativasErradas: 0, bloqueadoAte: null, ultimoAcessoEm: agora().toISOString() };
-  salvarUsuario(loja.id, entrou);
-  registrarAuditoriaDemo(loja.id, u.id, 'sessao.entrou', null, {}, agora());
+  transacao(() => {
+    salvarUsuario(loja.id, entrou);
+    registrarAuditoriaDemo(loja.id, u.id, 'sessao.entrou', null, {}, agora());
+  });
   return { ok: true, lojaId: loja.id, usuario: publico(entrou) };
 }
 
-export function registrarSaidaDemo(lojaId: string, usuarioId: string): void {
-  registrarAuditoriaDemo(lojaId, usuarioId, 'sessao.saiu');
+/** Registra a saída no histórico (não espera: sair nunca fica preso numa gravação). */
+export function registrarSaidaDemo(lojaId: string, usuarioId: string): Promise<void> {
+  return comTrava(() => registrarAuditoriaDemo(lojaId, usuarioId, 'sessao.saiu')).catch(() => undefined);
 }
+
+/**
+ * Como a pessoa logada está AGORA no cadastro (outra aba pode ter mudado o papel ou desativado).
+ * null = não existe mais ou a loja ainda não tem a equipe gravada.
+ */
+export function usuarioGuardadoDemo(lojaId: string, usuarioId: string): UsuarioDaLoja | null {
+  const u = lerDaLoja<UsuarioGuardado>(CHAVES.usuarios, lojaId).find((x) => x.id === usuarioId);
+  return u ? publico(u) : null;
+}
+
+/** A loja já tem a equipe gravada? (antes disso, não há como conferir quem está logado) */
+export const equipeGravadaDemo = (lojaId: string): boolean => Boolean(ler<Record<string, unknown>>(CHAVES.usuarios, {})[lojaId]);
 
 // ---------------------------------------------------------------- autorização com senha (PDV)
 
@@ -244,8 +268,10 @@ export async function conferirAutorizadorDemo(
   if (sit.bloqueado) throw new ErroApi(429, mensagemBloqueado(sit.restanteSegundos));
   if (!(await conferirHashDemo(senha, u.senhaHash))) {
     const r = aposSenhaErrada(estadoDe(u), agora());
-    salvarUsuario(lojaId, comEstado(u, r.estado));
-    registrarAuditoriaDemo(lojaId, null, r.bloqueou ? 'sessao.bloqueado' : 'sessao.senha_errada', { tipo: 'usuario', id: u.id }, {}, agora());
+    transacao(() => {
+      salvarUsuario(lojaId, comEstado(u, r.estado));
+      registrarAuditoriaDemo(lojaId, null, r.bloqueou ? 'sessao.bloqueado' : 'sessao.senha_errada', { tipo: 'usuario', id: u.id }, {}, agora());
+    });
     if (r.bloqueou) throw new ErroApi(429, MENSAGEM_ACABOU_DE_BLOQUEAR);
     throw new ErroApi(403, 'Senha incorreta.');
   }
@@ -261,11 +287,11 @@ export interface OpcoesUsuariosDemo {
   operadorId: string | null;
   agora?: () => Date;
   atrasoMs?: number;
-  /** Nome de um produto (para o histórico mostrar "Produto cadastrado: Ração 1kg"). */
-  nomeDoProduto?: (id: string) => string | null;
+  /** Nome de um produto ou cliente (para o histórico mostrar "Produto cadastrado: Ração 1kg"). */
+  nomeDoAlvo?: (tipo: string, id: string) => string | null;
 }
 
-export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Date(), atrasoMs = 120, nomeDoProduto = () => null }: OpcoesUsuariosDemo): ApiUsuarios & ApiConta {
+export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Date(), atrasoMs = 120, nomeDoAlvo = () => null }: OpcoesUsuariosDemo): ApiUsuarios & ApiConta {
   const ator = async (): Promise<{ eu: UsuarioGuardado; todos: UsuarioGuardado[] }> => {
     await esperar(atrasoMs);
     if (!operadorId) throw new ErroApi(401, 'Faça login para continuar.');
@@ -298,83 +324,101 @@ export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Dat
       return [...todos].sort((a, b) => Number(b.ativo) - Number(a.ativo) || a.nome.localeCompare(b.nome, 'pt-BR')).map(publico);
     },
 
-    async criarUsuario(dados) {
-      const { eu, todos } = await exigirGestao();
-      const v = validarNovoUsuario(dados);
-      if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
-      conferir(eu, null, { tipo: 'criar', papel: v.valor.papel }, todos);
-      if (todos.some((u) => u.usuario === v.valor.usuario)) {
-        throw new ErroApi(409, `Já existe o usuário "${v.valor.usuario}" nesta loja. Escolha outro login.`, [{ campo: 'usuario', mensagem: 'Já usado nesta loja.' }]);
-      }
-      const novo: UsuarioGuardado = {
-        id: novoId(),
-        nome: v.valor.nome,
-        usuario: v.valor.usuario,
-        papel: v.valor.papel,
-        ativo: true,
-        senhaHash: await gerarHashDemo(v.valor.senha),
-        senhaProvisoria: true,
-        tentativasErradas: 0,
-        bloqueadoAte: null,
-        ultimoAcessoEm: null,
-        criadoEm: agora().toISOString(),
-      };
-      salvarUsuario(lojaId, novo);
-      auditar('usuario.criado', novo.id, { papel: novo.papel });
-      return publico(novo);
+    criarUsuario(dados) {
+      return comTrava(async () => {
+        const { eu, todos } = await exigirGestao();
+        const v = validarNovoUsuario(dados);
+        if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
+        conferir(eu, null, { tipo: 'criar', papel: v.valor.papel }, todos);
+        if (todos.some((u) => u.usuario === v.valor.usuario)) {
+          throw new ErroApi(409, `Já existe o usuário "${v.valor.usuario}" nesta loja. Escolha outro login.`, [{ campo: 'usuario', mensagem: 'Já usado nesta loja.' }]);
+        }
+        const novo: UsuarioGuardado = {
+          id: novoId(),
+          nome: v.valor.nome,
+          usuario: v.valor.usuario,
+          papel: v.valor.papel,
+          ativo: true,
+          senhaHash: await gerarHashDemo(v.valor.senha),
+          senhaProvisoria: true,
+          tentativasErradas: 0,
+          bloqueadoAte: null,
+          ultimoAcessoEm: null,
+          criadoEm: agora().toISOString(),
+        };
+        transacao(() => {
+          salvarUsuario(lojaId, novo);
+          auditar('usuario.criado', novo.id, { papel: novo.papel });
+        });
+        return publico(novo);
+      });
     },
 
-    async alterarUsuario(id, mudanca) {
-      const { eu, todos } = await exigirGestao();
-      const v = validarAlteracaoUsuario(mudanca);
-      if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
-      const alvo = acharAlvo(todos, id);
-      conferir(eu, alvo, { tipo: 'alterar', mudanca: v.valor }, todos);
-      const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => v.valor[k] !== alvo[k]);
-      if (campos.length === 0) return publico(alvo);
-      const salvo: UsuarioGuardado = { ...alvo, ...Object.fromEntries(campos.map((k) => [k, v.valor[k]])) };
-      salvarUsuario(lojaId, salvo);
-      if (campos.includes('ativo')) auditar(salvo.ativo ? 'usuario.reativado' : 'usuario.desativado', id);
-      const outros = campos.filter((k) => k !== 'ativo');
-      if (outros.length > 0) {
-        auditar('usuario.alterado', id, { campos: outros, ...(outros.includes('papel') ? { papelAntes: alvo.papel, papelDepois: salvo.papel } : {}) });
-      }
-      return publico(salvo);
+    alterarUsuario(id, mudanca) {
+      return comTrava(async () => {
+        const { eu, todos } = await exigirGestao();
+        const v = validarAlteracaoUsuario(mudanca);
+        if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
+        const alvo = acharAlvo(todos, id);
+        conferir(eu, alvo, { tipo: 'alterar', mudanca: v.valor }, todos);
+        const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => v.valor[k] !== alvo[k]);
+        if (campos.length === 0) return publico(alvo);
+        const salvo: UsuarioGuardado = { ...alvo, ...Object.fromEntries(campos.map((k) => [k, v.valor[k]])) };
+        transacao(() => {
+          salvarUsuario(lojaId, salvo);
+          if (campos.includes('ativo')) auditar(salvo.ativo ? 'usuario.reativado' : 'usuario.desativado', id);
+          const outros = campos.filter((k) => k !== 'ativo');
+          if (outros.length > 0) {
+            auditar('usuario.alterado', id, { campos: outros, ...(outros.includes('papel') ? { papelAntes: alvo.papel, papelDepois: salvo.papel } : {}) });
+          }
+        });
+        return publico(salvo);
+      });
     },
 
-    async redefinirSenhaUsuario(id, senha) {
-      const { eu, todos } = await exigirGestao();
-      const alvo = acharAlvo(todos, id);
-      conferir(eu, alvo, { tipo: 'redefinir_senha' }, todos);
-      const v = validarSenhaNova(senha, { usuario: alvo.usuario, nome: alvo.nome });
-      if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
-      salvarUsuario(lojaId, { ...alvo, senhaHash: await gerarHashDemo(v.valor), senhaProvisoria: true, tentativasErradas: 0, bloqueadoAte: null });
-      auditar('usuario.senha_redefinida', id);
+    redefinirSenhaUsuario(id, senha) {
+      return comTrava(async () => {
+        const { eu, todos } = await exigirGestao();
+        const alvo = acharAlvo(todos, id);
+        conferir(eu, alvo, { tipo: 'redefinir_senha' }, todos);
+        const v = validarSenhaNova(senha, { usuario: alvo.usuario, nome: alvo.nome });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const senhaHash = await gerarHashDemo(v.valor);
+        transacao(() => {
+          salvarUsuario(lojaId, { ...alvo, senhaHash, senhaProvisoria: true, tentativasErradas: 0, bloqueadoAte: null });
+          auditar('usuario.senha_redefinida', id);
+        });
+      });
     },
 
-    async excluirDadosUsuario(id) {
-      const { eu, todos } = await exigirGestao();
-      const alvo = acharAlvo(todos, id);
-      conferir(eu, alvo, { tipo: 'excluir_dados' }, todos);
-      const salvo: UsuarioGuardado = {
-        ...alvo,
-        nome: NOME_USUARIO_REMOVIDO,
-        usuario: `removido-${novoId().replace(/-/g, '').slice(-24)}`,
-        senhaHash: null,
-        senhaProvisoria: true,
-        tentativasErradas: 0,
-        bloqueadoAte: null,
-        ultimoAcessoEm: null,
-      };
-      salvarUsuario(lojaId, salvo);
-      auditar('usuario.dados_excluidos', id);
-      return publico(salvo);
+    excluirDadosUsuario(id) {
+      return comTrava(async () => {
+        const { eu, todos } = await exigirGestao();
+        const alvo = acharAlvo(todos, id);
+        conferir(eu, alvo, { tipo: 'excluir_dados' }, todos);
+        const salvo: UsuarioGuardado = {
+          ...alvo,
+          nome: NOME_USUARIO_REMOVIDO,
+          usuario: `removido-${novoId().replace(/-/g, '').slice(-24)}`,
+          senhaHash: null,
+          senhaProvisoria: true,
+          tentativasErradas: 0,
+          bloqueadoAte: null,
+          ultimoAcessoEm: null,
+        };
+        transacao(() => {
+          salvarUsuario(lojaId, salvo);
+          auditar('usuario.dados_excluidos', id);
+        });
+        return publico(salvo);
+      });
     },
 
     async listarAuditoria(limite = 40) {
       const { todos } = await exigirGestao();
       const nome = new Map(todos.map((u) => [u.id, u.nome]));
-      const nomeDoAlvo = (tipo: string | null, id: string | null) => (!id ? null : tipo === 'usuario' ? (nome.get(id) ?? null) : tipo === 'produto' ? nomeDoProduto(id) : null);
+      const nomeDaPessoa = (id: string) => nome.get(id) ?? null;
+      const nomeDe = (tipo: string, id: string) => (tipo === 'usuario' ? nomeDaPessoa(id) : nomeDoAlvo(tipo, id));
       return lerDaLoja<RegistroAuditoria>(CHAVES.auditoria, lojaId)
         .slice(-limite)
         .reverse()
@@ -383,32 +427,38 @@ export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Dat
             id: r.id,
             acao: r.acao,
             texto: ACOES_AUDITORIA[r.acao] ?? r.acao,
-            quem: r.usuarioId ? (nome.get(r.usuarioId) ?? null) : null,
-            alvo: r.alvoTipo && r.alvoId ? { tipo: r.alvoTipo, id: r.alvoId, nome: nomeDoAlvo(r.alvoTipo, r.alvoId) } : null,
+            quem: r.usuarioId ? nomeDaPessoa(r.usuarioId) : null,
+            alvo: r.alvoTipo && r.alvoId ? { tipo: r.alvoTipo, id: r.alvoId, nome: nomeDe(r.alvoTipo, r.alvoId) } : null,
             detalhes: r.detalhes,
+            resumo: resumirAuditoria(r.acao, r.detalhes, nomeDaPessoa),
             criadoEm: r.criadoEm,
           }),
         );
     },
 
-    async trocarMinhaSenha(senhaAtual, senhaNova) {
-      const { eu } = await ator();
-      const sit = situacaoBloqueio(estadoDe(eu), agora());
-      if (sit.bloqueado) throw new ErroApi(429, mensagemBloqueado(sit.restanteSegundos));
-      if (!(await conferirHashDemo(senhaAtual, eu.senhaHash))) {
-        const r = aposSenhaErrada(estadoDe(eu), agora());
-        salvarUsuario(lojaId, comEstado(eu, r.estado));
-        if (r.bloqueou) {
-          registrarAuditoriaDemo(lojaId, null, 'sessao.bloqueado', { tipo: 'usuario', id: eu.id }, {}, agora());
-          throw new ErroApi(429, MENSAGEM_ACABOU_DE_BLOQUEAR, [], 'sessao_encerrada');
+    trocarMinhaSenha(senhaAtual, senhaNova) {
+      return comTrava(async () => {
+        const { eu } = await ator();
+        const sit = situacaoBloqueio(estadoDe(eu), agora());
+        if (sit.bloqueado) throw new ErroApi(429, mensagemBloqueado(sit.restanteSegundos));
+        if (!(await conferirHashDemo(senhaAtual, eu.senhaHash))) {
+          const r = aposSenhaErrada(estadoDe(eu), agora());
+          transacao(() => {
+            salvarUsuario(lojaId, comEstado(eu, r.estado));
+            if (r.bloqueou) registrarAuditoriaDemo(lojaId, null, 'sessao.bloqueado', { tipo: 'usuario', id: eu.id }, {}, agora());
+          });
+          if (r.bloqueou) throw new ErroApi(429, MENSAGEM_ACABOU_DE_BLOQUEAR, [], 'sessao_encerrada');
+          throw new ErroApi(400, 'A senha atual não confere.', [{ campo: 'senhaAtual', mensagem: 'Senha atual errada.' }]);
         }
-        throw new ErroApi(400, 'A senha atual não confere.', [{ campo: 'senhaAtual', mensagem: 'Senha atual errada.' }]);
-      }
-      const v = validarSenhaNova(senhaNova, { usuario: eu.usuario, nome: eu.nome });
-      if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros.map((e) => ({ ...e, campo: 'senhaNova' })));
-      if (senhaNova === senhaAtual) throw new ErroApi(400, 'A senha nova precisa ser diferente da atual.', [{ campo: 'senhaNova', mensagem: 'Igual à atual.' }]);
-      salvarUsuario(lojaId, { ...eu, senhaHash: await gerarHashDemo(senhaNova), senhaProvisoria: false, tentativasErradas: 0, bloqueadoAte: null });
-      auditar('usuario.senha_trocada', eu.id);
+        const v = validarSenhaNova(senhaNova, { usuario: eu.usuario, nome: eu.nome });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros.map((e) => ({ ...e, campo: 'senhaNova' })));
+        if (senhaNova === senhaAtual) throw new ErroApi(400, 'A senha nova precisa ser diferente da atual.', [{ campo: 'senhaNova', mensagem: 'Igual à atual.' }]);
+        const senhaHash = await gerarHashDemo(senhaNova);
+        transacao(() => {
+          salvarUsuario(lojaId, { ...eu, senhaHash, senhaProvisoria: false, tentativasErradas: 0, bloqueadoAte: null });
+          auditar('usuario.senha_trocada', eu.id);
+        });
+      });
     },
   };
 }

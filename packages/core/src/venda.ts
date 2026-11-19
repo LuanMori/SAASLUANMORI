@@ -262,14 +262,21 @@ function camposDesconhecidos(dados: Record<string, unknown>, permitidos: Readonl
 // ------------------------------------------------------------------ desconto
 export type TipoDesconto = 'nenhum' | 'dentro-do-limite' | 'acima-do-limite' | 'brinde' | 'invalido';
 
-/** Classifica o desconto de um item pelo preço final pedido. */
-export function classificarDesconto(precoListaCentavos: number, precoFinalCentavos: number): { tipo: TipoDesconto; pct: number } {
+/**
+ * Classifica o desconto de um item pelo preço final pedido. `limitePct` = quanto o Vendedor dá sem senha
+ * (regra da loja; padrão do DaniPets: 10%).
+ */
+export function classificarDesconto(
+  precoListaCentavos: number,
+  precoFinalCentavos: number,
+  limitePct: number = LIMITE_DESCONTO_VENDEDOR_PCT,
+): { tipo: TipoDesconto; pct: number } {
   if (!Number.isInteger(precoFinalCentavos) || precoFinalCentavos < 0 || precoFinalCentavos >= precoListaCentavos) {
     return { tipo: precoFinalCentavos === precoListaCentavos ? 'nenhum' : 'invalido', pct: 0 };
   }
   const pct = ((precoListaCentavos - precoFinalCentavos) / precoListaCentavos) * 100;
   if (precoFinalCentavos === 0) return { tipo: 'brinde', pct: 100 };
-  return { tipo: pct <= LIMITE_DESCONTO_VENDEDOR_PCT + 1e-9 ? 'dentro-do-limite' : 'acima-do-limite', pct };
+  return { tipo: pct <= limitePct + 1e-9 ? 'dentro-do-limite' : 'acima-do-limite', pct };
 }
 
 /** Quem precisa autorizar este desconto, para quem está operando. null = a própria pessoa pode dar. */
@@ -440,6 +447,8 @@ export interface ContextoVenda {
   /** Clientes da loja, para conferir o cliente identificado (F6). */
   clientes?: ReadonlyMap<string, ClienteParaVenda>;
   agora?: Date;
+  /** Desconto que o Vendedor dá sem senha, em % (regra da loja; padrão 10, como o DaniPets). */
+  limiteDescontoPct?: number;
 }
 
 export interface VendaCalculada {
@@ -461,6 +470,7 @@ export interface VendaCalculada {
  */
 export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, ProdutoParaVenda>, ctx: ContextoVenda): Resultado<VendaCalculada> {
   const agora = ctx.agora ?? new Date();
+  const limiteDesconto = ctx.limiteDescontoPct ?? LIMITE_DESCONTO_VENDEDOR_PCT;
   const erros: ErroCampo[] = [];
   const itens: ItemVendido[] = [];
   const usadas: string[] = [];
@@ -476,7 +486,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
     let preco = p.precoCentavos;
     let aplicado: DescontoAplicado | null = null;
     if (item.desconto) {
-      const { tipo } = classificarDesconto(p.precoCentavos, item.desconto.precoFinalCentavos);
+      const { tipo } = classificarDesconto(p.precoCentavos, item.desconto.precoFinalCentavos, limiteDesconto);
       if (tipo === 'nenhum' || tipo === 'invalido') {
         erros.push({ campo: `itens.${i}.desconto`, mensagem: `O preço final de ${p.nome} deve ser menor que o preço de tabela (0 para brinde).` });
         return;
@@ -497,7 +507,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
             mensagem:
               tipo === 'brinde'
                 ? `O brinde de ${p.nome} precisa da autorização de um Dono. Aplique o desconto de novo.`
-                : `O desconto de ${p.nome} passa de ${LIMITE_DESCONTO_VENDEDOR_PCT}% e precisa da autorização do Dono ou do Administrador. Aplique o desconto de novo.`,
+                : `O desconto de ${p.nome} passa de ${String(limiteDesconto).replace('.', ',')}% e precisa da autorização do Dono ou do Administrador. Aplique o desconto de novo.`,
           });
           return;
         }

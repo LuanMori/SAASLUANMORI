@@ -6,13 +6,16 @@
 import type {
   AcaoAutorizada,
   Cliente,
+  ConfiguracaoDaLoja,
   ContaId,
+  DadosDaLoja,
   Devolucao,
   DevolucaoComVenda,
   ErroCampo,
   Lancamento,
   MovimentoEstoque,
   MovimentoManual,
+  MudancaRegras,
   NovaVenda,
   NovoCliente,
   NovoLancamentoManual,
@@ -23,6 +26,7 @@ import type {
   PedidoCancelamento,
   PedidoDevolucao,
   Recebivel,
+  RegrasDaLoja,
   ResumoAReceber,
   ResumoCliente,
   SituacaoEstoque,
@@ -206,12 +210,23 @@ export interface ApiFinanceiro {
   salvarTaxasCartao(taxas: TaxasCartao): Promise<TaxasCartao>;
 }
 
+// ---- Dados e regras da loja (Fase 2, módulo 1): todos os logados leem; Dono e Administrador alteram.
+
+export interface ApiLoja {
+  /** Nome, descrição, logo e as regras (com os padrões do DaniPets no que a loja não mudou). */
+  lerConfiguracao(): Promise<ConfiguracaoDaLoja>;
+  /** Só os campos enviados mudam. Logo: data URL PNG, JPEG ou WebP (null tira). */
+  salvarDadosDaLoja(mudanca: Partial<DadosDaLoja>): Promise<DadosDaLoja>;
+  /** Só as partes e os campos enviados mudam; cada um é conferido com os limites do DaniPets. */
+  salvarRegrasDaLoja(mudanca: MudancaRegras): Promise<RegrasDaLoja>;
+}
+
 /**
  * O que a área logada usa. Cada venda da Frente de caixa alimenta o resto do sistema:
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 
@@ -241,6 +256,8 @@ export interface ItemAuditoria {
   quem: string | null;
   alvo: { tipo: string; id: string; nome: string | null } | null;
   detalhes: unknown;
+  /** Resumo dos detalhes ("venda nº 00012 • R$ 5,00 • autorizado por Ana"); vazio = nada a acrescentar. */
+  resumo?: string;
   criadoEm: string;
 }
 

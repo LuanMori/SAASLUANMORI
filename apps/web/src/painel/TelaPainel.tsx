@@ -1,17 +1,23 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
 // Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Produtos e estoque,
-// Relatórios (todas as vendas) e Usuários. As outras seções ficam em branco até chegar a vez delas.
+// Relatórios (todas as vendas), Usuários e Dados e backup (dados da loja). As outras seções ficam em
+// branco até chegar a vez delas.
+// Os dados da loja (nome, descrição, logo) e as regras (desconto sem senha...) vêm da API
+// (lerConfiguracao); enquanto não chegam, ou se o servidor ainda não tiver essa parte, valem o nome
+// da sessão e os padrões do DaniPets.
 // A Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets);
 // o botão "← Painel" volta para a Visão geral.
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
-import { ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
-import { useState } from 'react';
+import { type ConfiguracaoDaLoja, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
+import { useCallback, useEffect, useState } from 'react';
 import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
+import { aoMudaremOsDados } from '../sincronizacao';
 import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
+import { TelaDadosBackup } from './TelaDadosBackup';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
@@ -64,7 +70,18 @@ export function TelaPainel({
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [config, setConfig] = useState<ConfiguracaoDaLoja | null>(null);
   usarInatividade(inatividadeMin, aoInatividade ?? aoSair);
+
+  // dados e regras da loja: na abertura, quando outra aba ou computador muda algo, e depois de salvar
+  const carregarConfig = useCallback(() => {
+    api.lerConfiguracao().then(setConfig, () => undefined); // sem essa parte no servidor: ficam o nome da sessão e os padrões
+  }, [api]);
+  useEffect(() => {
+    carregarConfig();
+    return aoMudaremOsDados(carregarConfig);
+  }, [carregarConfig]);
+  const lojaDaBarra = config ? { nome: config.dados.nome, descricao: config.dados.descricao, logo: config.dados.logo } : loja;
 
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
@@ -92,7 +109,8 @@ export function TelaPainel({
           <TelaFrenteCaixa
             api={api}
             operador={{ nome: pessoa.nome, papel: pessoa.papel }}
-            loja={loja}
+            loja={lojaDaBarra}
+            limiteDescontoPct={config?.regras.venda.descontoSemSenhaPct}
             fuso={fuso}
             agora={agora}
             chaveCarrinho={chaveCarrinho}
@@ -106,7 +124,7 @@ export function TelaPainel({
   const ver = (id: IdSecao) => permitido && secao === id && disponivel(id);
   return (
     <div className="painel-app">
-      <BarraLateral loja={loja} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
+      <BarraLateral loja={lojaDaBarra} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
       <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
         {aviso && (
           <p className="alerta painel-aviso" role="status">
@@ -142,6 +160,7 @@ export function TelaPainel({
         {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
         {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
         {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
+        {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
       </main>
       {trocandoSenha && (
         <ModalTrocarSenha

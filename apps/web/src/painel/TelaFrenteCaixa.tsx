@@ -70,6 +70,8 @@ interface Props {
   chaveCarrinho?: string | null;
   /** "← Painel": sai da Frente de caixa. */
   aoSair: () => void;
+  /** Desconto que o Vendedor dá sem senha (regra da loja; padrão 10%, como o DaniPets). */
+  limiteDescontoPct?: number;
 }
 
 /** De quanto em quanto tempo o saldo de estoque é buscado de novo (outra pessoa pode ter vendido). */
@@ -84,7 +86,7 @@ const proximaVenda = (forma: FormaPagamento): FormaPagamento => (forma === 'fiad
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
 type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
 
-export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair }: Props) {
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct }: Props) {
   const { estado: carga, recarregar } = usarCarga(async () => {
     const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
     return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
@@ -473,7 +475,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     const p = porId.get(l.produtoId);
                     if (!p) return null;
                     const preco = precoDaLinha(l, p);
-                    const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel) !== null && !l.desconto?.autorizacao;
+                    const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel, limiteDescontoPct) !== null && !l.desconto?.autorizacao;
                     return (
                       <tr key={l.produtoId} className={ultimaLinha?.produtoId === l.produtoId ? 'pdv-ultima' : undefined}>
                         <td className="pdv-n">{i + 1}</td>
@@ -733,6 +735,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           produto={produtoDaJanela}
           atual={linhaDaJanela?.desconto ?? null}
           operador={operador}
+          limitePct={limiteDescontoPct}
           carregarAutorizadores={carregarAutorizadores}
           autorizar={(usuarioId, senha, precoFinalCentavos) =>
             api.autorizar({ usuarioId, senha, acao: { tipo: 'desconto', produtoId: produtoDaJanela.id, precoFinalCentavos } })

@@ -23,11 +23,12 @@ export const PERMISSOES = {
   financeiro: 'Financeiro',
   relatorios: 'Relatórios e vendas de outros dias',
   dados: 'Dados e backup',
+  'loja.configurar': 'Alterar os dados e as regras da loja',
   usuarios: 'Cadastrar, alterar e desativar usuários',
   'usuarios.donos': 'Cadastrar e alterar outro Dono, ou dar o papel de Dono',
   'usuarios.excluir_dados': 'Excluir os dados de um usuário desativado (LGPD)',
   'clientes.excluir_dados': 'Excluir os dados de um cliente (LGPD)',
-  'desconto.acima_do_limite': 'Dar desconto acima de 10% sem pedir senha',
+  'desconto.acima_do_limite': 'Dar desconto acima do limite da loja sem pedir senha',
   estorno: 'Cancelar venda e devolver itens sem pedir senha',
   brinde: 'Dar brinde (preço R$ 0,00) sem pedir senha',
 } as const;

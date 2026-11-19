@@ -5,6 +5,8 @@ export * from './permissoes';
 export * from './loja';
 export * from './tentativas';
 export * from './usuario';
+export * from './auditoria';
+export * from './configuracao';
 export * from './dinheiro';
 export * from './texto';
 export * from './produto';

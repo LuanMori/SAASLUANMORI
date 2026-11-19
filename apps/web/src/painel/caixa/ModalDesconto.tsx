@@ -26,11 +26,13 @@ interface Props {
   autorizar: (usuarioId: string, senha: string, precoFinalCentavos: number) => Promise<{ autorizacao: string; autorizador: Autorizador }>;
   aoAplicar: (desconto: DescontoNaLinha) => void;
   aoFechar: () => void;
+  /** Desconto que o Vendedor dá sem senha (regra da loja; padrão 10%, como o DaniPets). */
+  limitePct?: number;
 }
 
 const pctTexto = (n: number) => `${n.toFixed(1).replace('.', ',')}%`;
 
-export function ModalDesconto({ produto, atual, operador, carregarAutorizadores, autorizar, aoAplicar, aoFechar }: Props) {
+export function ModalDesconto({ produto, atual, operador, carregarAutorizadores, autorizar, aoAplicar, aoFechar, limitePct = LIMITE_DESCONTO_VENDEDOR_PCT }: Props) {
   const [precoTexto, setPrecoTexto] = useState(centavosParaTexto(atual?.precoFinalCentavos ?? produto.precoCentavos));
   const [motivo, setMotivo] = useState(atual?.motivo ?? '');
   const [autorizadores, setAutorizadores] = useState<Autorizador[] | null>(null);
@@ -40,7 +42,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
   const [enviando, setEnviando] = useState(false);
 
   const centavos = reaisParaCentavos(precoTexto);
-  const { tipo, pct } = centavos === null ? { tipo: 'invalido' as const, pct: 0 } : classificarDesconto(produto.precoCentavos, centavos);
+  const { tipo, pct } = centavos === null ? { tipo: 'invalido' as const, pct: 0 } : classificarDesconto(produto.precoCentavos, centavos, limitePct);
   const quem = quemAutorizaDesconto(tipo, operador.papel);
   const opcoes = (autorizadores ?? []).filter((a) => (quem === 'dono' ? a.papel === 'dono' : true));
 
@@ -81,7 +83,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
   return (
     <Modal titulo={`Desconto em ${produto.nome}`} aoFechar={aoFechar}>
       <p className="modal-sub">
-        Preço de tabela: <b>{formatarCentavos(produto.precoCentavos)}</b>. O Vendedor pode dar até {LIMITE_DESCONTO_VENDEDOR_PCT}% sozinho.
+        Preço de tabela: <b>{formatarCentavos(produto.precoCentavos)}</b>. O Vendedor pode dar até {String(limitePct).replace('.', ',')}% sozinho.
       </p>
       <form className="modal-form" onSubmit={aplicar} noValidate autoComplete="off">
         <div className="campo">
@@ -102,7 +104,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
 
         {quem && (
           <fieldset className="modal-autorizacao">
-            <legend>{quem === 'dono' ? 'Brinde: autorização de um Dono' : `Passa de ${LIMITE_DESCONTO_VENDEDOR_PCT}%: autorização do Dono ou do Administrador`}</legend>
+            <legend>{quem === 'dono' ? 'Brinde: autorização de um Dono' : `Passa de ${String(limitePct).replace('.', ',')}%: autorização do Dono ou do Administrador`}</legend>
             <div className="modal-grade">
               <div className="campo">
                 <label htmlFor="desc-quem">Quem autoriza</label>

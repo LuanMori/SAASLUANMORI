@@ -221,21 +221,4 @@ export function situacaoDoUsuario(u: { ativo: boolean; senhaProvisoria: boolean;
   return 'Ativo';
 }
 
-/** Ações registradas no histórico (auditoria), com o texto que aparece na tela. */
-export const ACOES_AUDITORIA = {
-  'sessao.entrou': 'Entrou no sistema',
-  'sessao.saiu': 'Saiu do sistema',
-  'sessao.senha_errada': 'Senha errada',
-  'sessao.bloqueado': 'Bloqueado por senhas erradas',
-  'usuario.criado': 'Usuário criado',
-  'usuario.alterado': 'Usuário alterado',
-  'usuario.desativado': 'Usuário desativado',
-  'usuario.reativado': 'Usuário reativado',
-  'usuario.senha_redefinida': 'Senha redefinida pelo Dono ou Administrador',
-  'usuario.senha_trocada': 'Trocou a própria senha',
-  'usuario.dados_excluidos': 'Dados do usuário excluídos (LGPD)',
-  'cliente.dados_excluidos': 'Dados do cliente excluídos (LGPD)',
-  'produto.criado': 'Produto cadastrado',
-} as const;
-
-export type AcaoAuditoria = keyof typeof ACOES_AUDITORIA;
+// As ações do histórico (ACOES_AUDITORIA) ficam em auditoria.ts.

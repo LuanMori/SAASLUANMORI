@@ -2,8 +2,10 @@
 // Carrega dados da API e (opcional) recarrega a cada N ms com a aba visível.
 // Sem rede: mantém o que já está na tela e avisa. 401/403: bloqueia.
 // Resposta atrasada de uma busca antiga nunca sobrescreve a mais nova.
+// Outra aba (ou outro computador) gravou algo? Recarrega sozinho (sincronizacao.ts).
 import { type DependencyList, useCallback, useEffect, useRef, useState } from 'react';
 import { ErroApi } from '../api';
+import { aoMudaremOsDados } from '../sincronizacao';
 import { usarIntervalo } from '../usarIntervalo';
 
 export type EstadoCarga<T> =
@@ -33,6 +35,7 @@ export function usarCarga<T>(carregar: () => Promise<T>, deps: DependencyList, i
   useEffect(() => {
     void recarregar();
   }, [recarregar]);
+  useEffect(() => aoMudaremOsDados(() => void recarregar()), [recarregar]);
   usarIntervalo(() => {
     if (intervaloMs > 0) void recarregar();
   }, intervaloMs > 0 ? intervaloMs : 60_000);

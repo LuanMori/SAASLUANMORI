@@ -13,6 +13,7 @@ import {
   type Permissao,
   pode,
   quemPode,
+  resumirAuditoria,
   situacaoDoUsuario,
   validarNovoUsuario,
   validarSenhaNova,
@@ -262,18 +263,14 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
   );
 }
 
-/** "Usuário criado: Joana" / "Senha errada: Bruno". */
+/**
+ * "Usuário criado: Joana (Vendedor)" / "Venda cancelada (venda nº 00012 • R$ 189,90 • autorizado por Ana)".
+ * O resumo vem pronto da API (@saas/core/auditoria); sem ele, é calculado aqui com os mesmos textos.
+ */
 export function descreverAuditoria(h: ItemAuditoria): string {
   const alvo = h.alvo?.nome ? `: ${h.alvo.nome}` : '';
-  const d = (h.detalhes ?? {}) as { papel?: string; papelAntes?: string; papelDepois?: string };
-  const papel = (p?: string) => (p && p in NOME_PAPEL ? NOME_PAPEL[p as PapelDeLoja] : p);
-  const extra =
-    h.acao === 'usuario.criado' && d.papel
-      ? ` (${papel(d.papel)})`
-      : h.acao === 'usuario.alterado' && d.papelAntes && d.papelDepois
-        ? ` (papel: ${papel(d.papelAntes)} → ${papel(d.papelDepois)})`
-        : '';
-  return `${h.texto}${alvo}${extra}`;
+  const resumo = h.resumo ?? resumirAuditoria(h.acao, h.detalhes);
+  return `${h.texto}${alvo}${resumo ? ` (${resumo})` : ''}`;
 }
 
 /** Quem pode o quê (a mesma matriz que o servidor usa). */

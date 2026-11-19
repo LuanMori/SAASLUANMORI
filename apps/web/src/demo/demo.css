@@ -2,15 +2,25 @@
 .demo-faixa {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 16px;
   margin: 0; padding: 8px 16px; font-size: 0.85rem;
-  background: var(--aviso-fundo); color: var(--aviso); border-bottom: 1px solid #f0dfb2;
+  background: var(--aviso-fundo); color: var(--aviso); border-bottom: 1px solid var(--demo-borda, #f0dfb2);
 }
 .demo-endereco { display: inline-flex; align-items: center; gap: 6px; }
 .demo-endereco select, .demo-faixa-botao {
-  font: inherit; padding: 3px 8px; border: 1px solid #e3c98a; border-radius: 6px; background: #fffdf6; color: var(--aviso); cursor: pointer;
+  font: inherit; padding: 3px 8px; border: 1px solid var(--demo-borda-botao, #e3c98a); border-radius: 6px; background: var(--demo-botao, #fffdf6); color: var(--aviso); cursor: pointer;
 }
 .demo-detalhes { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; }
 .demo-detalhes p { margin: 0; text-align: center; }
-.demo-detalhes code { background: #fff; padding: 1px 5px; border-radius: 4px; color: var(--texto); }
+.demo-detalhes code { background: var(--superficie); padding: 1px 5px; border-radius: 4px; color: var(--texto); }
 .demo-faixa + .entrada { min-height: calc(100vh - 40px); }
 .demo-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .demo-check input { accent-color: var(--primaria); }
+:root[data-tema='escuro'] { --demo-borda: #4d3f17; --demo-borda-botao: #6a5620; --demo-botao: #2b2414; }
+/* Avisos fixos (DaniPets ACE-13 e ACE-14) */
+.aviso-gravacao {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px;
+  margin: 0; padding: 10px 16px; background: #b3301e; color: #fff; font-size: 0.9rem; line-height: 1.4;
+}
+.aviso-gravacao button { font: inherit; font-weight: 700; padding: 6px 12px; border-radius: 8px; border: 1px solid #fff; background: transparent; color: #fff; cursor: pointer; }
+.aviso-gravacao button:hover { background: rgba(255, 255, 255, 0.15); }
+.aviso-risco { margin: 0; padding: 8px 16px; background: var(--erro-fundo); color: var(--erro); font-size: 0.88rem; text-align: center; border-bottom: 1px solid var(--borda); }
+:root[data-tema='escuro'] .aviso-gravacao { background: #7a1f19; }

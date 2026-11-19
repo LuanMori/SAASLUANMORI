@@ -92,10 +92,10 @@ export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: Readon
   return { itens, produtos: linhas.length, totalCentavos: total, descontoCentavos: desconto };
 }
 
-/** Quem precisa autorizar o desconto desta linha para quem está operando (null = ninguém). */
-export function autorizacaoNecessaria(l: LinhaCarrinho, p: Produto, papel: PapelDeLoja): QuemAutoriza | null {
+/** Quem precisa autorizar o desconto desta linha para quem está operando (null = ninguém). `limitePct` = regra da loja. */
+export function autorizacaoNecessaria(l: LinhaCarrinho, p: Produto, papel: PapelDeLoja, limitePct?: number): QuemAutoriza | null {
   if (!l.desconto) return null;
-  return quemAutorizaDesconto(classificarDesconto(p.precoCentavos, l.desconto.precoFinalCentavos).tipo, papel);
+  return quemAutorizaDesconto(classificarDesconto(p.precoCentavos, l.desconto.precoFinalCentavos, limitePct).tipo, papel);
 }
 
 /** 1250 -> "12,50" (para preencher campos). */

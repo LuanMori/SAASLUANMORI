@@ -82,7 +82,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Produtos e estoque', 'Relatórios', 'Usuários'];
+    const comTela = ['Visão geral', 'Frente de caixa', 'Produtos e estoque', 'Relatórios', 'Usuários', 'Dados e backup'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
@@ -97,7 +97,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
     const { barra, aoSair } = montar('administrador');
     expect(within(barra).getByText('Ana')).toBeTruthy();
     expect(within(barra).getByText('Administrador')).toBeTruthy();
-    expect(within(barra).getByRole('button', { name: 'Trocar o tema (claro ou escuro)' })).toBeTruthy();
+    expect(within(barra).getByRole('button', { name: /^Usar o tema (claro|escuro)$/ })).toBeTruthy();
     expect(within(barra).getByRole('button', { name: 'Trocar senha' })).toBeTruthy();
     await userEvent.click(within(barra).getByRole('button', { name: 'Sair' }));
     expect(aoSair).toHaveBeenCalledOnce();
@@ -238,5 +238,29 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     expect(screen.queryByRole('button', { name: /Saldo das contas/ })).toBeNull(); // sem acesso ao Financeiro
     await userEvent.click(screen.getByRole('button', { name: /VENDAS DE HOJE/ }));
     expect(screen.getByText(/Todas as vendas ficam guardadas em/).querySelector('button')).toBeNull();
+  });
+});
+
+describe('TelaPainel · dados da loja e tema (Fase 2, módulo 1)', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  it('a barra lateral usa o nome, a descrição e o logo salvos em Dados e backup', async () => {
+    const api = criarApiLocal({ lojaId: 'loja-dados', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 });
+    await api.salvarDadosDaLoja({ nome: 'Pet Center', descricao: 'Banho e tosa', logo: PNG });
+    render(<TelaPainel api={api} loja={{ nome: 'Loja A' }} pessoa={{ nome: 'Ana', papel: 'dono' }} aoSair={vi.fn()} />);
+    const barra = screen.getByRole('complementary', { name: 'Barra lateral' });
+    expect(await within(barra).findByText('Pet Center')).toBeTruthy();
+    expect(within(barra).getByText('Banho e tosa')).toBeTruthy();
+    expect(barra.querySelector('.brandmark img')?.getAttribute('src')).toBe(PNG);
+  });
+
+  it('o botão de tema troca entre claro e escuro e guarda a escolha neste navegador', async () => {
+    const { barra } = montar();
+    await userEvent.click(within(barra).getByRole('button', { name: 'Usar o tema escuro' }));
+    expect(document.documentElement.dataset.tema).toBe('escuro');
+    expect(localStorage.getItem('saas:tema')).toBe('escuro');
+    await userEvent.click(within(barra).getByRole('button', { name: 'Usar o tema claro' }));
+    expect(document.documentElement.dataset.tema).toBe('claro');
+    expect(localStorage.getItem('saas:tema')).toBe('claro');
   });
 });

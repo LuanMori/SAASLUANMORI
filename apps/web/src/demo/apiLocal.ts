@@ -21,10 +21,19 @@
 //
 // Usuários, senhas (com hash), bloqueio por senhas erradas e histórico: usuariosDemo.ts.
 //
+// Como no servidor (Fase 2, módulo 1): cada operação que grava pega a trava entre abas e grava TUDO OU
+// NADA (armazenamento.ts: venda, estoque, financeiro e histórico vão juntos, ou nada vai); cada ação
+// importante entra no histórico (sem dado pessoal: o nome é buscado na hora de mostrar); as regras da
+// loja (desconto sem senha, prazo do fiado...) vêm das configurações da loja, com os padrões do DaniPets;
+// quem foi desativado em outra aba perde o acesso na próxima operação.
+//
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  type AcaoAuditoria,
   type AcaoAutorizada,
   anonimizarCliente,
+  aplicarMudancaNasRegras,
+  aplicarMudancaNosDados,
   type Autorizacao,
   buscarClientes,
   calcularCancelamento,
@@ -34,7 +43,9 @@ import {
   conferirCpfUnico,
   conferirExclusaoDeCliente,
   conferirSaida,
+  type ConfiguracaoDaLoja,
   CONTAS,
+  type DadosDaLoja,
   diaNoFuso,
   type Devolucao,
   devolucoesComVenda,
@@ -55,13 +66,14 @@ import {
   movimentosDoCancelamento,
   NOME_CLIENTE_REMOVIDO,
   NOME_CONTA,
+  normalizarDadosDaLoja,
+  normalizarRegras,
   type NovoCliente,
   type Operador,
   type OperadorComPapel,
   type Pagamento,
   type Permissao,
   pode,
-  PRAZO_FIADO_PADRAO_DIAS,
   type ProdutoParaVenda,
   type Recebivel,
   receberRecebivel,
@@ -69,6 +81,7 @@ import {
   recebiveisDeFiado,
   resumirAReceber,
   resumirCliente,
+  type RegrasDaLoja,
   saldosDasContas,
   saldosDeEstoque,
   situacaoEstoque,
@@ -90,8 +103,15 @@ import {
   vendasNoPeriodo,
 } from '@saas/core';
 import { type ApiSistema, ErroApi, type FiltroVendas, type Produto, type SaldoEstoque } from '../api';
-import { gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja } from './armazenamento';
-import { autorizadoresDemo, conferirAutorizadorDemo, criarApiUsuariosDemo, registrarAuditoriaDemo } from './usuariosDemo';
+import { comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
+import {
+  autorizadoresDemo,
+  conferirAutorizadorDemo,
+  criarApiUsuariosDemo,
+  LOJAS_DEMO,
+  registrarAuditoriaDemo,
+  usuarioGuardadoDemo,
+} from './usuariosDemo';
 
 const CHAVES = {
   produtos: 'saas-demo:produtos:v1',
@@ -108,12 +128,32 @@ const CHAVES = {
   taxas: 'saas-demo:taxas-cartao:v1',
   /** Lojas que já tiveram o estoque e o financeiro montados a partir das vendas antigas. */
   ecossistema: 'saas-demo:ecossistema:v1',
+  /** Dados (nome, descrição, logo) e regras de cada loja: loja -> { dados, regras }. */
+  configuracao: 'saas-demo:configuracao:v1',
 } as const;
+
+/** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
+function dadosPadrao(lojaId: string): DadosDaLoja {
+  const l = LOJAS_DEMO.find((x) => x.id === lojaId);
+  return { nome: l?.nome ?? 'Minha loja', descricao: l?.descricao ?? null, logo: null };
+}
+
+/** Configuração da loja (o que não foi mudado vem com os padrões do DaniPets). */
+export function configuracaoDemo(lojaId: string): ConfiguracaoDaLoja {
+  const g = ler<Record<string, { dados?: unknown; regras?: unknown }>>(CHAVES.configuracao, {})[lojaId] ?? {};
+  return { dados: normalizarDadosDaLoja(g.dados, dadosPadrao(lojaId)), regras: normalizarRegras(g.regras) };
+}
+
+function gravarConfiguracao(lojaId: string, c: ConfiguracaoDaLoja): void {
+  gravar(CHAVES.configuracao, { ...ler<Record<string, unknown>>(CHAVES.configuracao, {}), [lojaId]: c });
+}
 
 /** Apaga produtos, vendas, estoque, clientes e financeiro de todas as lojas (os exemplos não voltam). */
 export function apagarDadosDemo(): void {
   const lojas = Object.keys(ler<PorLoja<Produto>>(CHAVES.produtos, {}));
-  for (const chave of [CHAVES.produtos, CHAVES.vendas, CHAVES.estoque, CHAVES.minimos, CHAVES.clientes, CHAVES.lancamentos, CHAVES.recebiveis, CHAVES.taxas]) gravar(chave, {});
+  for (const chave of [CHAVES.produtos, CHAVES.vendas, CHAVES.estoque, CHAVES.minimos, CHAVES.clientes, CHAVES.lancamentos, CHAVES.recebiveis, CHAVES.taxas, CHAVES.configuracao]) {
+    gravar(chave, {});
+  }
   const apagadas = [...new Set([...ler<string[]>(CHAVES.exemplos, []), ...lojas, 'loja-a', 'loja-b'])];
   gravar(CHAVES.exemplos, apagadas);
   // nada a montar nessas lojas (e os clientes de exemplo também não voltam)
@@ -332,7 +372,7 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
 
   for (const v of vendas) {
     movimentos.push(...movimentosDaVenda(v).map(comId));
-    const f = efeitosFinanceirosDaVenda(v, { taxas, fuso: opcoes.fuso, prazoFiadoDias: PRAZO_FIADO_PADRAO_DIAS });
+    const f = efeitosFinanceirosDaVenda(v, { taxas, fuso: opcoes.fuso, prazoFiadoDias: configuracaoDemo(lojaId).regras.fiado.prazoDias });
     lancamentos.push(...f.lancamentos.map(comId));
     recebiveis.push(...f.recebiveis.map(comId));
     for (const d of [...v.devolucoes].sort((a, b) => a.criadaEm.localeCompare(b.criadaEm))) {
@@ -381,7 +421,13 @@ export interface OpcoesApiLocal {
   exemplos?: boolean;
   /** Atraso simulado da rede, em ms. */
   atrasoMs?: number;
+  /** A pessoa logada foi desativada (em outra aba): a tela volta para a entrada com esta mensagem. */
+  aoSessaoEncerrada?: (mensagem: string) => void;
 }
+
+/** A loja já tem os exemplos e o estoque e o financeiro montados? */
+const lojaPreparada = (lojaId: string, exemplos: boolean) =>
+  (!exemplos || ler<string[]>(CHAVES.exemplos, []).includes(lojaId)) && ler<string[]>(CHAVES.ecossistema, []).includes(lojaId);
 
 export function criarApiLocal({
   lojaId,
@@ -391,17 +437,42 @@ export function criarApiLocal({
   agora = () => new Date(),
   exemplos = true,
   atrasoMs = 120,
+  aoSessaoEncerrada,
 }: OpcoesApiLocal): ApiSistema {
   const preparar = async (ms = atrasoMs) => {
     await esperar(ms);
     if (bloqueio) throw new ErroApi(403, bloqueio);
-    if (exemplos) criarExemplos(lojaId, agora(), fuso);
-    prepararEcossistema(lojaId, { fuso, exemplos });
+    // na primeira vez da loja, uma aba só monta os exemplos (as outras esperam e encontram pronto)
+    if (!lojaPreparada(lojaId, exemplos)) {
+      await comTrava(() =>
+        transacao(() => {
+          if (exemplos) criarExemplos(lojaId, agora(), fuso);
+          prepararEcossistema(lojaId, { fuso, exemplos });
+        }),
+      );
+    }
   };
+  /** Toda operação que grava: trava entre abas + tudo ou nada. */
+  const gravarOperacao = <T,>(fn: () => T): Promise<T> => gravando(fn);
+  /**
+   * Quem está logado, como está AGORA no cadastro (o servidor também confere a cada pedido): desativado
+   * em outra aba perde o acesso; papel mudado vale na hora.
+   */
   const exigirOperador = (): OperadorComPapel => {
     if (!operador) throw new ErroApi(401, 'Faça login para continuar.');
-    return operador;
+    const atual = usuarioGuardadoDemo(lojaId, operador.id);
+    if (atual && !atual.ativo) {
+      const mensagem = 'Seu acesso a esta loja foi desativado. Fale com o Dono da loja.';
+      aoSessaoEncerrada?.(mensagem);
+      throw new ErroApi(401, mensagem, [], 'sessao_encerrada');
+    }
+    return atual ? { id: atual.id, nome: atual.nome, papel: atual.papel } : operador;
   };
+  const config = () => configuracaoDemo(lojaId);
+  const regras = (): RegrasDaLoja => config().regras;
+  /** Histórico: quem está logado fez. Sem dado pessoal nos detalhes. */
+  const auditar = (acao: AcaoAuditoria, alvo: { tipo: string; id: string } | null = null, detalhes: Record<string, unknown> = {}) =>
+    registrarAuditoriaDemo(lojaId, operador?.id ?? null, acao, alvo, detalhes, agora());
   /** Mesma matriz de permissões do servidor (@saas/core/permissoes). */
   const exigir = (permissao: Permissao): OperadorComPapel => {
     const quem = exigirOperador();
@@ -479,7 +550,8 @@ export function criarApiLocal({
     operadorId: operador?.id ?? null,
     agora,
     atrasoMs,
-    nomeDoProduto: (id) => produtosDaLoja().find((p) => p.id === id)?.nome ?? null,
+    nomeDoAlvo: (tipo, id) =>
+      tipo === 'produto' ? (produtosDaLoja().find((p) => p.id === id)?.nome ?? null) : tipo === 'cliente' ? (clientesDaLoja().find((c) => c.id === id)?.nome ?? null) : null,
   });
 
   return {
@@ -493,38 +565,40 @@ export function criarApiLocal({
 
     async criarProduto(dados) {
       await preparar(atrasoMs * 2);
-      const validacao = validarNovoProduto(dados);
-      if (!validacao.ok) throw new ErroApi(400, 'Dados do produto inválidos.', validacao.erros);
-      const novo = validacao.valor;
+      return gravarOperacao(() => {
+        const validacao = validarNovoProduto(dados);
+        if (!validacao.ok) throw new ErroApi(400, 'Dados do produto inválidos.', validacao.erros);
+        const novo = validacao.valor;
 
-      const daLoja = produtosDaLoja();
-      const comCodigo = (codigo: string) =>
-        daLoja.find((p) => p.codigoInterno === codigo || p.codigoBarras === codigo) ?? null;
+        const daLoja = produtosDaLoja();
+        const comCodigo = (codigo: string) =>
+          daLoja.find((p) => p.codigoInterno === codigo || p.codigoBarras === codigo) ?? null;
 
-      if (novo.codigoBarras) {
-        const dono = comCodigo(novo.codigoBarras);
-        if (dono) {
-          throw new ErroApi(
-            409,
-            `Código de barras repetido: ${novo.codigoBarras} já está vinculado ao produto "${dono.nome}".`,
-            [{ campo: 'codigoBarras', mensagem: `Já usado em "${dono.nome}".` }],
-          );
+        if (novo.codigoBarras) {
+          const dono = comCodigo(novo.codigoBarras);
+          if (dono) {
+            throw new ErroApi(
+              409,
+              `Código de barras repetido: ${novo.codigoBarras} já está vinculado ao produto "${dono.nome}".`,
+              [{ campo: 'codigoBarras', mensagem: `Já usado em "${dono.nome}".` }],
+            );
+          }
         }
-      }
 
-      // Maior código interno da loja + 1, pulando números já usados como código de barras.
-      let numero = daLoja.reduce((maior, p) => Math.max(maior, Number(p.codigoInterno)), 0) + 1;
-      let codigoInterno = formatarCodigoInterno(numero);
-      while (codigoInterno === novo.codigoBarras || comCodigo(codigoInterno)) {
-        numero += 1;
-        codigoInterno = formatarCodigoInterno(numero);
-      }
+        // Maior código interno da loja + 1, pulando números já usados como código de barras.
+        let numero = daLoja.reduce((maior, p) => Math.max(maior, Number(p.codigoInterno)), 0) + 1;
+        let codigoInterno = formatarCodigoInterno(numero);
+        while (codigoInterno === novo.codigoBarras || comCodigo(codigoInterno)) {
+          numero += 1;
+          codigoInterno = formatarCodigoInterno(numero);
+        }
 
-      const quando = agora().toISOString();
-      const produto: Produto = { id: novoId(), codigoInterno, ...novo, ativo: true, criadoEm: quando, atualizadoEm: quando };
-      gravarDaLoja(CHAVES.produtos, lojaId, [...daLoja, produto]);
-      if (operador) registrarAuditoriaDemo(lojaId, operador.id, 'produto.criado', { tipo: 'produto', id: produto.id }, { codigoInterno }, agora());
-      return produto;
+        const quando = agora().toISOString();
+        const produto: Produto = { id: novoId(), codigoInterno, ...novo, ativo: true, criadoEm: quando, atualizadoEm: quando };
+        gravarDaLoja(CHAVES.produtos, lojaId, [...daLoja, produto]);
+        auditar('produto.criado', { tipo: 'produto', id: produto.id }, { codigoInterno });
+        return produto;
+      });
     },
 
     // ---------------------------------------------------------------- vendas
@@ -544,45 +618,57 @@ export function criarApiLocal({
 
     async criarVenda(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigirOperador();
+      return gravarOperacao(() => {
+        const quem = exigirOperador();
 
-      const validacao = validarNovaVenda(dados);
-      if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
+        const validacao = validarNovaVenda(dados);
+        if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
 
-      const catalogo = new Map<string, ProdutoParaVenda>(produtosDaLoja().map((p) => [p.id, p]));
-      const calculo = calcularVenda(validacao.valor, catalogo, {
-        operador: quem,
-        autorizacoes: autorizacoesDaLoja(),
-        agora: agora(),
-        estoque: saldosDeEstoque(movimentosDaLoja()),
-        clientes: new Map(clientesDaLoja().map((c) => [c.id, c])),
+        const catalogo = new Map<string, ProdutoParaVenda>(produtosDaLoja().map((p) => [p.id, p]));
+        const calculo = calcularVenda(validacao.valor, catalogo, {
+          operador: quem,
+          autorizacoes: autorizacoesDaLoja(),
+          agora: agora(),
+          estoque: saldosDeEstoque(movimentosDaLoja()),
+          clientes: new Map(clientesDaLoja().map((c) => [c.id, c])),
+          limiteDescontoPct: regras().venda.descontoSemSenhaPct,
+        });
+        if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
+        calculo.valor.autorizacoesUsadas.forEach((id) => autorizacoes.delete(id)); // uso único
+
+        const daLoja = vendasDaLoja();
+        const venda: Venda = {
+          id: novoId(),
+          numero: daLoja.reduce((maior, v) => Math.max(maior, v.numero), 0) + 1,
+          criadaEm: agora().toISOString(),
+          vendedor: pessoa(quem),
+          cliente: calculo.valor.cliente,
+          itens: calculo.valor.itens,
+          totalCentavos: calculo.valor.totalCentavos,
+          descontoCentavos: calculo.valor.descontoCentavos,
+          pagamentos: calculo.valor.pagamentos,
+          recebidoDinheiroCentavos: calculo.valor.recebidoDinheiroCentavos,
+          trocoCentavos: calculo.valor.trocoCentavos,
+          status: 'finalizada',
+          cancelamento: null,
+          devolucoes: [],
+        };
+        const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
+        gravarVendas([...daLoja, venda]);
+        juntarMovimentos(movimentosDaVenda(venda));
+        juntarLancamentos(financeiro.lancamentos);
+        gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...financeiro.recebiveis.map(comId)]);
+        if (venda.descontoCentavos > 0) {
+          const comSenha = venda.itens.find((i) => i.desconto?.autorizadoComSenha);
+          auditar('venda.desconto', null, {
+            numero: venda.numero,
+            descontoCentavos: venda.descontoCentavos,
+            brinde: venda.itens.some((i) => i.desconto && i.precoCentavos === 0),
+            autorizadoPor: comSenha?.desconto?.responsavel.id ?? null,
+          });
+        }
+        return venda;
       });
-      if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
-      calculo.valor.autorizacoesUsadas.forEach((id) => autorizacoes.delete(id)); // uso único
-
-      const daLoja = vendasDaLoja();
-      const venda: Venda = {
-        id: novoId(),
-        numero: daLoja.reduce((maior, v) => Math.max(maior, v.numero), 0) + 1,
-        criadaEm: agora().toISOString(),
-        vendedor: pessoa(quem),
-        cliente: calculo.valor.cliente,
-        itens: calculo.valor.itens,
-        totalCentavos: calculo.valor.totalCentavos,
-        descontoCentavos: calculo.valor.descontoCentavos,
-        pagamentos: calculo.valor.pagamentos,
-        recebidoDinheiroCentavos: calculo.valor.recebidoDinheiroCentavos,
-        trocoCentavos: calculo.valor.trocoCentavos,
-        status: 'finalizada',
-        cancelamento: null,
-        devolucoes: [],
-      };
-      const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: PRAZO_FIADO_PADRAO_DIAS });
-      gravarVendas([...daLoja, venda]);
-      juntarMovimentos(movimentosDaVenda(venda));
-      juntarLancamentos(financeiro.lancamentos);
-      gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...financeiro.recebiveis.map(comId)]);
-      return venda;
     },
 
     async listarAutorizadores() {
@@ -593,74 +679,82 @@ export function criarApiLocal({
 
     async autorizar({ usuarioId, senha, acao }) {
       await preparar(atrasoMs * 2);
-      exigirOperador();
-      // mesma proteção do login (e a mesma contagem): 5 senhas erradas seguidas bloqueiam por 5 minutos
-      const g = await conferirAutorizadorDemo(lojaId, usuarioId, senha, agora);
-      if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g.papel, 'brinde')) {
-        throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
-      }
-      const id = novoId();
-      autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
-      return { autorizacao: id, autorizador: g };
+      return comTrava(async () => {
+        exigirOperador();
+        // mesma proteção do login (e a mesma contagem): 5 senhas erradas seguidas bloqueiam por 5 minutos
+        const g = await conferirAutorizadorDemo(lojaId, usuarioId, senha, agora);
+        if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g.papel, 'brinde')) {
+          throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
+        }
+        const id = novoId();
+        autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
+        return { autorizacao: id, autorizador: g };
+      });
     },
 
     async cancelarVenda(vendaId, pedido) {
       await preparar(atrasoMs * 2);
-      const quem = exigirOperador();
-      const validacao = validarPedidoCancelamento(pedido);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
-      const vendas = vendasDaLoja();
-      const i = acharVenda(vendas, vendaId);
-      const venda = vendas[i]!;
-      const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
-      const r = calcularCancelamento(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
-      if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível cancelar.', r.erros);
-      const em = agora().toISOString();
-      const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
-      if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
-      const cancelada: Venda = {
-        ...venda,
-        status: 'cancelada',
-        cancelamento: { em, por: pessoa(quem), autorizadoPor: r.valor.autorizadoPor, motivo: validacao.valor.motivo, estornos: r.valor.estornos },
-      };
-      vendas[i] = cancelada;
-      gravarVendas(vendas);
-      juntarMovimentos(movimentosDoCancelamento(cancelada, { motivo: validacao.valor.motivo, em, por: pessoa(quem) }));
-      gravarFinanceiro();
-      return cancelada;
+      return gravarOperacao(() => {
+        const quem = exigirOperador();
+        const validacao = validarPedidoCancelamento(pedido);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
+        const vendas = vendasDaLoja();
+        const i = acharVenda(vendas, vendaId);
+        const venda = vendas[i]!;
+        const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
+        const r = calcularCancelamento(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível cancelar.', r.erros);
+        const em = agora().toISOString();
+        const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
+        if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
+        const cancelada: Venda = {
+          ...venda,
+          status: 'cancelada',
+          cancelamento: { em, por: pessoa(quem), autorizadoPor: r.valor.autorizadoPor, motivo: validacao.valor.motivo, estornos: r.valor.estornos },
+        };
+        vendas[i] = cancelada;
+        gravarVendas(vendas);
+        juntarMovimentos(movimentosDoCancelamento(cancelada, { motivo: validacao.valor.motivo, em, por: pessoa(quem) }));
+        gravarFinanceiro();
+        auditar('venda.cancelada', null, { numero: venda.numero, valorCentavos: venda.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
+        return cancelada;
+      });
     },
 
     async devolverItens(vendaId, pedido) {
       await preparar(atrasoMs * 2);
-      const quem = exigirOperador();
-      const validacao = validarPedidoDevolucao(pedido);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
-      const vendas = vendasDaLoja();
-      const i = acharVenda(vendas, vendaId);
-      const venda = vendas[i]!;
-      const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
-      const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
-      if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível registrar a devolução.', r.erros);
-      const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
-      const em = agora().toISOString();
-      const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
-      if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
-      const devolucao: Devolucao = {
-        id: novoId(),
-        numero,
-        criadaEm: em,
-        itens: r.valor.itens,
-        totalCentavos: r.valor.totalCentavos,
-        estornos: r.valor.estornos,
-        motivo: validacao.valor.motivo,
-        feitaPor: pessoa(quem),
-        autorizadaPor: r.valor.autorizadoPor,
-      };
-      vendas[i] = { ...venda, devolucoes: [...venda.devolucoes, devolucao] };
-      gravarVendas(vendas);
-      juntarMovimentos(movimentosDaDevolucao(venda, devolucao));
-      gravarFinanceiro();
-      return { venda: vendas[i]!, devolucao };
+      return gravarOperacao(() => {
+        const quem = exigirOperador();
+        const validacao = validarPedidoDevolucao(pedido);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
+        const vendas = vendasDaLoja();
+        const i = acharVenda(vendas, vendaId);
+        const venda = vendas[i]!;
+        const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
+        const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível registrar a devolução.', r.erros);
+        const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
+        const em = agora().toISOString();
+        const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
+        if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
+        const devolucao: Devolucao = {
+          id: novoId(),
+          numero,
+          criadaEm: em,
+          itens: r.valor.itens,
+          totalCentavos: r.valor.totalCentavos,
+          estornos: r.valor.estornos,
+          motivo: validacao.valor.motivo,
+          feitaPor: pessoa(quem),
+          autorizadaPor: r.valor.autorizadoPor,
+        };
+        vendas[i] = { ...venda, devolucoes: [...venda.devolucoes, devolucao] };
+        gravarVendas(vendas);
+        juntarMovimentos(movimentosDaDevolucao(venda, devolucao));
+        gravarFinanceiro();
+        auditar('venda.devolucao', null, { numero: venda.numero, devolucao: numero, valorCentavos: devolucao.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
+        return { venda: vendas[i]!, devolucao };
+      });
     },
 
     async listarDevolucoes(filtro = {}) {
@@ -692,28 +786,37 @@ export function criarApiLocal({
 
     async lancarMovimentoEstoque(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigir('estoque.lancar');
-      const validacao = validarMovimentoManual(dados);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Movimento inválido.', validacao.erros);
-      const p = exigirProduto(validacao.valor.produtoId);
-      const antes = saldoDoProduto(p.id).saldo;
-      if (antes + validacao.valor.quantidade < 0) {
-        throw new ErroApi(409, `O ajuste deixaria o saldo de ${p.nome} negativo (saldo atual ${antes} un.).`, [{ campo: 'quantidade', mensagem: 'Saldo negativo.' }]);
-      }
-      juntarMovimentos([movimentoManual(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) })]);
-      return saldoDoProduto(p.id);
+      return gravarOperacao(() => {
+        const quem = exigir('estoque.lancar');
+        const validacao = validarMovimentoManual(dados);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Movimento inválido.', validacao.erros);
+        const p = exigirProduto(validacao.valor.produtoId);
+        const antes = saldoDoProduto(p.id).saldo;
+        if (antes + validacao.valor.quantidade < 0) {
+          throw new ErroApi(409, `O ajuste deixaria o saldo de ${p.nome} negativo (saldo atual ${antes} un.).`, [{ campo: 'quantidade', mensagem: 'Saldo negativo.' }]);
+        }
+        juntarMovimentos([movimentoManual(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) })]);
+        auditar(validacao.valor.tipo === 'entrada' ? 'estoque.entrada' : 'estoque.ajuste', { tipo: 'produto', id: p.id }, {
+          quantidade: validacao.valor.quantidade,
+          motivo: validacao.valor.motivo,
+        });
+        return saldoDoProduto(p.id);
+      });
     },
 
     async definirEstoqueMinimo(produtoId, minimo) {
       await preparar();
-      exigir('estoque.lancar');
-      const p = exigirProduto(produtoId);
-      const validacao = validarEstoqueMinimo(minimo);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
-      const { [p.id]: _antigo, ...outros } = minimosDaLoja();
-      const novos = validacao.valor === null ? outros : { ...outros, [p.id]: validacao.valor };
-      gravar(CHAVES.minimos, { ...ler<Record<string, Record<string, number>>>(CHAVES.minimos, {}), [lojaId]: novos });
-      return saldoDoProduto(p.id);
+      return gravarOperacao(() => {
+        exigir('estoque.lancar');
+        const p = exigirProduto(produtoId);
+        const validacao = validarEstoqueMinimo(minimo);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
+        const { [p.id]: _antigo, ...outros } = minimosDaLoja();
+        const novos = validacao.valor === null ? outros : { ...outros, [p.id]: validacao.valor };
+        gravar(CHAVES.minimos, { ...ler<Record<string, Record<string, number>>>(CHAVES.minimos, {}), [lojaId]: novos });
+        auditar('estoque.minimo', { tipo: 'produto', id: p.id }, { minimo: validacao.valor });
+        return saldoDoProduto(p.id);
+      });
     },
 
     // ---------------------------------------------------------------- clientes
@@ -739,48 +842,61 @@ export function criarApiLocal({
 
     async cadastrarCliente(dados) {
       await preparar(atrasoMs * 2);
-      exigirOperador();
-      const validacao = validarNovoCliente(dados);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
-      const daLoja = clientesDaLoja();
-      const unico = conferirCpfUnico(validacao.valor.cpf, daLoja);
-      if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
-      const quando = agora().toISOString();
-      const cliente: Cliente = { id: novoId(), ...validacao.valor, ativo: true, criadoEm: quando, atualizadoEm: quando };
-      gravarDaLoja(CHAVES.clientes, lojaId, [...daLoja, cliente]);
-      return cliente;
+      return gravarOperacao(() => {
+        exigirOperador();
+        const validacao = validarNovoCliente(dados);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
+        const daLoja = clientesDaLoja();
+        const unico = conferirCpfUnico(validacao.valor.cpf, daLoja);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        const quando = agora().toISOString();
+        const cliente: Cliente = { id: novoId(), ...validacao.valor, ativo: true, criadoEm: quando, atualizadoEm: quando };
+        gravarDaLoja(CHAVES.clientes, lojaId, [...daLoja, cliente]);
+        auditar('cliente.cadastrado', { tipo: 'cliente', id: cliente.id });
+        return cliente;
+      });
     },
 
     async atualizarCliente(id, dados) {
       await preparar(atrasoMs * 2);
-      exigirOperador();
-      const validacao = validarNovoCliente(dados);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
-      const daLoja = clientesDaLoja();
-      const i = daLoja.findIndex((c) => c.id === id);
-      if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
-      const unico = conferirCpfUnico(validacao.valor.cpf, daLoja, id);
-      if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
-      const atualizado: Cliente = { ...daLoja[i]!, ...validacao.valor, atualizadoEm: agora().toISOString() };
-      daLoja[i] = atualizado;
-      gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
-      return atualizado;
+      return gravarOperacao(() => {
+        exigirOperador();
+        const validacao = validarNovoCliente(dados);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
+        const daLoja = clientesDaLoja();
+        const i = daLoja.findIndex((c) => c.id === id);
+        if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
+        const unico = conferirCpfUnico(validacao.valor.cpf, daLoja, id);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        const antes = daLoja[i]!;
+        const atualizado: Cliente = { ...antes, ...validacao.valor, atualizadoEm: agora().toISOString() };
+        const campos = (Object.keys(validacao.valor) as (keyof NovoCliente)[]).filter((k) => antes[k] !== atualizado[k]);
+        if (campos.length === 0) return antes;
+        daLoja[i] = atualizado;
+        gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
+        auditar('cliente.alterado', { tipo: 'cliente', id }, { campos });
+        return atualizado;
+      });
     },
 
     async definirClienteAtivo(id, ativo) {
       await preparar(atrasoMs * 2);
-      exigir('clientes.desativar');
-      const daLoja = clientesDaLoja();
-      const i = daLoja.findIndex((c) => c.id === id);
-      if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
-      if (ativo) {
-        const unico = conferirCpfUnico(daLoja[i]!.cpf, daLoja, id);
-        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
-      }
-      const atualizado: Cliente = { ...daLoja[i]!, ativo: ativo === true, atualizadoEm: agora().toISOString() };
-      daLoja[i] = atualizado;
-      gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
-      return atualizado;
+      return gravarOperacao(() => {
+        exigir('clientes.desativar');
+        const daLoja = clientesDaLoja();
+        const i = daLoja.findIndex((c) => c.id === id);
+        if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
+        if (ativo) {
+          const unico = conferirCpfUnico(daLoja[i]!.cpf, daLoja, id);
+          if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        }
+        if (daLoja[i]!.ativo === (ativo === true)) return daLoja[i]!;
+        const atualizado: Cliente = { ...daLoja[i]!, ativo: ativo === true, atualizadoEm: agora().toISOString() };
+        daLoja[i] = atualizado;
+        gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
+        auditar(atualizado.ativo ? 'cliente.reativado' : 'cliente.desativado', { tipo: 'cliente', id });
+        return atualizado;
+      });
     },
 
     async historicoDoCliente(id) {
@@ -796,27 +912,29 @@ export function criarApiLocal({
 
     async excluirDadosDoCliente(id) {
       await preparar();
-      const quem = exigirOperador();
-      const daLoja = clientesDaLoja();
-      const cliente = daLoja.find((c) => c.id === id) ?? null;
-      const recebiveis = recebiveisDaLoja();
-      const permitido = conferirExclusaoDeCliente(quem.papel, cliente, fiadoEmAberto(recebiveis, id));
-      if (!permitido.ok) throw new ErroApi(cliente ? 403 : 404, permitido.erros[0]!.mensagem, permitido.erros);
-      const anonimo = anonimizarCliente(cliente!, agora());
-      gravarDaLoja(CHAVES.clientes, lojaId, daLoja.map((c) => (c.id === id ? anonimo : c)));
-      // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
-      gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
-      const doCliente = new Set(recebiveis.filter((r) => r.cliente?.id === id).map((r) => r.id));
-      gravarDaLoja(CHAVES.recebiveis, lojaId, tirarNomeDoCliente(recebiveis, id));
-      gravarDaLoja(
-        CHAVES.lancamentos,
-        lojaId,
-        lancamentosDaLoja().map((l) =>
-          l.recebivelId && doCliente.has(l.recebivelId) ? { ...l, descricao: l.descricao.split(` • ${cliente!.nome}`).join(` • ${NOME_CLIENTE_REMOVIDO}`) } : l,
-        ),
-      );
-      registrarAuditoriaDemo(lojaId, quem.id, 'cliente.dados_excluidos', null, {}, agora());
-      return anonimo;
+      return gravarOperacao(() => {
+        const quem = exigirOperador();
+        const daLoja = clientesDaLoja();
+        const cliente = daLoja.find((c) => c.id === id) ?? null;
+        const recebiveis = recebiveisDaLoja();
+        const permitido = conferirExclusaoDeCliente(quem.papel, cliente, fiadoEmAberto(recebiveis, id));
+        if (!permitido.ok) throw new ErroApi(cliente ? 403 : 404, permitido.erros[0]!.mensagem, permitido.erros);
+        const anonimo = anonimizarCliente(cliente!, agora());
+        gravarDaLoja(CHAVES.clientes, lojaId, daLoja.map((c) => (c.id === id ? anonimo : c)));
+        // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
+        gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
+        const doCliente = new Set(recebiveis.filter((r) => r.cliente?.id === id).map((r) => r.id));
+        gravarDaLoja(CHAVES.recebiveis, lojaId, tirarNomeDoCliente(recebiveis, id));
+        gravarDaLoja(
+          CHAVES.lancamentos,
+          lojaId,
+          lancamentosDaLoja().map((l) =>
+            l.recebivelId && doCliente.has(l.recebivelId) ? { ...l, descricao: l.descricao.split(` • ${cliente!.nome}`).join(` • ${NOME_CLIENTE_REMOVIDO}`) } : l,
+          ),
+        );
+        auditar('cliente.dados_excluidos', { tipo: 'cliente', id });
+        return anonimo;
+      });
     },
 
     // ---------------------------------------------------------------- financeiro
@@ -851,48 +969,62 @@ export function criarApiLocal({
 
     async receberRecebivel(id, conta) {
       await preparar(atrasoMs * 2);
-      const quem = exigir('financeiro');
-      const todos = recebiveisDaLoja();
-      const atual = todos.find((r) => r.id === id);
-      if (!atual) throw new ErroApi(404, 'Recebimento não encontrado.');
-      const r = receberRecebivel(atual, { conta, em: agora().toISOString(), por: pessoa(quem) });
-      if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
-      gravarDaLoja(CHAVES.recebiveis, lojaId, todos.map((x) => (x.id === id ? r.valor.recebivel : x)));
-      juntarLancamentos([r.valor.lancamento]);
-      return r.valor.recebivel;
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        const todos = recebiveisDaLoja();
+        const atual = todos.find((r) => r.id === id);
+        if (!atual) throw new ErroApi(404, 'Recebimento não encontrado.');
+        const r = receberRecebivel(atual, { conta, em: agora().toISOString(), por: pessoa(quem) });
+        if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+        gravarDaLoja(CHAVES.recebiveis, lojaId, todos.map((x) => (x.id === id ? r.valor.recebivel : x)));
+        juntarLancamentos([r.valor.lancamento]);
+        auditar('financeiro.recebimento', null, { valorCentavos: r.valor.lancamento.valorCentavos, conta: r.valor.lancamento.conta });
+        return r.valor.recebivel;
+      });
     },
 
     async lancarNoFinanceiro(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigir('financeiro');
-      const validacao = validarLancamentoManual(dados);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
-      const novos = lancamentosManuais(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) });
-      const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()));
-      if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
-      return juntarLancamentos(novos);
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        const validacao = validarLancamentoManual(dados);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
+        const novos = lancamentosManuais(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) });
+        const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()));
+        if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
+        const v = validacao.valor;
+        auditar(
+          `financeiro.${v.tipo}` as AcaoAuditoria,
+          null,
+          v.tipo === 'transferencia' ? { valorCentavos: v.valorCentavos, de: v.conta, para: v.contaDestino } : { valorCentavos: v.valorCentavos, conta: v.conta, categoria: v.categoria },
+        );
+        return juntarLancamentos(novos);
+      });
     },
 
     async definirSaldoInicial(dados) {
       await preparar(atrasoMs * 2);
-      const quem = exigir('financeiro');
-      const validacao = validarSaldoInicial(dados, lancamentosDaLoja());
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
-      const [lancamento] = juntarLancamentos([
-        {
-          conta: validacao.valor.conta,
-          tipo: 'saldo_inicial',
-          valorCentavos: validacao.valor.valorCentavos,
-          descricao: 'Saldo inicial (implantação)',
-          criadoEm: agora().toISOString(),
-          vendaId: null,
-          vendaNumero: null,
-          recebivelId: null,
-          categoria: null,
-          por: pessoa(quem),
-        },
-      ]);
-      return lancamento!;
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        const validacao = validarSaldoInicial(dados, lancamentosDaLoja());
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
+        const [lancamento] = juntarLancamentos([
+          {
+            conta: validacao.valor.conta,
+            tipo: 'saldo_inicial',
+            valorCentavos: validacao.valor.valorCentavos,
+            descricao: 'Saldo inicial (implantação)',
+            criadoEm: agora().toISOString(),
+            vendaId: null,
+            vendaNumero: null,
+            recebivelId: null,
+            categoria: null,
+            por: pessoa(quem),
+          },
+        ]);
+        auditar('financeiro.saldo_inicial', null, { valorCentavos: validacao.valor.valorCentavos, conta: validacao.valor.conta });
+        return lancamento!;
+      });
     },
 
     async lerTaxasCartao() {
@@ -903,11 +1035,51 @@ export function criarApiLocal({
 
     async salvarTaxasCartao(taxas) {
       await preparar(atrasoMs * 2);
-      exigir('financeiro');
-      const validacao = validarTaxasCartao(taxas);
-      if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
-      gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
-      return validacao.valor;
+      return gravarOperacao(() => {
+        exigir('financeiro');
+        const validacao = validarTaxasCartao(taxas);
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
+        gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
+        auditar('financeiro.taxas');
+        return validacao.valor;
+      });
+    },
+
+    // ---------------------------------------------------------------- dados e regras da loja
+    async lerConfiguracao() {
+      await preparar();
+      exigirOperador();
+      return config();
+    },
+
+    async salvarDadosDaLoja(mudanca) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('loja.configurar');
+        const atual = config();
+        const r = aplicarMudancaNosDados(atual.dados, mudanca);
+        if (!r.ok) throw new ErroApi(400, r.erros[0]?.mensagem ?? 'Dados da loja inválidos.', r.erros);
+        if (r.valor.campos.length > 0) {
+          gravarConfiguracao(lojaId, { ...atual, dados: r.valor.dados });
+          auditar('loja.dados_alterados', null, { campos: r.valor.campos });
+        }
+        return r.valor.dados;
+      });
+    },
+
+    async salvarRegrasDaLoja(mudanca) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('loja.configurar');
+        const atual = config();
+        const r = aplicarMudancaNasRegras(atual.regras, mudanca);
+        if (!r.ok) throw new ErroApi(400, r.erros[0]?.mensagem ?? 'Regras inválidas.', r.erros);
+        if (r.valor.secoes.length > 0) {
+          gravarConfiguracao(lojaId, { ...atual, regras: r.valor.regras });
+          auditar('loja.regras_alteradas', null, { secoes: r.valor.secoes });
+        }
+        return r.valor.regras;
+      });
     },
   };
 }

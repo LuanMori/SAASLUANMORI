@@ -11,7 +11,7 @@ vale ainda mais: precisamos responder quem fez, em qual loja e quando — inclus
 
 1. **Uma tabela `auditoria`**, por loja, com RLS como as outras: `loja_id`, `usuario_id` (quem fez;
    vazio = sistema/script ou tentativa sem login), `acao` (texto fixo de `ACOES_AUDITORIA`, em
-   `packages/core/src/usuario.ts`), alvo (`alvo_tipo` + `alvo_id`), `detalhes` (JSON) e `criado_em`.
+   `packages/core/src/auditoria.ts`), alvo (`alvo_tipo` + `alvo_id`), `detalhes` (JSON) e `criado_em`.
 2. **Só acrescenta.** A role da API tem `SELECT` e `INSERT`, nunca `UPDATE`/`DELETE` (teste de
    vigilância confere). Ninguém apaga o histórico pela API.
 3. **Na mesma transação da ação** (`registrarAuditoria(tx, ...)`): se a ação falhar, o registro some
@@ -26,9 +26,20 @@ vale ainda mais: precisamos responder quem fez, em qual loja e quando — inclus
 
 Entrar, sair, senha errada, bloqueio por senhas erradas; usuário criado, alterado (quais campos e o
 papel antes/depois), desativado, reativado, senha redefinida, senha trocada, dados excluídos; produto
-cadastrado; dados de cliente excluídos (demonstração). **Cada domínio novo entra aqui** (venda,
-desconto acima do limite, cancelamento, devolução, ajuste de estoque, lançamento financeiro...):
-acrescente a ação em `ACOES_AUDITORIA` e chame `registrarAuditoria` na mesma transação.
+cadastrado.
+
+Desde a Fase 2, módulo 1 (19/11/2026), também (por enquanto só na demonstração, onde essas partes
+existem): dados e regras da loja alterados; desconto na venda (número, valor, brinde e quem autorizou),
+venda cancelada e devolução (número, valor e quem autorizou); entrada, ajuste e estoque mínimo (com o
+produto e o motivo); cliente cadastrado, alterado (quais campos), desativado, reativado e dados
+excluídos; entrada, despesa, retirada do dono, transferência, saldo inicial, recebimento confirmado e
+taxas de cartão alteradas. Os nomes do DaniPets (`audit(...)`) foram mantidos nos textos.
+
+O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
+`resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
+buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,
+fidelidade...): acrescente a ação em `ACOES_AUDITORIA` (e o resumo em `resumirAuditoria`) e chame
+`registrarAuditoria` na mesma transação.
 
 ## A decidir (vocês)
 
