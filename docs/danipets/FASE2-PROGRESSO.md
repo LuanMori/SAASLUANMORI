@@ -13,7 +13,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
 | 5. Caixa do dia | **Concluído** (19/11/2026) |
 | 6. Clientes | **Concluído** (20/11/2026) |
-| 7. Fidelidade | a fazer |
+| 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | a fazer |
 | 9. Financeiro | a fazer |
 | 10. Relatórios | a fazer |
@@ -314,3 +314,64 @@ Sem tabela nova (decisão P3). A parte nova de clientes responde 501 no sistema 
   - tema escuro;
   - celular (390 px) sem rolagem para o lado;
   - console sem erros nem avisos.
+
+---
+
+## Módulo 7 — Fidelidade
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| CLI-10 | Cashback: % do que foi pago em dinheiro, Pix ou cartão (3,5%), válido por 31 dias, em lotes; cashback, vale e fiado não geram; devolução retira; cancelamento devolve o usado | Igual, com o percentual (0 a 20%) e o prazo (1 a 3.650 dias) nas regras da loja. Cada compra vira um lote; o uso tira primeiro do lote que vence antes. Só com o cadastro completo. **Cashback em aberto** no alto da aba Clientes, com "Ver de onde vem" (gerado + devolvido − usado − retirado − vencido = em aberto), por cliente e o que vence nos próximos dias. Coluna e filtro "Com cashback" na lista; "Cashback disponível" na conta; no extrato: ganho, devolvido, usado, retirado e vencido | Criado |
+| CLI-11 | Cupom de retorno: sem comprar há 30 dias → lembrete com cupom de 5% por 7 dias, aplicado sozinho, um por ciclo | Igual: a mensagem de retorno marcada como enviada pelo WhatsApp dá o cupom; se o cliente já tem um valendo, a mensagem fala desse. "Já falei" não dá cupom (como no DaniPets). Cancelar a venda devolve o cupom, até a validade. Na conta: "Cupom de retorno ativo" | Criado |
+| CLI-12 | Aviso de cashback vencendo (7 dias antes) | Igual, na aba Retorno e no resumo; o prazo do aviso (0 a 365 dias) é regra da loja | Criado |
+| CLI-13 | Aba Retorno: "sem comprar" e "cashback vencendo", quem ficou de fora, resultado dos lembretes | **Subaba Retorno** (todos os papéis): as duas listas, com WhatsApp, "Já falei", "Adiar 7 dias", "Não incomodar" (com confirmação) e "Abrir conta"; quem ficou de fora hoje e por quê (já lembrado neste ciclo, adiado ou "não incomodar"); o resultado (voltou em até 15 dias, a taxa). Na lista de clientes: filtro "Sem comprar há muito tempo" e a situação "sem comprar há N dias" | Criado |
+| CLI-14 | WhatsApp: mensagens com variáveis, wa.me, só com autorização; "Já falei"; adiar; não incomodar | Igual: a janela mostra a mensagem pronta (dá para ajustar), "Abrir no WhatsApp" (em outra janela) e "Marcar como enviado". O **{loja} vira o nome da loja** (ESP-05). O lembrete de pagamento (fiado) só pede o WhatsApp e é do Dono e do Administrador: "Lembrar" na aba Fiado e "Lembrar pagamento" na conta. Na conta também: "Lembrete de retorno" (quem sumiu) e "Avisar cashback" (cashback vencendo) | Criado |
+| CLI-17 | Regras do programa (o gestor altera; o vendedor vê) | **Subaba Regras do programa**: Cashback, Retorno e cupom, Fiado e Cadastro (com o campo extra da loja), mais as mensagens do WhatsApp (cada uma aceita só as variáveis dela; variável errada é recusada). O campo extra e as regras do fiado saíram da janela "Regras dos clientes" do módulo 6 e vieram para cá, como no DaniPets | Criado |
+| CLI-18 | Regulamento pronto para copiar | Igual, com o nome e as regras da loja, e "Copiar texto". Com o cashback em 0%, o item 2 diz "No momento, as compras não geram cashback" | Adaptado |
+| CLI-08 | (parte que faltava) LGPD retira o cashback que sobrou | Igual: o cliente perde o cashback que sobrou (fica como "retirado") e a liberação avisa quanto | Concluído |
+| PDV-04 | Cupom de retorno aplicado sozinho ao identificar o cliente | Igual: nos itens sem desconto manual ("cupom de retorno" no item, com o preço de antes). O desconto manual tira o cupom do item; tirar o desconto devolve. A tela manda só o id do cupom: o servidor confere o cupom do cliente e calcula o preço | Criado |
+| PDV-08 | Cashback abate o total (o que vence primeiro) | **"Usar cashback (R$ X)"**: abate até o saldo e a forma escolhida paga o resto; o visor mostra "Compra − Cashback" e, grande, o total a pagar; o × tira. Se o cashback cobre tudo: "O cashback do cliente paga a compra toda" e o que sobra de saldo. Trocar ou tirar o cliente tira o cashback. O servidor confere o saldo | Criado |
+| PDV-11 | (parte que faltava) F6 com cashback e cupom | A faixa mostra "Cashback R$ X" (o vencimento aparece ao passar o mouse) e "Cupom 5% aplicado"; o aviso diz "Cliente: Maria. Cupom de 5% aplicado. Cashback disponível: R$ X."; sem cliente, "Não identificado · venda sem cashback" | Criado (o vale entra no módulo 8) |
+| PDV-18 | Aviso final "Venda #N finalizada" + cashback ganho | Igual: "… Maria ganhou R$ X de cashback." | Adaptado |
+| DEV-07 | Devolução retira o cashback gerado; devolve o cashback usado | Igual: a devolução tira na proporção do valor devolvido (a que completa a venda leva o resto), primeiro do lote da própria compra e depois dos outros; o que já tinha sido usado ou vencido fica no histórico como "Cashback não recuperado". O cancelamento tira tudo. O cashback usado na compra volta como lote novo, com prazo novo | Criado |
+
+### Outros pontos
+
+- **Forma de pagamento "Cashback"** (como no DaniPets): aparece nas vendas por forma (Relatórios, Visão geral e as vendas de hoje do Caixa do dia). Não entra em conta nenhuma do financeiro, porque é desconto dado pela loja; quando volta (devolução ou cancelamento), volta para o cliente como cashback.
+- **Histórico**: lembrete de retorno, aviso de cashback e lembrete de pagamento (com o canal e o cupom), lembrete adiado, cupom de retorno usado e cashback não recuperado ("Não incomodar" e "Regras da loja alteradas" já existiam).
+- **Quem pode**: Retorno e Regras do programa, todos os papéis veem; alterar as regras, o Dono e o Administrador; o lembrete de pagamento, quem vê o fiado de todos (Dono e Administrador).
+- **Demonstração**: as vendas de exemplo com cliente já geraram cashback (Maria R$ 8,82 e João R$ 5,59). Para ver gente na aba Retorno sem esperar 30 dias, ponha em Regras do programa "Lembrar após" = 1 dia e "Aviso de cashback vencendo" = 31 dias. Para mandar pelo WhatsApp, marque no cadastro que o cliente autoriza as mensagens.
+
+### O que não veio (e por quê)
+
+- **Aviso de "data do computador atrasada"** (DaniPets dataAtrasada): no sistema real a data vem do servidor, não do computador da loja; a demonstração usa a do navegador.
+
+### O que ficou para outro módulo (e por quê)
+
+- **Vale-troca** (crédito do cliente na Frente de caixa, na conta, no extrato e no filtro da lista): módulo 8.
+- **Lucro estimado descontando o cashback usado**: módulo 10 (Relatórios).
+- **Avisos na Visão geral** ("clientes para lembrar hoje"): dependem das pendências (decisão P6, a definir).
+
+### Servidor
+
+Sem tabela nova (decisão P3): os lotes de cashback, os usos, os cupons e os lembretes ficam na demonstração. No sistema real, essa parte responde 501 até o servidor ganhá-la.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 369 (+30): gerar (só dinheiro, Pix e cartão; arredondamento sem float), saldo e lotes, usar o que vence antes, devolver como lote novo, retirar na devolução e no cancelamento, LGPD, cupom (ativo, dado pela mensagem, preço pela regra), venda com cashback e cupom, financeiro sem o cashback, lista de retorno, resultado dos lembretes, mensagens, link do WhatsApp, regulamento, extrato e histórico;
+  - servidor 134;
+  - tela 314 (+22): 10 da API (cashback na venda, devolução, cancelamento e "não recuperado", cupom, lembretes, adiar e não incomodar, cashback vencendo, LGPD, exemplos), 4 do carrinho e 8 de telas (usar cashback, cashback que cobre tudo, cupom na Frente de caixa, Retorno com WhatsApp, "Já falei", adiar e não incomodar, regras do Vendedor e do Dono, resumo do cashback).
+- **Navegador** (19 passos):
+  - cashback em aberto da loja de exemplo e "de onde vem";
+  - F6 com o cashback; "Usar cashback" (R$ 15,00 − R$ 8,82 = R$ 6,18); aviso final com o cashback ganho;
+  - regras salvas; regulamento com o nome da loja;
+  - João na lista de retorno e no cashback vencendo; WhatsApp com a mensagem e o link; cupom dado ao marcar como enviado;
+  - cupom aplicado sozinho na Frente de caixa (R$ 79,90 → R$ 75,91); resultado "Voltou";
+  - extrato da Maria com o cashback ganho e usado;
+  - celular (390 px) sem rolagem para o lado nas subabas Retorno e Regras do programa;
+  - console sem erros nem avisos.
+  - As conferências dos módulos 4, 5 e 6 rodaram de novo e passaram.
+

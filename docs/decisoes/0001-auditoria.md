@@ -51,6 +51,11 @@ pelo Dono (venda, valor e quem liberou), cliente excluído (sem histórico), exc
 dados do cliente excluídos (LGPD, com quem liberou). O motivo da exclusão feita pelo Vendedor fica no aviso
 para o Dono e o Administrador; o motivo da liberação, na venda ou no cadastro anonimizado.
 
+Módulo 7 (Fidelidade, 20/11/2026): lembrete de retorno, aviso de cashback e lembrete de pagamento (o canal,
+WhatsApp ou sem mensagem, e o cupom dado: % e validade), lembrete adiado (até quando), cupom de retorno usado
+(% e venda) e cashback não recuperado (devolução ou cancelamento, venda e valor). O texto da mensagem não vai
+para o histórico (pode ter dado pessoal); fica só o que o lembrete registrou.
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,

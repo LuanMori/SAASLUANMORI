@@ -373,7 +373,20 @@ describe('proteções do servidor (o que a tela não decide)', () => {
     const { ana, bruno } = await loja('busca');
     const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
     expect(await bruno.buscarClientesParaVenda('maria')).toEqual([
-      { id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888', fiadoEmAbertoCentavos: 0, limiteFiadoCentavos: 0, fiadoVencidoCentavos: 0, diasVencido: 0 },
+      {
+        id: maria.id,
+        nome: 'Maria Souza',
+        cpfMascarado: '***.982.247-**',
+        telefone: '41999998888',
+        fiadoEmAbertoCentavos: 0,
+        limiteFiadoCentavos: 0,
+        fiadoVencidoCentavos: 0,
+        diasVencido: 0,
+        cashbackCentavos: 0,
+        cashbackVencimento: null,
+        cupom: null,
+        completo: true,
+      },
     ]);
     expect(JSON.stringify(await bruno.buscarClientesParaVenda('982.247'))).not.toContain('52998224725');
     expect(await bruno.buscarClientesParaVenda('   ')).toEqual([]); // sem termo, não devolve a lista inteira

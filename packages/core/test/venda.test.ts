@@ -170,7 +170,7 @@ describe('validarNovaVenda', () => {
   });
 
   it('nomes das formas de pagamento iguais aos do DaniPets', () => {
-    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito', 'Fiado']);
+    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito', 'Cashback', 'Fiado']);
   });
 });
 
@@ -274,6 +274,7 @@ describe('calcularVenda', () => {
       trocoCentavos: 0,
       cliente: null,
       autorizacoesUsadas: [],
+      cupomUsado: null,
       itens: [
         { produtoId: 'p1', codigoInterno: '0001', nome: 'Ração', precoListaCentavos: 18990, precoCentavos: 18990, quantidade: 1, unidade: 'un', subtotalCentavos: 18990, desconto: null },
         { produtoId: 'p2', codigoInterno: '0002', nome: 'Petisco', precoListaCentavos: 750, precoCentavos: 750, quantidade: 4, unidade: 'un', subtotalCentavos: 3000, desconto: null },

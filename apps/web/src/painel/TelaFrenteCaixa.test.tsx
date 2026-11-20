@@ -529,7 +529,8 @@ describe('Frente de caixa · cliente (F6)', () => {
     expect(txt(faixa().textContent)).toMatch(/Maria Souza\s*CPF \*\*\*\.982\.247-\*\*/);
     await bipar('7897000400403');
     await finalizar();
-    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 7,50 em Pix. Cliente: Maria Souza.');
+    // PDV-18: o aviso final diz o cashback que o cliente ganhou (3,5% de R$ 7,50)
+    expect(txt((await screen.findByText(/finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 7,50 em Pix. Cliente: Maria Souza. Maria ganhou R$ 0,26 de cashback.');
     expect(api.criarVenda).toHaveBeenCalledWith(expect.objectContaining({ clienteId: maria.id }));
     expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
     expect((await api.historicoDoCliente(maria.id)).resumo).toMatchObject({ compras: 1, totalCentavos: 750 });

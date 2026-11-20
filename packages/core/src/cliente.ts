@@ -43,6 +43,8 @@ export interface Cliente {
   autorizaMensagens?: { em: string; por: Operador } | null;
   /** Fora das listas de lembrete. */
   naoIncomodar?: boolean;
+  /** "Adiar 7 dias" na lista de retorno (módulo 7): volta para a lista depois deste dia (AAAA-MM-DD). */
+  lembreteAdiadoAte?: string | null;
   /** Dados excluídos a pedido do cliente (LGPD): quando, quem liberou (Dono) e o motivo. */
   dadosExcluidos?: { em: string; por: Operador; motivo: string } | null;
 }
@@ -87,6 +89,9 @@ export const LIMITES_CLIENTE = {
 /** Nome, telefone e CPF válidos (DaniPets cliCompleto): sem isso, não compra no fiado. */
 export const cadastroCompleto = (c: Pick<Cliente, 'nome' | 'telefone' | 'cpf'> | null | undefined): boolean =>
   Boolean(c && c.nome.trim().length >= LIMITES_CLIENTE.nomeMin && c.nome !== NOME_CLIENTE_REMOVIDO && telefoneValido(c.telefone) && cpfValido(c.cpf));
+
+/** "Maria da Silva" -> "Maria" (DaniPets primeiroNome: nas mensagens e avisos). */
+export const primeiroNome = (nome: string): string => nome.trim().split(/\s+/)[0] ?? '';
 
 /** O telefone tem WhatsApp? Sem a informação, sim para celular (como o DaniPets). */
 export const temWhatsapp = (c: Pick<Cliente, 'telefone' | 'whatsapp'>): boolean => c.whatsapp ?? soDigitos(c.telefone).length === 11;
@@ -276,6 +281,7 @@ export function anonimizarCliente(c: Cliente, agora: Date, liberacao?: { por: Op
   if ('limiteFiadoCentavos' in c) semDados.limiteFiadoCentavos = 0;
   if ('whatsapp' in c) semDados.whatsapp = false;
   if ('autorizaMensagens' in c) semDados.autorizaMensagens = null;
+  if ('lembreteAdiadoAte' in c) semDados.lembreteAdiadoAte = null;
   if (liberacao) {
     semDados.naoIncomodar = true;
     semDados.dadosExcluidos = { em: agora.toISOString(), por: liberacao.por, motivo: liberacao.motivo };
@@ -294,7 +300,8 @@ export function clienteTemHistorico(clienteId: string, vendas: readonly Pick<Ven
   return vendas.some((v) => v.cliente?.id === clienteId) || recebiveis.some((r) => r.cliente?.id === clienteId);
 }
 
-export type TipoExtrato = 'compras' | 'fiado';
+/** Compras e devoluções, fiado, cashback (módulo 7) e contatos (lembretes e cupons, módulo 7). */
+export type TipoExtrato = 'compras' | 'fiado' | 'cashback' | 'contatos';
 
 export interface LinhaExtrato {
   /** AAAA-MM-DD. */
@@ -304,7 +311,8 @@ export interface LinhaExtrato {
   tipo: TipoExtrato;
   movimento: string;
   detalhe: string;
-  valorCentavos: number;
+  /** null = linha sem valor (contato, cupom). */
+  valorCentavos: number | null;
   sinal: '' | '+' | '−';
   /** Venda cancelada aparece riscada. */
   cancelada: boolean;

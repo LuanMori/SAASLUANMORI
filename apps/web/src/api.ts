@@ -6,6 +6,11 @@
 import type {
   AcaoAutorizada,
   CaixaDoDia,
+  CanalContato,
+  ContatoCliente,
+  CupomRetorno,
+  SituacaoLembrete,
+  TipoContato,
   FormaReceberFiado,
   LinhaExtrato,
   EstadoCaixa,
@@ -206,12 +211,19 @@ export interface ClienteDaBusca {
   /** Parte do fiado que já venceu e há quantos dias. */
   fiadoVencidoCentavos?: number;
   diasVencido?: number;
+  /** Cashback para usar hoje (módulo 7) e o próximo vencimento. */
+  cashbackCentavos?: number;
+  cashbackVencimento?: { venceEm: string; valorCentavos: number } | null;
+  /** Cupom de retorno que vale hoje: entra sozinho nos itens sem desconto manual. */
+  cupom?: { id: string; pct: number; venceEm: string } | null;
+  /** Nome, telefone e CPF válidos: sem isso, sem cashback, cupom e fiado. */
+  completo?: boolean;
 }
 
 /** Cliente sem o CPF inteiro (LGPD): o que as telas recebem. O CPF completo só por `verCpfDoCliente`. */
 export type ClienteSemCpf = Omit<Cliente, 'cpf'> & { cpfMascarado: string };
 
-export type FiltroClientes = 'todos' | 'fiado' | 'vencido' | 'incompleto' | 'nao_incomodar' | 'desativados';
+export type FiltroClientes = 'todos' | 'cashback' | 'fiado' | 'vencido' | 'incompleto' | 'sumidos' | 'nao_incomodar' | 'desativados';
 
 /** Uma linha da lista da aba Clientes. */
 export interface LinhaCliente {
@@ -228,6 +240,8 @@ export interface LinhaCliente {
   completo: boolean;
   compras: number;
   ultimaCompraEm: string | null;
+  /** Cashback para usar hoje (módulo 7). */
+  cashbackCentavos: number;
   /** Só para quem vê o fiado de todos (Dono e Administrador). */
   fiado: { devendoCentavos: number; vencidoCentavos: number; diasVencido: number; limiteCentavos: number } | null;
 }
@@ -250,6 +264,20 @@ export interface ContaDoCliente {
   limiteFiadoCentavos: number;
   /** Tem compra ou fiado: não pode ser excluído (só os dados, pela LGPD, por um Dono). */
   temHistorico: boolean;
+  /** Cashback e cupom de hoje (módulo 7). */
+  fidelidade: FidelidadeDaConta;
+}
+
+/** Cashback e cupom do cliente hoje (conta do cliente). */
+export interface FidelidadeDaConta {
+  saldoCentavos: number;
+  /** Parte que vence em até "aviso de cashback vencendo" dias (regra da loja). */
+  vencendoCentavos: number;
+  proximoVencimento: { venceEm: string; valorCentavos: number } | null;
+  vencidoCentavos: number;
+  cupom: { id: string; pct: number; venceEm: string } | null;
+  /** Sem comprar há "dias sem comprar" (regra da loja) ou mais: pode receber o lembrete de retorno. */
+  sumido: boolean;
 }
 
 /** Uma conta em aberto na aba Fiado. */
@@ -257,6 +285,8 @@ export interface LinhaFiado {
   clienteId: string;
   nome: string;
   telefone: string;
+  /** O telefone tem WhatsApp (o "Lembrar" do pagamento usa). */
+  whatsapp?: boolean;
   ativo: boolean;
   devendoCentavos: number;
   vencidoCentavos: number;
@@ -432,6 +462,83 @@ export interface ApiCaixa {
   desfazerFechamento(caixaId: string, dados: Omit<PedidoDesfazer, 'explicacao'> & { explicacao?: string | null }): Promise<CaixaDoDia>;
 }
 
+// ---- Fidelidade (Fase 2, módulo 7): cashback, cupom de retorno, lista de retorno e lembretes pelo WhatsApp.
+
+/** Um cliente da lista de retorno. `bloqueio`: por que não dá para mandar mensagem (null = pode). */
+export interface ClienteDoRetorno {
+  clienteId: string;
+  nome: string;
+  telefone: string;
+  bloqueio: string | null;
+}
+
+export interface PainelRetorno {
+  hoje: string;
+  regras: Pick<RegrasDaLoja, 'cashback' | 'retorno'>;
+  /** Sem comprar há N dias ou mais (de quem está há mais tempo). */
+  retorno: (ClienteDoRetorno & { diasSemComprar: number; ultimaCompraDia: string; ultimaCompraItens: string; cashbackCentavos: number })[];
+  /** Cashback vencendo (do que vence antes). */
+  cashback: (ClienteDoRetorno & { venceEm: string; valorCentavos: number })[];
+  /** Ficaram de fora hoje: já lembrados, adiados ou "não incomodar". */
+  fora: { clienteId: string; nome: string; motivo: string }[];
+  /** Resultado dos lembretes de retorno (os 100 mais novos). */
+  resultado: {
+    linhas: { contatoId: string; dia: string; clienteNome: string; canal: CanalContato; situacao: SituacaoLembrete; voltou: { dia: string; vendaNumero: number } | null }[];
+    enviados: number;
+    voltaram: number;
+    taxaPct: number;
+  };
+}
+
+/** A mensagem pronta para o WhatsApp. */
+export interface MensagemParaCliente {
+  tipo: TipoContato;
+  clienteId: string;
+  nome: string;
+  telefone: string;
+  texto: string;
+  /** A mensagem de retorno dá (ou repete) este cupom quando for marcada como enviada. */
+  cupom: { pct: number; venceEm: string } | null;
+  /** Por que não dá para mandar (null = pode). */
+  bloqueio: string | null;
+}
+
+/** De onde vem o "cashback em aberto" da aba Clientes (DaniPets cliDetalheHtml). */
+export interface ResumoCashback {
+  hoje: string;
+  regras: RegrasDaLoja['cashback'];
+  abertoCentavos: number;
+  clientesComSaldo: number;
+  vencendoCentavos: number;
+  geradoCentavos: number;
+  devolvidoCentavos: number;
+  usadoCentavos: number;
+  retiradoCentavos: number;
+  vencidoCentavos: number;
+  /** Do maior saldo para o menor. */
+  linhas: { clienteId: string; nome: string; geradoCentavos: number; usadoCentavos: number; vencidoCentavos: number; abertoCentavos: number; proximoVencimento: { venceEm: string; valorCentavos: number } | null }[];
+  /** Lotes que vencem nos próximos dias (aviso de cashback vencendo). */
+  vencendo: { clienteId: string; nome: string; dia: string; origem: string; valorCentavos: number; venceEm: string }[];
+}
+
+export interface ApiFidelidade {
+  /** Aba Retorno (todos os logados): quem lembrar hoje, quem ficou de fora e o resultado dos lembretes. */
+  listarRetorno(): Promise<PainelRetorno>;
+  /** Cashback em aberto da loja e de onde ele vem. */
+  resumoDoCashback(): Promise<ResumoCashback>;
+  /** A mensagem com o nome da loja e os dados do cliente. O lembrete de pagamento: só Dono e Administrador. */
+  mensagemParaCliente(clienteId: string, tipo: TipoContato): Promise<MensagemParaCliente>;
+  /**
+   * "Marcar como enviado" (WhatsApp, só para quem autorizou mensagens) ou "Já falei" (sem mensagem). A mensagem
+   * de retorno pelo WhatsApp dá o cupom (ou repete o que ainda vale).
+   */
+  registrarContato(clienteId: string, dados: { tipo: TipoContato; canal: CanalContato }): Promise<{ contato: ContatoCliente; cupom: CupomRetorno | null }>;
+  /** Tira o cliente da lista de retorno por 7 dias. */
+  adiarLembrete(clienteId: string): Promise<{ ate: string }>;
+  /** O cliente sai das listas de lembrete (desfaz no cadastro). */
+  marcarNaoIncomodar(clienteId: string): Promise<void>;
+}
+
 // ---- Dados e regras da loja (Fase 2, módulo 1): todos os logados leem; Dono e Administrador alteram.
 
 export interface ApiLoja {
@@ -448,7 +555,7 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa & ApiFidelidade;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

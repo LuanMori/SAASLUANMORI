@@ -4,7 +4,8 @@
 import {
   classificarDesconto,
   type FormaPagamento,
-  FORMAS_PAGAMENTO,
+  FORMAS_DA_TELA,
+  precoComCupom,
   formatarQuantidade,
   LIMITES_VENDA,
   lerQuantidade,
@@ -48,6 +49,19 @@ export interface ClienteNaVenda {
   limiteFiadoCentavos?: number;
   fiadoVencidoCentavos?: number;
   diasVencido?: number;
+  /** Cashback para usar hoje e o próximo vencimento (módulo 7; só para mostrar: o servidor confere o saldo). */
+  cashbackCentavos?: number;
+  cashbackVencimento?: { venceEm: string; valorCentavos: number } | null;
+  /** Cupom de retorno que vale hoje: o desconto entra sozinho nos itens sem desconto manual. */
+  cupom?: CupomNaVenda | null;
+  /** Nome, telefone e CPF válidos (sem isso: sem cashback, cupom e fiado). */
+  completo?: boolean;
+}
+
+export interface CupomNaVenda {
+  id: string;
+  pct: number;
+  venceEm: string;
 }
 
 export interface ParteDividida {
@@ -62,9 +76,11 @@ export interface EstadoPagamento {
   forma: FormaPagamento;
   partes: ParteDividida[];
   recebidoTexto: string;
+  /** "Usar cashback": o saldo do cliente abate do total (até o total) e a forma escolhida paga o resto. */
+  usarCashback?: boolean;
 }
 
-export const pagamentoInicial = (forma: FormaPagamento = 'pix'): EstadoPagamento => ({ dividido: false, forma, partes: [], recebidoTexto: '' });
+export const pagamentoInicial = (forma: FormaPagamento = 'pix'): EstadoPagamento => ({ dividido: false, forma, partes: [], recebidoTexto: '', usarCashback: false });
 
 // ------------------------------------------------------------------ leitura do código
 /**
@@ -98,9 +114,17 @@ export function acharPorCodigo(produtos: readonly Produto[], codigo: string): Pr
 }
 
 // ------------------------------------------------------------------ contas
-export const precoDaLinha = (l: LinhaCarrinho, p: Produto) => (l.desconto ? l.desconto.precoFinalCentavos : p.precoCentavos);
+/**
+ * O cupom de retorno vale nesta linha? Só nos itens sem desconto manual e quando ele dá desconto de pelo menos
+ * um centavo (DaniPets syncCoupon). O desconto manual tira o cupom do item; tirar o desconto manual devolve o cupom.
+ */
+export const cupomNaLinha = (l: LinhaCarrinho, p: Produto, cupom: CupomNaVenda | null | undefined): cupom is CupomNaVenda =>
+  Boolean(cupom && !l.desconto && precoComCupom(p.precoCentavos, cupom.pct) < p.precoCentavos);
 
-export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: ReadonlyMap<string, Produto>) {
+export const precoDaLinha = (l: LinhaCarrinho, p: Produto, cupom?: CupomNaVenda | null) =>
+  l.desconto ? l.desconto.precoFinalCentavos : cupomNaLinha(l, p, cupom) ? precoComCupom(p.precoCentavos, cupom.pct) : p.precoCentavos;
+
+export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: ReadonlyMap<string, Produto>, cupom?: CupomNaVenda | null) {
   let itens = 0;
   let total = 0;
   let desconto = 0;
@@ -109,7 +133,7 @@ export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: Readon
     if (!p) continue;
     const u = unidadeDe(p.unidade);
     itens += u === 'kg' ? 1 : l.quantidade; // no kg, cada produto conta como um item
-    const cobrado = valorDaQuantidade(precoDaLinha(l, p), l.quantidade, u);
+    const cobrado = valorDaQuantidade(precoDaLinha(l, p, cupom), l.quantidade, u);
     total += cobrado;
     desconto += valorDaQuantidade(p.precoCentavos, l.quantidade, u) - cobrado;
   }
@@ -137,37 +161,58 @@ export interface ContaPagamento {
   dinheiroCentavos: number;
   /** Valor recebido em dinheiro, lido do campo (null = vazio ou inválido). */
   recebidoCentavos: number | null;
+  /** Cashback que abate do total (0 sem "Usar cashback"). */
+  cashbackCentavos: number;
+  /** O que o cliente paga depois do cashback (as formas de pagamento valem para este valor). */
+  aPagarCentavos: number;
 }
 
-export function contaDoPagamento(estado: EstadoPagamento, totalCentavos: number): ContaPagamento {
-  let pagamentos: Pagamento[];
+/**
+ * As partes do pagamento (DaniPets syncPays, V9.3.1): o cashback abate do total pelo que cobre (até o saldo) e a
+ * forma escolhida paga o resto; no pagamento dividido, as partes digitadas pagam o resto.
+ */
+export function contaDoPagamento(estado: EstadoPagamento, totalCentavos: number, cashbackDisponivelCentavos = 0): ContaPagamento {
+  const cashback = estado.usarCashback ? Math.max(0, Math.min(cashbackDisponivelCentavos, totalCentavos)) : 0;
+  const aPagar = totalCentavos - cashback;
+  const pagamentos: Pagamento[] = cashback > 0 ? [{ forma: 'cashback', valorCentavos: cashback }] : [];
   let invalido = false;
+  let pagoNasFormas = 0;
   if (!estado.dividido) {
-    pagamentos = totalCentavos > 0 ? [{ forma: estado.forma, valorCentavos: totalCentavos }] : [];
-  } else {
-    pagamentos = [];
+    if (aPagar > 0) pagamentos.push({ forma: estado.forma, valorCentavos: aPagar });
+    pagoNasFormas = aPagar;
+  } else if (aPagar > 0) {
+    // se o cashback cobre tudo, as partes digitadas não valem (a tela nem mostra as formas)
     for (const parte of estado.partes) {
       if (parte.valorTexto.trim() === '') continue;
       const v = reaisParaCentavos(parte.valorTexto);
       if (v === null) invalido = true;
-      else if (v > 0) pagamentos.push({ forma: parte.forma, valorCentavos: v });
+      else if (v > 0) {
+        pagamentos.push({ forma: parte.forma, valorCentavos: v });
+        pagoNasFormas += v;
+      }
     }
   }
-  const pago = pagamentos.reduce((s, p) => s + p.valorCentavos, 0);
   const dinheiro = pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valorCentavos, 0);
   const recebido = estado.recebidoTexto.trim() === '' ? null : reaisParaCentavos(estado.recebidoTexto);
-  return { pagamentos, faltaCentavos: totalCentavos - pago, invalido, dinheiroCentavos: dinheiro, recebidoCentavos: recebido };
+  return { pagamentos, faltaCentavos: aPagar - pagoNasFormas, invalido, dinheiroCentavos: dinheiro, recebidoCentavos: recebido, cashbackCentavos: cashback, aPagarCentavos: aPagar };
 }
 
-/** O pedido que vai para a API: só produto, quantidade, desconto pedido, pagamento e o id do cliente. */
-export function montarPedido(linhas: readonly LinhaCarrinho[], conta: ContaPagamento, cliente: ClienteNaVenda | null = null): NovaVenda {
+/**
+ * O pedido que vai para a API: só produto, quantidade, desconto pedido (ou o id do cupom de retorno),
+ * pagamento e o id do cliente. Com `porId`, os itens sem desconto manual levam o cupom do cliente.
+ */
+export function montarPedido(linhas: readonly LinhaCarrinho[], conta: ContaPagamento, cliente: ClienteNaVenda | null = null, porId?: ReadonlyMap<string, Produto>): NovaVenda {
   return {
     ...(cliente ? { clienteId: cliente.id } : {}),
-    itens: linhas.map((l) => ({
-      produtoId: l.produtoId,
-      quantidade: l.quantidade,
-      desconto: l.desconto ? { precoFinalCentavos: l.desconto.precoFinalCentavos, motivo: l.desconto.motivo, autorizacao: l.desconto.autorizacao } : null,
-    })),
+    itens: linhas.map((l) => {
+      const p = porId?.get(l.produtoId);
+      return {
+        produtoId: l.produtoId,
+        quantidade: l.quantidade,
+        desconto: l.desconto ? { precoFinalCentavos: l.desconto.precoFinalCentavos, motivo: l.desconto.motivo, autorizacao: l.desconto.autorizacao } : null,
+        ...(p && cliente?.cupom && cupomNaLinha(l, p, cliente.cupom) ? { cupom: cliente.cupom.id } : {}),
+      };
+    }),
     pagamentos: conta.pagamentos,
     recebidoDinheiroCentavos: conta.dinheiroCentavos > 0 ? conta.recebidoCentavos : null,
   };
@@ -191,7 +236,7 @@ export function sugestoesDeDinheiro(valorCentavos: number): number[] {
 
 /** Próxima forma ainda não usada no pagamento dividido (ou a primeira). O fiado nunca vem sozinho: é escolhido. */
 export function proximaForma(usadas: readonly FormaPagamento[]): FormaPagamento {
-  return FORMAS_PAGAMENTO.find((f) => f !== 'fiado' && !usadas.includes(f)) ?? FORMAS_PAGAMENTO[0];
+  return FORMAS_DA_TELA.find((f) => f !== 'fiado' && !usadas.includes(f)) ?? FORMAS_DA_TELA[0]!;
 }
 
 /** O pagamento usa fiado (na forma única ou numa das partes)? */
@@ -206,6 +251,9 @@ export function semFiado(p: EstadoPagamento): EstadoPagamento {
   const partes = p.partes.filter((x) => x.forma !== 'fiado');
   return partes.length <= 1 ? { ...p, dividido: false, forma: partes[0]?.forma ?? 'pix', partes: [] } : { ...p, partes };
 }
+
+/** Venda sem cliente: sem fiado e sem cashback (os dois são da conta do cliente). */
+export const semCreditoDoCliente = (p: EstadoPagamento): EstadoPagamento => ({ ...semFiado(p), usarCashback: false });
 
 // ------------------------------------------------------------------ carrinho salvo (por pessoa)
 // Como no DaniPets: cada pessoa tem o próprio carrinho guardado no navegador e ele sobrevive a
@@ -227,9 +275,12 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
       .filter((l) => typeof l?.produtoId === 'string' && Number.isInteger(l.quantidade) && l.quantidade > 0)
       .map((l) => ({ produtoId: l.produtoId, quantidade: l.quantidade, desconto: l.desconto ? { ...l.desconto, autorizacao: null } : null }));
     const p = bruto.pagamento;
-    const forma = FORMAS_PAGAMENTO.includes(p?.forma) ? p.forma : 'pix';
-    const partes = Array.isArray(p?.partes) ? p.partes.filter((x) => FORMAS_PAGAMENTO.includes(x?.forma)).map((x) => ({ forma: x.forma, valorTexto: String(x.valorTexto ?? '') })) : [];
+    const forma = FORMAS_DA_TELA.includes(p?.forma) ? p.forma : 'pix';
+    const partes = Array.isArray(p?.partes) ? p.partes.filter((x) => FORMAS_DA_TELA.includes(x?.forma)).map((x) => ({ forma: x.forma, valorTexto: String(x.valorTexto ?? '') })) : [];
     const c = bruto.cliente;
+    const dia = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const venc = c?.cashbackVencimento;
+    const k = c?.cupom;
     const cliente =
       c && textoCurto(c.id, LIMITES_VENDA.produtoIdMax) && textoCurto(c.nome, 120) && typeof c.cpfMascarado === 'string' && c.cpfMascarado.length <= 20
         ? {
@@ -240,11 +291,21 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
             ...(Number.isSafeInteger(c.limiteFiadoCentavos) ? { limiteFiadoCentavos: c.limiteFiadoCentavos } : {}),
             ...(Number.isSafeInteger(c.fiadoVencidoCentavos) ? { fiadoVencidoCentavos: c.fiadoVencidoCentavos } : {}),
             ...(Number.isSafeInteger(c.diasVencido) ? { diasVencido: c.diasVencido } : {}),
+            ...(Number.isSafeInteger(c.cashbackCentavos) ? { cashbackCentavos: c.cashbackCentavos } : {}),
+            ...(venc && dia(venc.venceEm) && Number.isSafeInteger(venc.valorCentavos) ? { cashbackVencimento: { venceEm: venc.venceEm, valorCentavos: venc.valorCentavos } } : {}),
+            ...(k && textoCurto(k.id, LIMITES_VENDA.autorizacaoMax) && typeof k.pct === 'number' && k.pct > 0 && k.pct <= 50 && dia(k.venceEm) ? { cupom: { id: k.id, pct: k.pct, venceEm: k.venceEm } } : {}),
+            ...(typeof c.completo === 'boolean' ? { completo: c.completo } : {}),
           }
         : null;
-    const pagamento: EstadoPagamento = { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') };
-    // sem cliente, o fiado guardado não vale
-    return { linhas, pagamento: cliente ? pagamento : semFiado(pagamento), cliente };
+    const pagamento: EstadoPagamento = {
+      dividido: Boolean(p?.dividido) && partes.length > 1,
+      forma,
+      partes,
+      recebidoTexto: String(p?.recebidoTexto ?? ''),
+      usarCashback: p?.usarCashback === true,
+    };
+    // sem cliente, o fiado e o cashback guardados não valem
+    return { linhas, pagamento: cliente ? pagamento : semCreditoDoCliente(pagamento), cliente };
   } catch {
     return null;
   }

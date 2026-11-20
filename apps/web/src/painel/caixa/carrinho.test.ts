@@ -6,6 +6,7 @@ import {
   autorizacaoNecessaria,
   centavosParaTexto,
   contaDoPagamento,
+  cupomNaLinha,
   disponivelParaVenda,
   lerCarrinhoSalvo,
   sugestoesDeDinheiro,
@@ -14,8 +15,10 @@ import {
   type LinhaCarrinho,
   montarPedido,
   pagamentoInicial,
+  precoDaLinha,
   proximaForma,
   salvarCarrinho,
+  semCreditoDoCliente,
   totaisDoCarrinho,
 } from './carrinho';
 
@@ -177,7 +180,7 @@ describe('carrinho salvo', () => {
     expect(localStorage.getItem('k')).not.toContain('segredo');
     expect(lerCarrinhoSalvo('k')).toEqual({
       linhas: [{ produtoId: 'r', quantidade: 1, desconto: { precoFinalCentavos: 15000, motivo: 'x', responsavelNome: 'Ana', autorizacao: null } }],
-      pagamento: { dividido: false, forma: 'debito', partes: [], recebidoTexto: '' },
+      pagamento: { dividido: false, forma: 'debito', partes: [], recebidoTexto: '', usarCashback: false },
       cliente: null,
     });
   });
@@ -195,5 +198,66 @@ describe('carrinho salvo', () => {
     expect(lerCarrinhoSalvo('k')).toBeNull();
     localStorage.setItem('k', JSON.stringify({ v: 1, linhas: [{ produtoId: 'r', quantidade: -1 }, { produtoId: 'p', quantidade: 2 }], pagamento: { forma: 'cheque' } }));
     expect(lerCarrinhoSalvo('k')).toEqual({ linhas: [{ produtoId: 'p', quantidade: 2, desconto: null }], pagamento: pagamentoInicial('pix'), cliente: null });
+  });
+});
+
+// ------------------------------------------------------------------ fidelidade (módulo 7)
+describe('cashback e cupom de retorno no carrinho (PDV-04, PDV-08)', () => {
+  const CUPOM = { id: 'k1', pct: 5, venceEm: '2026-11-27' };
+
+  it('o cashback abate do total até o saldo; a forma escolhida paga o resto', () => {
+    const p = { ...pagamentoInicial('pix'), usarCashback: true };
+    expect(contaDoPagamento(p, 1500, 559)).toMatchObject({
+      pagamentos: [
+        { forma: 'cashback', valorCentavos: 559 },
+        { forma: 'pix', valorCentavos: 941 },
+      ],
+      cashbackCentavos: 559,
+      aPagarCentavos: 941,
+      faltaCentavos: 0,
+    });
+    // o cashback cobre tudo: nada a receber
+    expect(contaDoPagamento(p, 400, 559)).toMatchObject({ pagamentos: [{ forma: 'cashback', valorCentavos: 400 }], aPagarCentavos: 0, faltaCentavos: 0, dinheiroCentavos: 0 });
+    // sem "Usar cashback" ou sem saldo, nada muda
+    expect(contaDoPagamento(pagamentoInicial('pix'), 1500, 559).pagamentos).toEqual([{ forma: 'pix', valorCentavos: 1500 }]);
+    expect(contaDoPagamento(p, 1500, 0).pagamentos).toEqual([{ forma: 'pix', valorCentavos: 1500 }]);
+  });
+
+  it('no pagamento dividido, as partes pagam o que sobra depois do cashback', () => {
+    const p = { ...pagamentoInicial('pix'), usarCashback: true, dividido: true, partes: [{ forma: 'dinheiro' as const, valorTexto: '5' }, { forma: 'pix' as const, valorTexto: '4,41' }] };
+    const c = contaDoPagamento(p, 1500, 559);
+    expect([c.faltaCentavos, c.dinheiroCentavos, c.pagamentos.map((x) => x.forma)]).toEqual([0, 500, ['cashback', 'dinheiro', 'pix']]);
+    expect(contaDoPagamento({ ...p, partes: [{ forma: 'pix', valorTexto: '15' }] }, 1500, 559).faltaCentavos).toBe(-559);
+    // o cashback cobre tudo: as partes digitadas antes não vão para o pedido
+    expect(contaDoPagamento(p, 400, 559)).toMatchObject({ pagamentos: [{ forma: 'cashback', valorCentavos: 400 }], faltaCentavos: 0, dinheiroCentavos: 0 });
+  });
+
+  it('o cupom vale nos itens sem desconto manual e que ficam mais baratos', () => {
+    const semDesconto: LinhaCarrinho = { produtoId: 'r', quantidade: 2, desconto: null };
+    const comDesconto: LinhaCarrinho = { produtoId: 'p', quantidade: 1, desconto: { precoFinalCentavos: 700, motivo: 'x', responsavelNome: 'Ana', autorizacao: null } };
+    const bala: Produto = produto({ id: 'b', precoCentavos: 1 });
+    expect([cupomNaLinha(semDesconto, racao, CUPOM), cupomNaLinha(comDesconto, petisco, CUPOM), cupomNaLinha({ produtoId: 'b', quantidade: 1, desconto: null }, bala, CUPOM)]).toEqual([true, false, false]);
+    expect([precoDaLinha(semDesconto, racao, CUPOM), precoDaLinha(semDesconto, racao), precoDaLinha(comDesconto, petisco, CUPOM)]).toEqual([18041, 18990, 700]);
+    expect(totaisDoCarrinho([semDesconto, comDesconto], porId, CUPOM)).toMatchObject({ totalCentavos: 2 * 18041 + 700, descontoCentavos: 2 * 949 + 50 });
+    const cliente = { id: 'c1', nome: 'Maria', cpfMascarado: '***.982.247-**', cupom: CUPOM };
+    const pedido = montarPedido([semDesconto, comDesconto], contaDoPagamento(pagamentoInicial('pix'), 36782), cliente, porId);
+    expect(pedido.itens).toEqual([
+      { produtoId: 'r', quantidade: 2, desconto: null, cupom: 'k1' },
+      { produtoId: 'p', quantidade: 1, desconto: { precoFinalCentavos: 700, motivo: 'x', autorizacao: null } },
+    ]);
+    // sem o catálogo (ou sem cupom), o pedido não leva cupom
+    expect(montarPedido([semDesconto], contaDoPagamento(pagamentoInicial('pix'), 36082), cliente).itens[0]).not.toHaveProperty('cupom');
+  });
+
+  it('o carrinho guardado lembra o cashback e o cupom do cliente; sem cliente, o cashback sai', () => {
+    const cliente = { id: 'c1', nome: 'Maria', cpfMascarado: '***.982.247-**', cashbackCentavos: 559, cashbackVencimento: { venceEm: '2026-12-21', valorCentavos: 559 }, cupom: CUPOM, completo: true };
+    salvarCarrinho('k', [], { ...pagamentoInicial('pix'), usarCashback: true }, cliente);
+    expect(lerCarrinhoSalvo('k')).toMatchObject({ pagamento: { usarCashback: true }, cliente });
+    salvarCarrinho('k', [], { ...pagamentoInicial('pix'), usarCashback: true }, null);
+    expect(lerCarrinhoSalvo('k')?.pagamento.usarCashback).toBe(false);
+    localStorage.setItem('k', JSON.stringify({ v: 1, linhas: [], pagamento: { forma: 'cashback', partes: [{ forma: 'cashback', valorTexto: '1' }] }, cliente: { ...cliente, cupom: { id: 'k', pct: 99, venceEm: 'x' } } }));
+    const lido = lerCarrinhoSalvo('k');
+    expect([lido?.pagamento.forma, lido?.pagamento.partes, lido?.cliente?.cupom]).toEqual(['pix', [], undefined]); // cashback não é forma da tela; cupom estranho é ignorado
+    expect(semCreditoDoCliente({ ...pagamentoInicial('fiado'), usarCashback: true })).toMatchObject({ forma: 'pix', usarCashback: false });
   });
 });

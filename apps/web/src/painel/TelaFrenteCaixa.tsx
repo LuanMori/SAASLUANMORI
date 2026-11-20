@@ -11,16 +11,24 @@
 //   rodapé:   teclas, Devolução / cancelamento e Limpar venda.
 // Cliente (F6): identificar ou cadastrar na hora; venda sem cliente continua normal.
 // Fiado (F7): só com cliente identificado; sem cliente a tela não deixa escolher e o servidor recusa.
-// Tirar o cliente da venda tira o fiado do pagamento.
+// Tirar o cliente da venda tira o fiado e o cashback do pagamento.
+// Cashback (módulo 7): "Usar cashback" abate o saldo do cliente do total e a forma escolhida paga o resto (DaniPets
+// V9.3.1); se o cashback cobre tudo, é só finalizar. O cupom de retorno do cliente entra sozinho nos itens sem
+// desconto manual. Ao finalizar, o aviso diz quanto de cashback o cliente ganhou.
 // Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
 // O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
 // quem está logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
 // Cada venda alimenta o estoque, o histórico do cliente, o financeiro, a Visão geral e os Relatórios.
 import {
+  dataBr,
   descreverPagamentos,
   type FormaPagamento,
-  FORMAS_PAGAMENTO,
+  FORMAS_DA_TELA,
+  MENSAGEM_CASHBACK_SEM_CLIENTE,
+  mensagemFormaSemCliente,
+  pctTexto,
+  primeiroNome,
   formatarCentavos,
   formatarNumeroVenda,
   formaPrecisaDeCliente,
@@ -32,7 +40,6 @@ import {
   quantidadeParaTexto,
   unidadeDe,
   valorDaQuantidade,
-  MENSAGEM_FIADO_SEM_CLIENTE,
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
   semAcento,
@@ -46,6 +53,7 @@ import {
   centavosParaTexto,
   type ClienteNaVenda,
   contaDoPagamento,
+  cupomNaLinha,
   disponivelParaVenda,
   type EstadoPagamento,
   lerCarrinhoSalvo,
@@ -56,7 +64,7 @@ import {
   precoDaLinha,
   proximaForma,
   salvarCarrinho,
-  semFiado,
+  semCreditoDoCliente,
   sugestoesDeDinheiro,
   usaFiado,
   totaisDoCarrinho,
@@ -89,7 +97,7 @@ interface Props {
 const ATUALIZAR_ESTOQUE_MS = 20_000;
 
 /** Teclas de forma de pagamento (iguais às do DaniPets). */
-const TECLA_FORMA: Record<FormaPagamento, string> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10', fiado: 'F7' };
+const TECLA_FORMA: Partial<Record<FormaPagamento, string>> = { dinheiro: 'F4', pix: 'F8', debito: 'F9', credito: 'F10', fiado: 'F7' };
 const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F7: 'fiado', F8: 'pix', F9: 'debito', F10: 'credito' };
 /** Depois de uma venda, a forma usada fica marcada para a próxima (como no DaniPets), menos o fiado. */
 const proximaVenda = (forma: FormaPagamento): FormaPagamento => (forma === 'fiado' ? 'pix' : forma);
@@ -138,8 +146,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     if (chaveCarrinho) salvarCarrinho(chaveCarrinho, linhas, pag, cliente);
   }, [chaveCarrinho, linhas, pag, cliente]);
 
-  const totais = totaisDoCarrinho(linhas, porId);
-  const conta = contaDoPagamento(pag, totais.totalCentavos);
+  const cupom = cliente?.cupom ?? null;
+  const totais = totaisDoCarrinho(linhas, porId, cupom);
+  const conta = contaDoPagamento(pag, totais.totalCentavos, cliente ? (cliente.cashbackCentavos ?? 0) : 0);
+  // o cashback do cliente paga a compra toda: não precisa receber nada (DaniPets "O crédito do cliente paga a compra toda")
+  const cobreTudo = conta.cashbackCentavos > 0 && linhas.length > 0 && conta.aPagarCentavos === 0;
   const temDinheiro = conta.dinheiroCentavos > 0;
   const troco = conta.recebidoCentavos === null ? null : conta.recebidoCentavos - conta.dinheiroCentavos;
   const ultimaLinha = linhas.find((l) => l.produtoId === ultimo) ?? linhas[linhas.length - 1];
@@ -237,7 +248,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
   const definirForma = (forma: FormaPagamento) => {
     if (formaPrecisaDeCliente(forma) && !cliente) {
-      erro(MENSAGEM_FIADO_SEM_CLIENTE);
+      erro(mensagemFormaSemCliente(forma));
       return;
     }
     setPag((p) => ({ ...p, dividido: false, forma, partes: [] }));
@@ -251,7 +262,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ...p,
           dividido: true,
           partes: [
-            { forma: p.forma, valorTexto: totais.totalCentavos ? centavosParaTexto(totais.totalCentavos) : '' },
+            // o que falta pagar depois do cashback
+            { forma: p.forma, valorTexto: conta.aPagarCentavos ? centavosParaTexto(conta.aPagarCentavos) : '' },
             { forma: proximaForma([p.forma]), valorTexto: '' },
           ],
         };
@@ -262,19 +274,36 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
   const mudarParte = (i: number, mudanca: Partial<{ forma: FormaPagamento; valorTexto: string }>) => {
     if (mudanca.forma && formaPrecisaDeCliente(mudanca.forma) && !cliente) {
-      erro(MENSAGEM_FIADO_SEM_CLIENTE);
+      erro(mensagemFormaSemCliente(mudanca.forma));
       return;
     }
     setPag((p) => ({ ...p, partes: p.partes.map((x, j) => (j === i ? { ...x, ...mudanca } : x)) }));
   };
 
-  /** Venda sem cliente não pode ficar no fiado: tirar o cliente tira o fiado do pagamento. */
+  /** Venda sem cliente não pode ficar no fiado nem usar cashback: tirar o cliente tira os dois do pagamento. */
   function tirarCliente() {
     setCliente(null);
-    if (usaFiado(pag)) {
-      setPag(semFiado(pag));
-      erro('Sem cliente identificado não dá para vender no fiado: o fiado saiu do pagamento. Escolha outra forma ou identifique o cliente (F6).');
-    }
+    setPag(semCreditoDoCliente(pag));
+    if (usaFiado(pag)) erro('Sem cliente identificado não dá para vender no fiado: o fiado saiu do pagamento. Escolha outra forma ou identifique o cliente (F6).');
+    else if (pag.usarCashback) setAviso({ tipo: 'ok', texto: 'O cashback saiu do pagamento: ele é do cliente.' });
+  }
+
+  /** "Usar cashback": o saldo do cliente abate do total; a forma escolhida paga o resto (DaniPets posAddCashback). */
+  function usarCashback() {
+    if (!cliente) return erro(MENSAGEM_CASHBACK_SEM_CLIENTE);
+    if (cliente.completo === false) return erro('Cadastro incompleto: complete o CPF para usar o cashback.');
+    const saldo = cliente.cashbackCentavos ?? 0;
+    if (saldo <= 0) return erro('O cliente não tem cashback disponível.');
+    setPag((p) => ({ ...p, usarCashback: true }));
+    const abate = Math.min(saldo, totais.totalCentavos);
+    setAviso({
+      tipo: 'ok',
+      texto: linhas.length ? `Cashback de ${formatarCentavos(abate)} abatido. O cliente paga ${formatarCentavos(totais.totalCentavos - abate)}.` : `Cashback no pagamento: abate até ${formatarCentavos(saldo)} da compra.`,
+    });
+  }
+  function naoUsarCashback() {
+    setPag((p) => ({ ...p, usarCashback: false }));
+    setAviso({ tipo: 'ok', texto: `Cashback fora desta venda. O cliente paga ${formatarCentavos(totais.totalCentavos)}.` });
   }
 
   const removerParte = (i: number) =>
@@ -286,12 +315,16 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
 
   // ------------------------------------------------------------------ finalizar e limpar
   async function finalizar(liberacaoFiado?: { autorizacao: string; motivo: string }) {
-    if (usaFiado(pag) && !cliente) return erro(MENSAGEM_FIADO_SEM_CLIENTE);
+    if (usaFiado(pag) && !cliente) return erro(mensagemFormaSemCliente('fiado'));
     if (enviando || linhas.length === 0) return;
     if (pag.dividido && conta.invalido) return erro('Há um valor inválido no pagamento dividido (ex.: 12,50).');
-    if (conta.faltaCentavos !== 0 && totais.totalCentavos > 0) {
-      const pago = totais.totalCentavos - conta.faltaCentavos;
-      return erro(`Os pagamentos somam ${formatarCentavos(pago)}, e a venda é ${formatarCentavos(totais.totalCentavos)}.`);
+    if (conta.faltaCentavos !== 0 && conta.aPagarCentavos > 0) {
+      const pago = conta.aPagarCentavos - conta.faltaCentavos;
+      return erro(
+        conta.cashbackCentavos > 0
+          ? `Os pagamentos somam ${formatarCentavos(pago)}, e falta pagar ${formatarCentavos(conta.aPagarCentavos)} depois do cashback.`
+          : `Os pagamentos somam ${formatarCentavos(pago)}, e a venda é ${formatarCentavos(totais.totalCentavos)}.`,
+      );
     }
     if (temDinheiro && (conta.recebidoCentavos === null || conta.recebidoCentavos < conta.dinheiroCentavos)) {
       refRecebido.current?.focus();
@@ -300,7 +333,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     setEnviando(true);
     setAviso(null);
     try {
-      const pedido = montarPedido(linhas, conta, cliente);
+      const pedido = montarPedido(linhas, conta, cliente, porId);
       const venda = await api.criarVenda(liberacaoFiado ? { ...pedido, liberacaoFiado } : pedido);
       setLinhas([]);
       setUltimo(null);
@@ -311,14 +344,17 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         tipo: 'ok',
         texto: `Venda ${formatarNumeroVenda(venda.numero)} finalizada: ${
           venda.pagamentos.length ? `${formatarCentavos(venda.totalCentavos)} em ${descreverPagamentos(venda.pagamentos)}` : 'brinde, sem pagamento'
-        }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}${venda.cliente ? ` Cliente: ${venda.cliente.nome}.` : ''}`,
+        }.${venda.trocoCentavos > 0 ? ` Troco: ${formatarCentavos(venda.trocoCentavos)}.` : ''}${venda.cliente ? ` Cliente: ${venda.cliente.nome}.` : ''}${
+          // DaniPets PDV-18: o aviso final diz o cashback que o cliente ganhou
+          venda.cliente && (venda.cashbackGeradoCentavos ?? 0) > 0 ? ` ${primeiroNome(venda.cliente.nome)} ganhou ${formatarCentavos(venda.cashbackGeradoCentavos!)} de cashback.` : ''
+        }`,
       });
       void recarregar(); // estoque novo
       focarCodigo();
     } catch (e) {
       // fiado acima do limite ou com fiado vencido: pede a liberação de um Dono e finaliza depois dela
       if (e instanceof ErroApi && e.codigo === 'fiado_liberacao' && cliente && !liberacaoFiado) {
-        const noFiado = montarPedido(linhas, conta, cliente).pagamentos.filter((p) => p.forma === 'fiado').reduce((t, p) => t + p.valorCentavos, 0);
+        const noFiado = conta.pagamentos.filter((p) => p.forma === 'fiado').reduce((t, p) => t + p.valorCentavos, 0);
         setJanela({ tipo: 'liberarFiado', texto: e.message, valorCentavos: noFiado });
         return;
       }
@@ -482,6 +518,23 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   <b>{cliente.nome}</b>
                   <small>CPF {cliente.cpfMascarado}</small>
                 </span>
+                {cliente.completo === false ? (
+                  <span className="pdv-chip pdv-chip-ruim">Cadastro incompleto: sem cashback, cupom e fiado</span>
+                ) : (
+                  cliente.cashbackCentavos !== undefined && (
+                    <span
+                      className={cliente.cashbackCentavos > 0 ? 'pdv-chip pdv-chip-ok' : 'pdv-chip'}
+                      title={cliente.cashbackVencimento ? `${formatarCentavos(cliente.cashbackVencimento.valorCentavos)} vence em ${dataBr(cliente.cashbackVencimento.venceEm)}` : 'Cashback para usar'}
+                    >
+                      Cashback {formatarCentavos(cliente.cashbackCentavos)}
+                    </span>
+                  )
+                )}
+                {cupom && (
+                  <span className="pdv-chip pdv-chip-ok" title={`Cupom de retorno válido até ${dataBr(cupom.venceEm)}: entra sozinho nos itens sem desconto manual`}>
+                    Cupom {pctTexto(cupom.pct)} aplicado
+                  </span>
+                )}
                 {(cliente.fiadoEmAbertoCentavos ?? 0) > 0 && (
                   <span className="pdv-chip" title="Compras no fiado ainda não pagas">
                     Fiado em aberto {formatarCentavos(cliente.fiadoEmAbertoCentavos!)}
@@ -505,7 +558,9 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               </>
             ) : (
               <>
-                <span className="pdv-cliente-nenhum">Não identificado</span>
+                <span className="pdv-cliente-nenhum">
+                  Não identificado<small> · venda sem cashback</small>
+                </span>
                 <button type="button" className="pdv-link pdv-cliente-botao" onClick={() => setJanela({ tipo: 'cliente' })}>
                   Identificar cliente · F6
                 </button>
@@ -536,7 +591,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   {linhas.map((l, i) => {
                     const p = porId.get(l.produtoId);
                     if (!p) return null;
-                    const preco = precoDaLinha(l, p);
+                    const preco = precoDaLinha(l, p, cupom);
+                    const comCupom = cupomNaLinha(l, p, cupom);
                     const u = unidadeDe(p.unidade);
                     const passo = PASSO_QUANTIDADE[u];
                     const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel, limiteDescontoPct) !== null && !l.desconto?.autorizacao;
@@ -547,6 +603,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                           <b>{p.nome}</b>
                           <small>
                             {p.codigoBarras ?? `cód. ${p.codigoInterno}`}
+                            {comCupom && <span className="pdv-tag pdv-tag-ok"> · cupom de retorno</span>}
                             {l.desconto && <span className="pdv-tag"> · com desconto</span>}
                             {semAutorizacao && <span className="pdv-tag pdv-tag-erro"> · autorize o desconto de novo</span>}
                             {l.quantidade > (saldos.get(p.id) ?? 0) && (
@@ -587,6 +644,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                           {l.desconto && (
                             <small className="pdv-tag">
                               de {formatarCentavos(p.precoCentavos)} · {l.desconto.responsavelNome}
+                            </small>
+                          )}
+                          {comCupom && (
+                            <small className="pdv-tag pdv-tag-ok">
+                              de {formatarCentavos(p.precoCentavos)} · Cupom de retorno {pctTexto(cupom.pct)}
                             </small>
                           )}
                           <span className="pdv-desc-botoes">
@@ -636,26 +698,52 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             <div className="pdv-visor-conta">
               {ultimaLinha && ultimoProduto
                 ? unidadeDe(ultimoProduto.unidade) === 'kg'
-                  ? `${formatarQuantidade(ultimaLinha.quantidade, 'kg')} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))}/kg = ${formatarCentavos(
-                      valorDaQuantidade(precoDaLinha(ultimaLinha, ultimoProduto), ultimaLinha.quantidade, 'kg'),
+                  ? `${formatarQuantidade(ultimaLinha.quantidade, 'kg')} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto, cupom))}/kg = ${formatarCentavos(
+                      valorDaQuantidade(precoDaLinha(ultimaLinha, ultimoProduto, cupom), ultimaLinha.quantidade, 'kg'),
                     )}`
-                  : `${ultimaLinha.quantidade} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto))} = ${formatarCentavos(
-                      precoDaLinha(ultimaLinha, ultimoProduto) * ultimaLinha.quantidade,
+                  : `${ultimaLinha.quantidade} × ${formatarCentavos(precoDaLinha(ultimaLinha, ultimoProduto, cupom))} = ${formatarCentavos(
+                      precoDaLinha(ultimaLinha, ultimoProduto, cupom) * ultimaLinha.quantidade,
                     )}`
                 : 'Aguardando leitura'}
             </div>
           </div>
 
-          <div className="pdv-total">
+          <div className={conta.cashbackCentavos > 0 ? 'pdv-total pdv-total-credito' : 'pdv-total'}>
+            {conta.cashbackCentavos > 0 && (
+              // o visor mostra a conta (compra − cashback) e, grande, o que o cliente paga (DaniPets V9.3.1)
+              <div className="pdv-conta" aria-label="Conta do pagamento">
+                <div className="pdv-conta-linha">
+                  <span>Compra</span>
+                  <b>{formatarCentavos(totais.totalCentavos)}</b>
+                  <i />
+                </div>
+                <div className="pdv-conta-linha pdv-conta-credito">
+                  <span>Cashback</span>
+                  <b>− {formatarCentavos(conta.cashbackCentavos)}</b>
+                  <button type="button" className="pdv-remover" onClick={naoUsarCashback} title="Não usar o cashback nesta venda" aria-label="Não usar o cashback nesta venda">
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="pdv-rotulo">TOTAL A PAGAR</div>
             <div className="pdv-total-valor" data-testid="pdv-total">
-              {formatarCentavos(totais.totalCentavos)}
+              {formatarCentavos(conta.aPagarCentavos)}
             </div>
           </div>
 
           <div className="pdv-pagamento">
+            {cobreTudo ? (
+              <p className="alerta pdv-aviso-ok pdv-cobre-tudo" role="status">
+                <b>O cashback do cliente paga a compra toda.</b> Não precisa receber nada: é só finalizar.
+                {(cliente?.cashbackCentavos ?? 0) - conta.cashbackCentavos > 0 && (
+                  <> Fica de saldo para a próxima compra: {formatarCentavos((cliente?.cashbackCentavos ?? 0) - conta.cashbackCentavos)}.</>
+                )}
+              </p>
+            ) : (
+            <>
             <div className="pdv-formas" role="group" aria-label="Forma de pagamento">
-              {FORMAS_PAGAMENTO.map((f) => {
+              {FORMAS_DA_TELA.map((f) => {
                 const bloqueada = formaPrecisaDeCliente(f) && !cliente;
                 return (
                 <button
@@ -666,7 +754,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     .join(' ')}
                   aria-pressed={!pag.dividido && pag.forma === f}
                   aria-disabled={bloqueada || undefined}
-                  title={bloqueada ? 'Fiado só para cliente identificado (F6)' : undefined}
+                  title={bloqueada ? mensagemFormaSemCliente(f) : undefined}
                   onClick={() => definirForma(f)}
                 >
                   <span className="pdv-forma-nome">
@@ -689,7 +777,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                 {pag.partes.map((parte, i) => (
                   <div key={i} className="pdv-parte">
                     <select value={parte.forma} onChange={(e) => mudarParte(i, { forma: e.target.value as FormaPagamento })} aria-label={`Forma da parte ${i + 1}`}>
-                      {FORMAS_PAGAMENTO.filter((f) => !formaPrecisaDeCliente(f) || cliente || parte.forma === f).map((f) => (
+                      {FORMAS_DA_TELA.filter((f) => !formaPrecisaDeCliente(f) || cliente || parte.forma === f).map((f) => (
                         <option key={f} value={f}>
                           {NOME_FORMA_PAGAMENTO[f]}
                         </option>
@@ -759,9 +847,21 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               </div>
             )}
 
-            <button type="button" className="botao pdv-dividir" onClick={dividir} disabled={pag.dividido && pag.partes.length >= LIMITES_VENDA.pagamentosMax}>
-              {pag.dividido ? '+ Outra forma' : 'Dividir pagamento'}
-            </button>
+            </>
+            )}
+
+            <div className="pdv-botoes-pagamento">
+              {!cobreTudo && (
+                <button type="button" className="botao pdv-dividir" onClick={dividir} disabled={pag.dividido && pag.partes.length >= LIMITES_VENDA.pagamentosMax}>
+                  {pag.dividido ? '+ Outra forma' : 'Dividir pagamento'}
+                </button>
+              )}
+              {cliente && cliente.completo !== false && (cliente.cashbackCentavos ?? 0) > 0 && !pag.usarCashback && (
+                <button type="button" className="botao pdv-dividir pdv-usar-cashback" onClick={usarCashback}>
+                  Usar cashback ({formatarCentavos(cliente.cashbackCentavos!)})
+                </button>
+              )}
+            </div>
           </div>
 
           {aviso && (
@@ -867,8 +967,16 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos,
               ...(c.limiteFiadoCentavos !== undefined ? { limiteFiadoCentavos: c.limiteFiadoCentavos } : {}),
               ...(c.fiadoVencidoCentavos !== undefined ? { fiadoVencidoCentavos: c.fiadoVencidoCentavos, diasVencido: c.diasVencido ?? 0 } : {}),
+              ...(c.cashbackCentavos !== undefined ? { cashbackCentavos: c.cashbackCentavos, cashbackVencimento: c.cashbackVencimento ?? null } : {}),
+              ...(c.cupom !== undefined ? { cupom: c.cupom } : {}),
+              ...(c.completo !== undefined ? { completo: c.completo } : {}),
             });
-            setAviso({ tipo: 'ok', texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.` });
+            // trocar de cliente tira o cashback do outro do pagamento (DaniPets posSetCustomer)
+            setPag((p) => ({ ...p, usarCashback: false }));
+            setAviso({
+              tipo: 'ok',
+              texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.${c.cupom ? ` Cupom de ${pctTexto(c.cupom.pct)} aplicado.` : ''}${(c.cashbackCentavos ?? 0) > 0 ? ` Cashback disponível: ${formatarCentavos(c.cashbackCentavos!)}.` : ''}`,
+            });
             fecharJanela();
           }}
           aoFechar={fecharJanela}

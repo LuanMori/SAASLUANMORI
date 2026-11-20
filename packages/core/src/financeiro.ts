@@ -19,6 +19,8 @@ import type { ErroCampo, Resultado } from './resultado';
 import {
   type ClienteDaVenda,
   diaNoFuso,
+  ehFormaDeCredito,
+  type FormaDeCredito,
   formatarNumeroVenda,
   FUSO_PADRAO,
   NOME_FORMA_PAGAMENTO,
@@ -43,8 +45,11 @@ export const ehCartao = (forma: FormaPagamento): forma is FormaCartao => forma =
 export type FormaAPrazo = FormaCartao | 'fiado';
 export const ehAPrazo = (forma: FormaPagamento): forma is FormaAPrazo => ehCartao(forma) || forma === 'fiado';
 
-/** Onde entra o que é pago na hora (cartão e fiado entram quando são recebidos). */
-export const CONTA_DA_FORMA: Record<Exclude<FormaPagamento, FormaAPrazo>, ContaId> = { dinheiro: 'caixa', pix: 'banco' };
+/**
+ * Onde entra o que é pago na hora (cartão e fiado entram quando são recebidos; o cashback não entra em conta
+ * nenhuma: é desconto dado pela loja, controlado nos lotes do cliente).
+ */
+export const CONTA_DA_FORMA: Record<Exclude<FormaPagamento, FormaAPrazo | FormaDeCredito>, ContaId> = { dinheiro: 'caixa', pix: 'banco' };
 
 /** Prazo para o cliente pagar o fiado, contado do dia da compra (padrão do DaniPets). */
 export const PRAZO_FIADO_PADRAO_DIAS = 30;
@@ -253,6 +258,7 @@ export function efeitosFinanceirosDaVenda(
   const lancamentos: NovoLancamento[] = [];
   const recebiveis: NovoRecebivel[] = [];
   for (const p of venda.pagamentos) {
+    if (ehFormaDeCredito(p.forma)) continue; // cashback: sai dos lotes do cliente (fidelidade.ts)
     if (p.forma === 'fiado') {
       recebiveis.push({
         forma: 'fiado',
@@ -334,6 +340,7 @@ export function efeitosFinanceirosDoEstorno(
 
   for (const e of estornos) {
     const nome = NOME_FORMA_PAGAMENTO[e.forma];
+    if (ehFormaDeCredito(e.forma)) continue; // cashback: volta para o cliente como lote novo (fidelidade.ts)
     if (!ehAPrazo(e.forma)) {
       if (e.forma === 'dinheiro' && ctx.gavetaCentavos !== undefined && e.valorCentavos > ctx.gavetaCentavos) {
         return { ok: false, erros: [{ campo: 'estornos', mensagem: mensagemGaveta(e.valorCentavos, ctx.gavetaCentavos) }] };

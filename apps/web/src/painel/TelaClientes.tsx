@@ -3,8 +3,13 @@
 //   - Clientes: busca (nome, campo extra, CPF ou telefone), filtros, lista com a situação de cada um; a linha
 //     abre a CONTA do cliente: cadastro, fiado em aberto e limite, compras, extrato (compras e fiado), receber
 //     fiado, editar, desativar, excluir (sem histórico) e excluir os dados (LGPD, só o Dono, com liberação);
-//   - Fiado (Dono e Administrador): quem deve, quanto venceu, limite e disponível; receber; aviso do CDC;
-//   - Regras dos clientes (Dono e Administrador): o campo extra (o "Pet" do DaniPets) e as regras do fiado;
+//   - Fiado (Dono e Administrador): quem deve, quanto venceu, limite e disponível; receber; lembrar (WhatsApp);
+//     aviso do CDC;
+//   - Retorno (módulo 7): sumidos e cashback vencendo, com WhatsApp, "Já falei", adiar e "não incomodar", e o
+//     resultado dos lembretes;
+//   - Regras do programa (módulo 7; o Dono e o Administrador alteram, o Vendedor vê): cashback, retorno e cupom,
+//     fiado, campo extra do cadastro (o "Pet" do DaniPets), mensagens do WhatsApp e o regulamento;
+//   - no alto: cashback em aberto (e de onde vem), clientes, fiado a receber e para lembrar hoje;
 //   - aviso para o Dono e o Administrador quando o Vendedor exclui um cliente (até marcar "Ciente").
 // O CPF aparece mascarado; o Dono e o Administrador podem ver o número inteiro na conta (fica no histórico).
 import {
@@ -14,13 +19,21 @@ import {
   formatarTelefone,
   FUSO_PADRAO,
   type PapelDeLoja,
+  pctTexto,
   pode,
+  primeiroNome,
   regrasPadrao,
+  type TipoContato,
 } from '@saas/core';
 import { useState } from 'react';
 import { type ApiPainel, type ContaDoCliente, ErroApi, type FiltroClientes, type LinhaCliente } from '../api';
+import { Modal } from './caixa/Modal';
 import { ModalSenha } from './caixa/ModalSenha';
-import { ModalCadastroCliente, ModalExcluirCliente, ModalReceberFiado, ModalRegrasClientes } from './clientes/ModaisCliente';
+import { AbaRegras } from './clientes/AbaRegras';
+import { AbaRetorno } from './clientes/AbaRetorno';
+import { ModalCadastroCliente, ModalExcluirCliente, ModalReceberFiado } from './clientes/ModaisCliente';
+import { ModalWhatsapp } from './clientes/ModalWhatsapp';
+import { ResumoClientes } from './clientes/ResumoClientes';
 import { dataNoFuso, plural } from './formato';
 import { usarCarga } from './usarCarga';
 
@@ -38,13 +51,19 @@ type Janela =
   | { tipo: 'receber'; conta: Pick<ContaDoCliente, 'cliente' | 'fiado'> }
   | { tipo: 'excluir'; conta: ContaDoCliente }
   | { tipo: 'lgpd'; conta: ContaDoCliente }
-  | { tipo: 'regras' };
+  /** Lembrete pelo WhatsApp (módulo 7). */
+  | { tipo: 'whatsapp'; clienteId: string; contato: TipoContato }
+  | { tipo: 'naoIncomodar'; clienteId: string; nome: string };
+
+type Aba = 'clientes' | 'retorno' | 'fiado' | 'regras';
 
 const FILTROS: { valor: FiltroClientes; rotulo: string; permissao?: 'clientes.fiado' | 'clientes.desativar' }[] = [
   { valor: 'todos', rotulo: 'Todos os clientes' },
+  { valor: 'cashback', rotulo: 'Com cashback' },
   { valor: 'fiado', rotulo: 'Com fiado em aberto', permissao: 'clientes.fiado' },
   { valor: 'vencido', rotulo: 'Com fiado vencido', permissao: 'clientes.fiado' },
   { valor: 'incompleto', rotulo: 'Cadastro incompleto' },
+  { valor: 'sumidos', rotulo: 'Sem comprar há muito tempo' },
   { valor: 'nao_incomodar', rotulo: 'Não incomodar' },
   { valor: 'desativados', rotulo: 'Desativados', permissao: 'clientes.desativar' },
 ];
@@ -56,7 +75,8 @@ const haDias = (n: number) => (n === 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} 
 export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => new Date(), aoMudarRegras }: Props) {
   const veFiado = pode(pessoa.papel, 'clientes.fiado');
   const gestor = pode(pessoa.papel, 'clientes.desativar');
-  const [aba, setAba] = useState<'clientes' | 'fiado'>('clientes');
+  const [aba, setAba] = useState<Aba>('clientes');
+  const [ocupado, setOcupado] = useState(false);
   const [termo, setTermo] = useState('');
   const [filtro, setFiltro] = useState<FiltroClientes>('todos');
   const [contaId, setContaId] = useState<string | null>(null);
@@ -70,7 +90,12 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
   const { estado: estadoAvisos, recarregar: recarregarAvisos } = usarCarga(() => (gestor ? api.listarAvisosDeClientes() : Promise.resolve([])), [api, gestor]);
   const { estado: estadoFiado, recarregar: recarregarFiado } = usarCarga(() => (veFiado ? api.listarFiado() : Promise.resolve(null)), [api, veFiado]);
   const { estado: estadoConta, recarregar: recarregarConta } = usarCarga(() => (contaId ? api.contaDoCliente(contaId) : Promise.resolve(null)), [api, contaId]);
+  // fidelidade (módulo 7): lista de retorno, cashback em aberto e o total de clientes (para o resumo do alto)
+  const { estado: estadoRetorno, recarregar: recarregarRetorno } = usarCarga(() => api.listarRetorno(), [api]);
+  const { estado: estadoCashback, recarregar: recarregarCashback } = usarCarga(() => api.resumoDoCashback(), [api]);
+  const { estado: estadoTotal, recarregar: recarregarTotal } = usarCarga(() => api.listarContasDeClientes({}), [api]);
   const regras = estadoConfig.tipo === 'pronto' ? estadoConfig.dados.regras : regrasPadrao();
+  const nomeLoja = estadoConfig.tipo === 'pronto' ? estadoConfig.dados.dados.nome : '';
   const rotuloExtra = regras.clientes.campoExtra.ativo ? regras.clientes.campoExtra.rotulo : null;
   const avisos = estadoAvisos.tipo === 'pronto' ? estadoAvisos.dados.filter((a) => !a.ciente) : [];
 
@@ -79,6 +104,9 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
     void recarregarFiado();
     void recarregarConta();
     void recarregarAvisos();
+    void recarregarRetorno();
+    void recarregarCashback();
+    void recarregarTotal();
   };
   const concluir = (texto: string) => {
     setErro(null);
@@ -94,6 +122,38 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
     setAviso(null);
     setErro(null);
     setContaId(id);
+  };
+  const irPara = (a: Aba) => {
+    setContaId(null);
+    setAba(a);
+  };
+  /** Uma ação por vez (o segundo clique de um duplo clique é ignorado, como no DaniPets). */
+  async function fazer(acao: () => Promise<string>) {
+    if (ocupado) return;
+    setOcupado(true);
+    try {
+      concluir(await acao());
+    } catch (e) {
+      falhou(e);
+    } finally {
+      setOcupado(false);
+    }
+  }
+  const acoesRetorno = {
+    ocupado,
+    aoAbrir: abrirConta,
+    aoWhatsapp: (clienteId: string, contato: TipoContato) => setJanela({ tipo: 'whatsapp', clienteId, contato }),
+    aoFalei: (clienteId: string, contato: TipoContato, nome: string) =>
+      void fazer(async () => {
+        await api.registrarContato(clienteId, { tipo: contato, canal: 'outro' });
+        return `Contato com ${primeiroNome(nome)} registrado.`;
+      }),
+    aoAdiar: (clienteId: string, nome: string) =>
+      void fazer(async () => {
+        const r = await api.adiarLembrete(clienteId);
+        return `${primeiroNome(nome)} volta para a lista em ${dataBr(r.ate)}.`;
+      }),
+    aoNaoIncomodar: (clienteId: string, nome: string) => setJanela({ tipo: 'naoIncomodar', clienteId, nome }),
   };
 
   async function conferirAviso(id: string) {
@@ -112,14 +172,9 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
       <header className="vg-topo pe-topo">
         <div>
           <h1>Clientes</h1>
-          <p className="suave">Cadastro, conta de cada cliente, fiado e extrato. O CPF aparece oculto.</p>
+          <p className="suave">Cadastro, conta de cada cliente, cashback, retorno, fiado e extrato. O CPF aparece oculto.</p>
         </div>
         <div className="pe-topo-acoes">
-          {pode(pessoa.papel, 'loja.configurar') && (
-            <button type="button" className="botao" onClick={() => setJanela({ tipo: 'regras' })}>
-              Regras dos clientes
-            </button>
-          )}
           <button type="button" className="botao botao-primario" onClick={() => setJanela({ tipo: 'cadastro', conta: null })}>
             + Novo cliente
           </button>
@@ -147,6 +202,18 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         </div>
       ))}
 
+      <ResumoClientes
+        cashback={estadoCashback}
+        retorno={estadoRetorno}
+        totalClientes={estadoTotal.tipo === 'pronto' ? estadoTotal.dados.total : null}
+        fiado={
+          veFiado && estadoFiado.tipo === 'pronto' && estadoFiado.dados
+            ? { devendoCentavos: estadoFiado.dados.linhas.reduce((t, l) => t + l.devendoCentavos, 0), vencidoCentavos: estadoFiado.dados.linhas.reduce((t, l) => t + l.vencidoCentavos, 0) }
+            : null
+        }
+        aoIrPara={irPara}
+      />
+
       {contaId ? (
         <Conta
           estado={estadoConta}
@@ -163,17 +230,42 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         />
       ) : (
         <>
-          {veFiado && (
-            <nav className="cli-abas" aria-label="Seções de Clientes">
-              <button type="button" className={aba === 'clientes' ? 'cli-aba-on' : ''} aria-current={aba === 'clientes' ? 'page' : undefined} onClick={() => setAba('clientes')}>
-                Clientes{estadoLista.tipo === 'pronto' && filtro === 'todos' && !termo ? <span className="cli-contagem">{estadoLista.dados.total}</span> : null}
-              </button>
+          <nav className="cli-abas" aria-label="Seções de Clientes">
+            <button type="button" className={aba === 'clientes' ? 'cli-aba-on' : ''} aria-current={aba === 'clientes' ? 'page' : undefined} onClick={() => setAba('clientes')}>
+              Clientes{estadoTotal.tipo === 'pronto' ? <span className="cli-contagem">{estadoTotal.dados.total}</span> : null}
+            </button>
+            <button type="button" className={aba === 'retorno' ? 'cli-aba-on' : ''} aria-current={aba === 'retorno' ? 'page' : undefined} onClick={() => setAba('retorno')}>
+              Retorno{estadoRetorno.tipo === 'pronto' ? <span className="cli-contagem">{estadoRetorno.dados.retorno.length + estadoRetorno.dados.cashback.length}</span> : null}
+            </button>
+            {veFiado && (
               <button type="button" className={aba === 'fiado' ? 'cli-aba-on' : ''} aria-current={aba === 'fiado' ? 'page' : undefined} onClick={() => setAba('fiado')}>
                 Fiado{estadoFiado.tipo === 'pronto' && estadoFiado.dados ? <span className="cli-contagem">{estadoFiado.dados.linhas.length}</span> : null}
               </button>
-            </nav>
-          )}
-          {aba === 'clientes' || !veFiado ? (
+            )}
+            <button type="button" className={aba === 'regras' ? 'cli-aba-on' : ''} aria-current={aba === 'regras' ? 'page' : undefined} onClick={() => setAba('regras')}>
+              Regras do programa
+            </button>
+          </nav>
+          {aba === 'retorno' ? (
+            <AbaRetorno estado={estadoRetorno} acoes={acoesRetorno} />
+          ) : aba === 'regras' ? (
+            estadoConfig.tipo === 'pronto' ? (
+              <AbaRegras
+                key={JSON.stringify(estadoConfig.dados.regras)}
+                api={api}
+                regras={regras}
+                nomeLoja={nomeLoja}
+                podeAlterar={pode(pessoa.papel, 'loja.configurar')}
+                aoSalvar={(t) => {
+                  void recarregarConfig();
+                  aoMudarRegras?.();
+                  concluir(t);
+                }}
+              />
+            ) : (
+              <p className="vazio">Carregando…</p>
+            )
+          ) : aba === 'clientes' || !veFiado ? (
             <section className="card card-plano" aria-labelledby="cli-lista-titulo">
               <div className="card-cabeca cli-barra">
                 <h2 id="cli-lista-titulo">Clientes</h2>
@@ -188,10 +280,19 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
                   </select>
                 </div>
               </div>
-              <ListaClientes estado={estadoLista} veFiado={veFiado} rotuloExtra={rotuloExtra} fuso={fuso} hoje={hoje} aoAbrir={abrirConta} vazio={!termo && filtro === 'todos'} />
+              <ListaClientes
+                estado={estadoLista}
+                veFiado={veFiado}
+                rotuloExtra={rotuloExtra}
+                fuso={fuso}
+                hoje={hoje}
+                diasRetorno={regras.retorno.diasSemComprar}
+                aoAbrir={abrirConta}
+                vazio={!termo && filtro === 'todos'}
+              />
             </section>
           ) : (
-            <AbaFiado estado={estadoFiado} hoje={hoje} aoAbrir={abrirConta} aoReceber={async (id) => {
+            <AbaFiado estado={estadoFiado} hoje={hoje} aoAbrir={abrirConta} aoLembrar={(clienteId) => setJanela({ tipo: 'whatsapp', clienteId, contato: 'cobranca' })} aoReceber={async (id) => {
               try {
                 const c = await api.contaDoCliente(id);
                 setJanela({ tipo: 'receber', conta: c });
@@ -212,7 +313,11 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
           hoje={hoje}
           aoSalvar={(c, novo) => {
             concluir(novo ? `${c.nome.split(' ')[0]} foi cadastrado.` : 'Cadastro salvo.');
-            if (novo) setContaId(c.id);
+            if (novo) {
+              // a conta do cliente novo abre; "Voltar para a lista" leva à lista de clientes
+              setAba('clientes');
+              setContaId(c.id);
+            }
           }}
           aoFechar={() => setJanela(null)}
         />
@@ -235,7 +340,9 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
           api={api}
           liberacao
           acao={{ tipo: 'excluir_dados_cliente', clienteId: janela.conta.cliente.id }}
-          texto={`Excluir os dados de ${janela.conta.cliente.nome} (pedido do cliente, LGPD). O nome, o telefone, o CPF e os outros dados serão apagados; as vendas continuam no histórico da loja, sem identificar o cliente.`}
+          texto={`Excluir os dados de ${janela.conta.cliente.nome} (pedido do cliente, LGPD). O nome, o telefone, o CPF e os outros dados serão apagados; as vendas continuam no histórico da loja, sem identificar o cliente.${
+            janela.conta.fidelidade.saldoCentavos > 0 ? ` O cliente perde ${formatarCentavos(janela.conta.fidelidade.saldoCentavos)} de cashback.` : ''
+          }`}
           aoAutorizar={async (a) => {
             await api.excluirDadosDoCliente(janela.conta.cliente.id, { liberacao: { autorizacao: a.autorizacao, motivo: a.motivo } });
             setContaId(null);
@@ -244,17 +351,29 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
           aoFechar={() => setJanela(null)}
         />
       )}
-      {janela?.tipo === 'regras' && (
-        <ModalRegrasClientes
-          api={api}
-          regras={regras}
-          aoSalvar={(t) => {
-            void recarregarConfig();
-            aoMudarRegras?.();
-            concluir(t);
-          }}
-          aoFechar={() => setJanela(null)}
-        />
+      {janela?.tipo === 'whatsapp' && <ModalWhatsapp api={api} clienteId={janela.clienteId} tipo={janela.contato} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
+      {janela?.tipo === 'naoIncomodar' && (
+        <Modal titulo="Não incomodar" aoFechar={() => setJanela(null)}>
+          <p>{janela.nome} sai das listas de lembrete. Dá para desfazer no cadastro.</p>
+          <div className="modal-acoes">
+            <button
+              type="button"
+              className="botao botao-primario"
+              disabled={ocupado}
+              onClick={() =>
+                void fazer(async () => {
+                  await api.marcarNaoIncomodar(janela.clienteId);
+                  return `${primeiroNome(janela.nome)} não vai receber lembretes.`;
+                })
+              }
+            >
+              Confirmar
+            </button>
+            <button type="button" className="botao" onClick={() => setJanela(null)}>
+              Cancelar
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -266,6 +385,7 @@ function ListaClientes({
   rotuloExtra,
   fuso,
   hoje,
+  diasRetorno,
   aoAbrir,
   vazio,
 }: {
@@ -274,6 +394,8 @@ function ListaClientes({
   rotuloExtra: string | null;
   fuso: string;
   hoje: string;
+  /** Regra da loja: depois de quantos dias sem comprar o cliente aparece como "sem comprar há N dias". */
+  diasRetorno: number;
   aoAbrir: (id: string) => void;
   vazio: boolean;
 }) {
@@ -297,6 +419,7 @@ function ListaClientes({
               <th>Telefone</th>
               <th>CPF</th>
               <th>Última compra</th>
+              <th className="numero">Cashback</th>
               {veFiado && <th className="numero">Fiado</th>}
               <th>Situação</th>
             </tr>
@@ -308,6 +431,8 @@ function ListaClientes({
               if (c.fiado && c.fiado.vencidoCentavos > 0) tags.push({ texto: 'fiado vencido', classe: 'pe-zerado' });
               if (c.fiado && c.fiado.devendoCentavos > c.fiado.limiteCentavos) tags.push({ texto: 'acima do limite', classe: 'pe-zerado' });
               if (c.naoIncomodar) tags.push({ texto: 'não incomodar', classe: 'cli-tag' });
+              const semComprar = c.ultimaCompraEm ? diasDesde(c.ultimaCompraEm, hoje, fuso) : null;
+              if (semComprar !== null && semComprar >= diasRetorno) tags.push({ texto: `sem comprar há ${semComprar} dias`, classe: 'pe-baixo' });
               if (!c.ativo) tags.push({ texto: 'desativado', classe: 'cli-tag' });
               if (!tags.length) tags.push({ texto: 'em dia', classe: 'caixa-sem-dif' });
               return (
@@ -332,6 +457,9 @@ function ListaClientes({
                     ) : (
                       <span className="suave">nunca comprou</span>
                     )}
+                  </td>
+                  <td data-rotulo="Cashback" className="numero">
+                    {c.cashbackCentavos > 0 ? <b className="caixa-sem-dif-texto">{formatarCentavos(c.cashbackCentavos)}</b> : '—'}
                   </td>
                   {veFiado && (
                     <td data-rotulo="Fiado" className="numero">
@@ -396,7 +524,7 @@ function Conta({
   aoFalhar: (e: unknown) => void;
 }) {
   const [cpf, setCpf] = useState<string | null>(null);
-  const [extrato, setExtrato] = useState<'tudo' | 'compras' | 'fiado'>('tudo');
+  const [extrato, setExtrato] = useState<'tudo' | 'compras' | 'cashback' | 'fiado' | 'contatos'>('tudo');
   const voltar = (
     <div>
       <button type="button" className="botao" onClick={aoVoltar}>
@@ -417,6 +545,7 @@ function Conta({
   if (!conta) return <>{voltar}<p className="vazio">Carregando…</p></>;
   const c = conta.cliente;
   const f = conta.fiado;
+  const fid = conta.fidelidade;
   // "vence em 5 dias" (a compra em aberto que vence primeiro)
   const prox = f.abertos[0];
   const n = prox ? Math.round((Date.parse(`${prox.venceEm}T12:00:00Z`) - Date.parse(`${hoje}T12:00:00Z`)) / 86_400_000) : null;
@@ -464,7 +593,17 @@ function Conta({
           )}{' '}
           · cliente desde {dataNoFuso(c.criadoEm, fuso)}
         </p>
+        {fid.cupom && (
+          <p className="alerta" role="status">
+            Cupom de retorno ativo: {pctTexto(fid.cupom.pct)} de desconto até {dataBr(fid.cupom.venceEm)}. Entra sozinho quando o cliente for identificado na Frente de caixa.
+          </p>
+        )}
         <div className="caixa-metricas cli-metricas">
+          <div className="caixa-metrica">
+            <span className="caixa-metrica-rotulo">Cashback disponível</span>
+            <b className={`caixa-metrica-valor${fid.saldoCentavos > 0 ? ' caixa-sem-dif-texto' : ''}`}>{formatarCentavos(fid.saldoCentavos)}</b>
+            <span className="suave">{fid.proximoVencimento ? `${formatarCentavos(fid.proximoVencimento.valorCentavos)} vence em ${dataBr(fid.proximoVencimento.venceEm)}` : 'nada para vencer'}</span>
+          </div>
           <div className="caixa-metrica">
             <span className="caixa-metrica-rotulo">Fiado em aberto</span>
             <b className={`caixa-metrica-valor${f.vencidoCentavos > 0 ? ' caixa-dif' : ''}`}>{formatarCentavos(f.devendoCentavos)}</b>
@@ -497,6 +636,22 @@ function Conta({
           <button type="button" className="botao" onClick={() => aoJanela({ tipo: 'cadastro', conta })}>
             Editar cadastro
           </button>
+          {/* lembretes pelo WhatsApp (módulo 7), como na conta do DaniPets */}
+          {fid.sumido && (
+            <button type="button" className="botao" disabled={!c.ativo || !c.autorizaMensagens || c.whatsapp === false} onClick={() => aoJanela({ tipo: 'whatsapp', clienteId: c.id, contato: 'retorno' })}>
+              Lembrete de retorno
+            </button>
+          )}
+          {fid.vencendoCentavos > 0 && (
+            <button type="button" className="botao" disabled={!c.ativo || !c.autorizaMensagens || c.whatsapp === false} onClick={() => aoJanela({ tipo: 'whatsapp', clienteId: c.id, contato: 'cashback' })}>
+              Avisar cashback
+            </button>
+          )}
+          {f.devendoCentavos > 0 && pode(papel, 'clientes.fiado') && (
+            <button type="button" className="botao" disabled={!c.ativo || c.whatsapp === false} onClick={() => aoJanela({ tipo: 'whatsapp', clienteId: c.id, contato: 'cobranca' })}>
+              Lembrar pagamento
+            </button>
+          )}
           {pode(papel, 'clientes.desativar') && (
             <button type="button" className="botao" onClick={() => void alternarAtivo()}>
               {c.ativo ? 'Desativar' : 'Reativar'}
@@ -578,7 +733,9 @@ function Conta({
               [
                 ['tudo', 'Tudo'],
                 ['compras', 'Compras'],
+                ['cashback', 'Cashback'],
                 ['fiado', 'Fiado'],
+                ['contatos', 'Contatos'],
               ] as const
             ).map(([k, t]) => (
               <button key={k} type="button" className={`botao cli-chip${extrato === k ? ' cli-chip-on' : ''}`} aria-pressed={extrato === k} onClick={() => setExtrato(k)}>
@@ -611,8 +768,14 @@ function Conta({
                       {l.detalhe}
                     </td>
                     <td data-rotulo="Valor" className="numero">
-                      {l.sinal ? `${l.sinal} ` : ''}
-                      {formatarCentavos(l.valorCentavos)}
+                      {l.valorCentavos === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          {l.sinal ? `${l.sinal} ` : ''}
+                          {formatarCentavos(l.valorCentavos)}
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -630,11 +793,14 @@ function AbaFiado({
   hoje,
   aoAbrir,
   aoReceber,
+  aoLembrar,
 }: {
   estado: { tipo: string; mensagem?: string; dados?: Awaited<ReturnType<ApiPainel['listarFiado']>> | null };
   hoje: string;
   aoAbrir: (id: string) => void;
   aoReceber: (id: string) => void;
+  /** Lembrete de pagamento pelo WhatsApp (módulo 7). */
+  aoLembrar: (id: string) => void;
 }) {
   if (estado.tipo === 'bloqueado' || estado.tipo === 'falhou') {
     return (
@@ -721,6 +887,16 @@ function AbaFiado({
                         <span className="cli-acoes-linha">
                           <button type="button" className="botao" onClick={() => aoReceber(l.clienteId)} aria-label={`Receber o fiado de ${l.nome}`}>
                             Receber
+                          </button>
+                          <button
+                            type="button"
+                            className="botao"
+                            disabled={l.whatsapp === false}
+                            title={l.whatsapp === false ? 'O cliente não tem WhatsApp no cadastro.' : undefined}
+                            onClick={() => aoLembrar(l.clienteId)}
+                            aria-label={`Lembrar ${l.nome} do pagamento`}
+                          >
+                            Lembrar
                           </button>
                           <button type="button" className="link" onClick={() => aoAbrir(l.clienteId)} aria-label={`Abrir a conta de ${l.nome}`}>
                             Abrir conta

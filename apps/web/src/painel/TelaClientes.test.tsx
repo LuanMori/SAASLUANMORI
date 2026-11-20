@@ -40,7 +40,11 @@ describe('Clientes · lista e conta', () => {
     tela(BRUNO);
     expect(await screen.findByText(/Nenhum cliente cadastrado ainda/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Regras dos clientes' })).toBeNull();
-    expect(screen.queryByRole('navigation', { name: 'Seções de Clientes' })).toBeNull(); // sem a aba Fiado
+    // o Vendedor vê Clientes, Retorno e Regras do programa, sem a aba Fiado
+    const secoes = screen.getByRole('navigation', { name: 'Seções de Clientes' });
+    expect(within(secoes).queryByRole('button', { name: /^Fiado/ })).toBeNull();
+    expect(within(secoes).getByRole('button', { name: /^Retorno/ })).toBeTruthy();
+    expect(within(secoes).getByRole('button', { name: 'Regras do programa' })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: '+ Novo cliente' }));
     expect((within(janela()).getByLabelText('Limite de fiado (R$)') as HTMLInputElement).disabled).toBe(true);
     expect(within(janela()).queryByLabelText('Pet')).toBeNull(); // o campo extra começa desligado
@@ -61,7 +65,7 @@ describe('Clientes · lista e conta', () => {
     expect(screen.getByRole('button', { name: 'Excluir cliente' })).toBeTruthy(); // sem histórico
     await userEvent.click(screen.getByRole('button', { name: '← Voltar para a lista' }));
     const linha = (await screen.findByRole('button', { name: 'Abrir a conta de Maria Souza' })).closest('tr')!;
-    expect(txt(linha.textContent)).toBe('Maria Souza(41) 99999-8888WhatsApp • aceita mensagens***.982.247-**nunca comprouem dia');
+    expect(txt(linha.textContent)).toBe('Maria Souza(41) 99999-8888WhatsApp • aceita mensagens***.982.247-**nunca comprou—em dia');
   });
 
   it('o Dono vê o fiado, o CPF completo (fica no histórico), recebe o fiado e a aba Fiado', async () => {
@@ -87,7 +91,7 @@ describe('Clientes · lista e conta', () => {
     expect(txt((await screen.findByText(/^Recebido R\$/)).textContent)).toBe('Recebido R$ 10,00 de Maria em Pix: abateu #00001 (R$ 10,00). Fica devendo R$ 20,00.');
 
     await userEvent.click(screen.getByRole('button', { name: '← Voltar para a lista' }));
-    await userEvent.click(screen.getByRole('button', { name: /^Fiado/ }));
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Seções de Clientes' })).getByRole('button', { name: /^Fiado/ }));
     const contas = await screen.findByRole('region', { name: 'Contas em aberto' });
     await waitFor(() => expect(txt(within(contas).getAllByRole('row')[1]!.textContent)).toMatch(/^Maria Souza\(41\) 99999-8888R\$ 20,00R\$ 100,00R\$ 80,00#00001vence/));
     expect(screen.getByText(/Código de Defesa do Consumidor, art\. 42/)).toBeTruthy();
@@ -114,16 +118,16 @@ describe('Clientes · lista e conta', () => {
     await waitFor(() => expect(screen.queryByText(/Bruno excluiu o cliente/)).toBeNull());
   });
 
-  it('Regras dos clientes: o campo extra ("Pet") aparece no cadastro e na lista; LGPD pede a liberação do Dono', async () => {
+  it('Regras do programa: o campo extra ("Pet") aparece no cadastro e na lista; LGPD pede a liberação do Dono', async () => {
     const aoMudarRegras = vi.fn();
     const a = api(ANA);
     const p = await a.criarProduto({ nome: 'Petisco', codigoBarras: null, precoCentavos: 1000 });
     await darEstoque('tc', 5);
     render(<TelaClientes api={a} pessoa={{ nome: 'Ana', papel: 'dono' }} fuso={FUSO} aoMudarRegras={aoMudarRegras} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Regras dos clientes' }));
-    await userEvent.click(within(janela()).getByLabelText(/Usar um campo a mais no cadastro/));
-    await userEvent.click(within(janela()).getByRole('button', { name: 'Salvar' }));
-    expect(await screen.findByText('Regras dos clientes salvas.')).toBeTruthy();
+    await userEvent.click(await screen.findByRole('button', { name: 'Regras do programa' }));
+    await userEvent.click(await screen.findByLabelText('Usar o campo extra'));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar regras' }));
+    expect(await screen.findByText('Regras salvas. Valem para as próximas vendas e lembretes.')).toBeTruthy();
     expect(aoMudarRegras).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: '+ Novo cliente' }));
     await within(janela()).findByLabelText('Pet');

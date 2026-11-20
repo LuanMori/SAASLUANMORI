@@ -75,6 +75,13 @@ export const ACOES_AUDITORIA = {
   'cliente.cpf_visto': 'CPF completo visto',
   'cliente.fiado_recebido': 'Fiado recebido',
   'venda.fiado_liberado': 'Fiado liberado pelo Dono',
+  // fidelidade (módulo 7)
+  'cliente.lembrete_retorno': 'Lembrete de retorno',
+  'cliente.aviso_cashback': 'Aviso de cashback',
+  'cliente.lembrete_pagamento': 'Lembrete de pagamento',
+  'cliente.lembrete_adiado': 'Lembrete adiado',
+  'cliente.cupom_usado': 'Cupom de retorno usado',
+  'cliente.cashback_nao_recuperado': 'Cashback não recuperado',
   // financeiro
   'financeiro.entrada': 'Entrada lançada',
   'financeiro.despesa': 'Despesa lançada',
@@ -221,6 +228,32 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
       break;
     case 'cliente.fiado_recebido':
       partes.push(dinheiro(d.valorCentavos), typeof d.forma === 'string' ? (NOME_FORMA[d.forma] ?? null) && `em ${NOME_FORMA[d.forma]}` : null);
+      break;
+    case 'cliente.lembrete_retorno':
+    case 'cliente.aviso_cashback':
+    case 'cliente.lembrete_pagamento': {
+      const pct = typeof d.cupomPct === 'number' && Number.isFinite(d.cupomPct) ? `${String(Math.round(d.cupomPct * 100) / 100).replace('.', ',')}%` : null;
+      partes.push(
+        d.canal === 'whatsapp' ? 'Mensagem pelo WhatsApp' : d.canal === 'outro' ? 'Contato registrado sem mensagem' : null,
+        pct && `cupom de ${pct}${diaBr(d.cupomVenceEm) ? ` até ${diaBr(d.cupomVenceEm)}` : ''}`,
+      );
+      break;
+    }
+    case 'cliente.lembrete_adiado':
+      partes.push(diaBr(d.ate) && `volta para a lista em ${diaBr(d.ate)}`);
+      break;
+    case 'cliente.cupom_usado':
+      partes.push(
+        typeof d.pct === 'number' && Number.isFinite(d.pct) ? `${String(Math.round(d.pct * 100) / 100).replace('.', ',')}%` : null,
+        numeroVenda(d.numero) && `na ${numeroVenda(d.numero)}`,
+      );
+      break;
+    case 'cliente.cashback_nao_recuperado':
+      partes.push(
+        d.rotulo === 'cancelamento' ? 'Cancelamento' : d.rotulo === 'devolucao' ? 'Devolução' : null,
+        numeroVenda(d.numero),
+        dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} do cashback desta compra já tinham sido usados ou venceram`,
+      );
       break;
     case 'venda.fiado_liberado':
       // quem liberou fica em `autorizadoPor`, mas o texto é "liberado por"

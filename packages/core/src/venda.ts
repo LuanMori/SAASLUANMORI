@@ -8,7 +8,9 @@
 //     voltando pelas mesmas formas de pagamento da venda; o Vendedor precisa de autorização;
 //   - venda sem estoque é recusada ("Estoque insuficiente para X. Disponível: N un.");
 //   - cliente identificado (F6) opcional: vem do cadastro, nunca um nome digitado na tela;
-//   - fiado (F7): venda a prazo, SÓ para cliente identificado; sem cliente, a venda é recusada.
+//   - fiado (F7): venda a prazo, SÓ para cliente identificado; sem cliente, a venda é recusada;
+//   - cashback (módulo 7): o saldo do cliente identificado abate do total e a forma escolhida paga o resto; o
+//     cupom de retorno do cliente dá o desconto sozinho nos itens sem desconto manual (fidelidade.ts).
 //   Os efeitos no estoque, no financeiro e no histórico do cliente estão em estoque.ts, financeiro.ts e cliente.ts.
 //
 // Segurança (mesma ideia do cadastro de produto):
@@ -28,7 +30,8 @@ import type { PapelDeLoja } from './papeis';
 import { pode } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
-export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'fiado'] as const;
+/** Na ordem do DaniPets (PAY_METHODS): as formas da tela, o crédito do cliente (cashback) e o fiado. */
+export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'cashback', 'fiado'] as const;
 export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
 
 /** Nomes iguais aos do DaniPets. */
@@ -37,13 +40,31 @@ export const NOME_FORMA_PAGAMENTO: Record<FormaPagamento, string> = {
   pix: 'Pix',
   debito: 'Cartão de débito',
   credito: 'Cartão de crédito',
+  cashback: 'Cashback',
   fiado: 'Fiado',
 };
 
-/** Fiado é venda a prazo na conta do cliente: só com cliente identificado (F6). */
-export const formaPrecisaDeCliente = (forma: FormaPagamento): boolean => forma === 'fiado';
+/** Crédito do cliente: abate do total pelo que cobre, e a forma escolhida paga o resto (DaniPets CREDIT_METHODS). */
+export type FormaDeCredito = Extract<FormaPagamento, 'cashback'>;
+export const ehFormaDeCredito = (forma: FormaPagamento): forma is FormaDeCredito => forma === 'cashback';
+
+/** As formas que a pessoa escolhe nos botões da Frente de caixa (o cashback entra pelo botão "Usar cashback"). */
+export const FORMAS_DA_TELA: readonly FormaPagamento[] = FORMAS_PAGAMENTO.filter((f) => !ehFormaDeCredito(f));
+
+/** Fiado (venda a prazo na conta do cliente) e cashback (saldo do cliente): só com cliente identificado (F6). */
+export const formaPrecisaDeCliente = (forma: FormaPagamento): boolean => forma === 'fiado' || forma === 'cashback';
 
 export const MENSAGEM_FIADO_SEM_CLIENTE = 'Venda no fiado precisa de cliente identificado. Identifique o cliente (F6).';
+export const MENSAGEM_CASHBACK_SEM_CLIENTE = 'O cashback precisa de cliente identificado. Identifique o cliente (F6).';
+export const mensagemFormaSemCliente = (forma: FormaPagamento): string => (forma === 'cashback' ? MENSAGEM_CASHBACK_SEM_CLIENTE : MENSAGEM_FIADO_SEM_CLIENTE);
+
+/**
+ * Preço com o cupom de retorno (DaniPets precoCupom), em centavos. O % tem até 2 casas: a conta é feita em
+ * inteiros, sem float.
+ */
+export const precoComCupom = (precoCentavos: number, pct: number): number => Math.round((precoCentavos * (10_000 - Math.round(pct * 100))) / 10_000);
+
+export const motivoDoCupom = (pct: number): string => `Cupom de retorno ${String(Math.round(pct * 100) / 100).replace('.', ',')}%`;
 
 export const LIMITES_VENDA = {
   /** Produtos diferentes numa venda. */
@@ -89,6 +110,8 @@ export interface ItemPedido {
   produtoId: string;
   quantidade: number;
   desconto?: DescontoPedido | null;
+  /** Cupom de retorno do cliente identificado (id): o preço sai da regra, nunca da tela. Não vai junto com `desconto`. */
+  cupom?: string | null;
 }
 
 export interface Pagamento {
@@ -117,9 +140,11 @@ export interface ClienteDaVenda {
 
 export interface DescontoAplicado {
   motivo: string;
-  /** Quem deu o desconto: a própria pessoa ou quem autorizou com senha. */
+  /** Quem deu o desconto: a própria pessoa ou quem autorizou com senha (no cupom: quem vendeu). */
   responsavel: Operador;
   autorizadoComSenha: boolean;
+  /** Desconto do cupom de retorno (módulo 7). */
+  cupom?: { id: string; pct: number } | null;
 }
 
 export interface ItemVendido {
@@ -201,6 +226,11 @@ export interface Venda {
   caixaId?: string | null;
   /** Fiado liberado por um Dono (acima do limite ou com fiado vencido): quem, o motivo e por quê. */
   fiadoLiberado?: { por: Operador; motivo: string; motivos: string[] } | null;
+  /** Cashback que a compra gerou para o cliente (módulo 7) e quanto dele já foi retirado (devolução ou cancelamento). */
+  cashbackGeradoCentavos?: number;
+  cashbackRetiradoCentavos?: number;
+  /** Cupom de retorno usado nesta compra. */
+  cupomId?: string | null;
 }
 
 /** Produto como o cadastro o tem na hora da venda. */
@@ -327,7 +357,7 @@ function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza
 
 // ------------------------------------------------------------------ validação do pedido
 const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos', 'clienteId', 'liberacaoFiado']);
-const CAMPOS_ITEM = new Set(['produtoId', 'quantidade', 'desconto']);
+const CAMPOS_ITEM = new Set(['produtoId', 'quantidade', 'desconto', 'cupom']);
 const CAMPOS_DESCONTO = new Set(['precoFinalCentavos', 'motivo', 'autorizacao']);
 const CAMPOS_PAGAMENTO = new Set(['forma', 'valorCentavos']);
 
@@ -384,7 +414,20 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
         const autorizacao = lerAutorizacao(bruto.desconto.autorizacao, `${campo}.desconto.autorizacao`, erros);
         desconto = { precoFinalCentavos: pf as number, motivo, autorizacao };
       }
-      linhas.push({ produtoId: id, quantidade: q, desconto });
+      let cupom: string | null = null;
+      if (bruto.cupom !== undefined && bruto.cupom !== null) {
+        const k = bruto.cupom;
+        if (typeof k !== 'string' || k.trim() === '' || k.length > LIMITES_VENDA.autorizacaoMax || CONTROLE.test(k)) {
+          erros.push({ campo: `${campo}.cupom`, mensagem: 'Cupom inválido.' });
+          return;
+        }
+        if (desconto) {
+          erros.push({ campo: `${campo}.cupom`, mensagem: 'Use o cupom de retorno ou o desconto manual, não os dois no mesmo item.' });
+          return;
+        }
+        cupom = k.trim();
+      }
+      linhas.push({ produtoId: id, quantidade: q, desconto, ...(cupom ? { cupom } : {}) });
     });
   }
 
@@ -392,7 +435,7 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
   for (const l of linhas) {
     const ja = porProduto.get(l.produtoId);
     if (!ja) porProduto.set(l.produtoId, { ...l });
-    else if (ja.desconto || l.desconto) erros.push({ campo: 'itens', mensagem: 'Produto repetido na venda: junte as quantidades numa linha só.' });
+    else if (ja.desconto || l.desconto || ja.cupom || l.cupom) erros.push({ campo: 'itens', mensagem: 'Produto repetido na venda: junte as quantidades numa linha só.' });
     else ja.quantidade += l.quantidade;
   }
   // o limite de cada unidade (9999 un ou 999,999 kg) é conferido no cálculo, que conhece o produto
@@ -489,6 +532,10 @@ export interface ContextoVenda {
   limiteDescontoPct?: number;
   /** Custo médio de cada produto (compra.ts custosMedios): fica guardado no item vendido. */
   custos?: ReadonlyMap<string, number | null>;
+  /** Saldo de cashback do cliente identificado, hoje (fidelidade.ts saldoCashback). Sem: 0. */
+  cashbackDisponivelCentavos?: number;
+  /** Cupom de retorno que vale hoje para o cliente identificado (fidelidade.ts cupomAtivo). */
+  cupom?: { id: string; clienteId: string; pct: number } | null;
 }
 
 export interface VendaCalculada {
@@ -501,6 +548,8 @@ export interface VendaCalculada {
   cliente: ClienteDaVenda | null;
   /** Autorizações usadas nesta venda: o servidor apaga (uso único). */
   autorizacoesUsadas: string[];
+  /** Cupom de retorno usado (o servidor marca como usado). */
+  cupomUsado: string | null;
 }
 
 /**
@@ -514,6 +563,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
   const erros: ErroCampo[] = [];
   const itens: ItemVendido[] = [];
   const usadas: string[] = [];
+  let cupomUsado: string | null = null;
   let total = 0;
   let desconto = 0;
 
@@ -533,7 +583,18 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
     }
     let preco = p.precoCentavos;
     let aplicado: DescontoAplicado | null = null;
-    if (item.desconto) {
+    if (item.cupom) {
+      // o cupom vale para o cliente identificado nesta venda, e o preço sai da regra (nunca da tela)
+      const k = ctx.cupom;
+      const novoPreco = k ? precoComCupom(p.precoCentavos, k.pct) : p.precoCentavos;
+      if (!k || k.id !== item.cupom || k.clienteId !== pedido.clienteId || novoPreco >= p.precoCentavos) {
+        erros.push({ campo: `itens.${i}.cupom`, mensagem: `O cupom de retorno de ${p.nome} não vale para esta venda. Identifique o cliente de novo.` });
+        return;
+      }
+      preco = novoPreco;
+      aplicado = { motivo: motivoDoCupom(k.pct), responsavel: { id: ctx.operador.id, nome: ctx.operador.nome }, autorizadoComSenha: false, cupom: { id: k.id, pct: k.pct } };
+      cupomUsado = k.id;
+    } else if (item.desconto) {
       const { tipo } = classificarDesconto(p.precoCentavos, item.desconto.precoFinalCentavos, limiteDesconto);
       if (tipo === 'nenhum' || tipo === 'invalido') {
         erros.push({ campo: `itens.${i}.desconto`, mensagem: `O preço final de ${p.nome} deve ser menor que o preço de tabela (0 para brinde).` });
@@ -603,9 +664,14 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
     }
     cliente = { id: c.id, nome: c.nome };
   }
-  // fiado só na conta de um cliente identificado
-  if (!cliente && pedido.pagamentos.some((p) => formaPrecisaDeCliente(p.forma))) {
-    return { ok: false, erros: [{ campo: 'pagamentos', mensagem: MENSAGEM_FIADO_SEM_CLIENTE }] };
+  // fiado e cashback só na conta de um cliente identificado
+  const semCliente = cliente ? undefined : pedido.pagamentos.find((p) => formaPrecisaDeCliente(p.forma));
+  if (semCliente) return { ok: false, erros: [{ campo: 'pagamentos', mensagem: mensagemFormaSemCliente(semCliente.forma) }] };
+  // o cashback não passa do saldo do cliente
+  const cashback = pedido.pagamentos.filter((p) => p.forma === 'cashback').reduce((s, p) => s + p.valorCentavos, 0);
+  const disponivel = ctx.cashbackDisponivelCentavos ?? 0;
+  if (cliente && cashback > disponivel) {
+    return { ok: false, erros: [{ campo: 'pagamentos', mensagem: `O cashback disponível de ${cliente.nome} é ${formatarCentavos(disponivel)}.` }] };
   }
 
   // pagamentos e troco
@@ -645,6 +711,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       trocoCentavos: troco,
       cliente,
       autorizacoesUsadas: usadas,
+      cupomUsado,
     },
   };
 }

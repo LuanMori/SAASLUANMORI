@@ -19,3 +19,4 @@ export * from './compra';
 export * from './financeiro';
 export * from './caixa';
 export * from './fiado';
+export * from './fidelidade';

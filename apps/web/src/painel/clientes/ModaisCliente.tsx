@@ -4,8 +4,8 @@
 //     limite de fiado (só Dono e Administrador), endereço, observações, WhatsApp, autorização de mensagens e
 //     "não incomodar". Na edição o CPF inteiro não vem do servidor: em branco, fica o do cadastro;
 //   - receber fiado (CLI-16): valor (todo ou parte), forma, e o que o valor abate (a compra mais antiga primeiro);
-//   - excluir cliente sem histórico, com motivo (CLI-07);
-//   - regras dos clientes: o campo extra (ligado e o rótulo) e as regras do fiado (prazo e vencido pede Dono).
+//   - excluir cliente sem histórico, com motivo (CLI-07).
+// As regras (campo extra, fiado, cashback, cupom, mensagens) ficam na aba Regras do programa (clientes/AbaRegras.tsx).
 import {
   type Cliente,
   descreverAbatidas,
@@ -15,7 +15,6 @@ import {
   formatarCentavos,
   formatarTelefone,
   LIMITES_CLIENTE,
-  LIMITES_REGRAS,
   NOME_FORMA_PAGAMENTO,
   pode,
   type PapelDeLoja,
@@ -306,72 +305,6 @@ export function ModalExcluirCliente({
         {!pode(papel, 'clientes.desativar') && <p className="modal-dica">O Dono e o Administrador vão ver um aviso desta exclusão na aba Clientes.</p>}
         <Erro texto={erro} />
         <Acoes enviando={enviando} rotulo="Excluir" aoFechar={aoFechar} perigo />
-      </form>
-    </Modal>
-  );
-}
-
-export function ModalRegrasClientes({
-  api,
-  regras,
-  aoSalvar,
-  aoFechar,
-}: {
-  api: Pick<ApiPainel, 'salvarRegrasDaLoja'>;
-  regras: RegrasDaLoja;
-  aoSalvar: (mensagem: string) => void;
-  aoFechar: () => void;
-}) {
-  const [ativo, setAtivo] = useState(regras.clientes.campoExtra.ativo);
-  const [rotulo, setRotulo] = useState(regras.clientes.campoExtra.rotulo);
-  const [prazo, setPrazo] = useState(String(regras.fiado.prazoDias));
-  const [vencidoPedeDono, setVencidoPedeDono] = useState(regras.fiado.vencidoPedeDono);
-  const [erro, setErro] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-  const limite = LIMITES_REGRAS['fiado.prazoDias'];
-
-  async function salvar(ev: FormEvent) {
-    ev.preventDefault();
-    setErro(null);
-    const dias = Number(prazo);
-    if (!Number.isInteger(dias) || dias < limite.min || dias > limite.max) return setErro(`Prazo do fiado: de ${limite.min} a ${limite.max} dias.`);
-    if (ativo && !rotulo.trim()) return setErro('Dê um nome para o campo extra (ex.: Pet, Veículo).');
-    setEnviando(true);
-    try {
-      await api.salvarRegrasDaLoja({ clientes: { campoExtra: { ativo, rotulo: rotulo.trim() || regras.clientes.campoExtra.rotulo } }, fiado: { prazoDias: dias, vencidoPedeDono } });
-      aoSalvar('Regras dos clientes salvas.');
-    } catch (e) {
-      setErro(mensagemDe(e));
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  return (
-    <Modal titulo="Regras dos clientes" aoFechar={aoFechar}>
-      <form className="modal-form" onSubmit={salvar} noValidate autoComplete="off">
-        <fieldset className="dev-acao">
-          <legend>Campo extra no cadastro</legend>
-          <label>
-            <input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} /> Usar um campo a mais no cadastro (ex.: o pet do cliente, o veículo)
-          </label>
-          <div className="campo">
-            <label htmlFor="rc-rotulo">Nome do campo</label>
-            <input id="rc-rotulo" value={rotulo} onChange={(e) => setRotulo(e.target.value)} maxLength={40} disabled={!ativo} />
-          </div>
-        </fieldset>
-        <fieldset className="dev-acao">
-          <legend>Fiado</legend>
-          <div className="campo">
-            <label htmlFor="rc-prazo">{limite.rotulo}</label>
-            <input id="rc-prazo" value={prazo} onChange={(e) => setPrazo(e.target.value)} inputMode="numeric" maxLength={3} />
-          </div>
-          <label>
-            <input type="checkbox" checked={vencidoPedeDono} onChange={(e) => setVencidoPedeDono(e.target.checked)} /> Cliente com fiado vencido só compra no fiado com a liberação de um Dono
-          </label>
-        </fieldset>
-        <Erro texto={erro} />
-        <Acoes enviando={enviando} rotulo="Salvar" aoFechar={aoFechar} />
       </form>
     </Modal>
   );

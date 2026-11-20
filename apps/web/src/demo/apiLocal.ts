@@ -29,9 +29,36 @@
 //
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  ACAO_DO_CONTATO,
+  analisarRetorno,
+  type CanalContato,
+  cashbackARetirar,
+  cashbackVencendo,
+  cashbackVencido,
+  consumirCashback,
+  type ContatoCliente,
+  creditarCashback,
+  type CupomRetorno,
+  cupomAtivo,
+  DIAS_ADIAR_LEMBRETE,
+  extratoCompletoDoCliente,
+  formatarNumeroVenda,
+  gerarCashback,
+  type LoteCashback,
+  lotesValidos,
+  mensagemDoCliente,
+  motivoSemMensagem,
+  proximoVencimento,
+  registrarContato,
+  resultadoDosLembretes,
+  retirarCashbackDaVenda,
+  saldoCashback,
+  TIPOS_CONTATO,
+  type TipoContato,
+  type UsoCashback,
+  zerarCashbackDoCliente,
   cadastroCompleto,
   clienteTemHistorico,
-  extratoDoCliente,
   fiadoDoCliente,
   liberacaoDoFiadoServe,
   mensagemFiadoPrecisaDono,
@@ -197,6 +224,11 @@ const CHAVES = {
   caixas: 'saas-demo:caixas:v1',
   /** Clientes sem histórico excluídos pelo Vendedor, até o Dono ou o Administrador marcar "Ciente" (módulo 6). */
   avisosClientes: 'saas-demo:avisos-clientes:v1',
+  /** Fidelidade (módulo 7): lotes de cashback, usos e retiradas, cupons de retorno e lembretes. */
+  cashback: 'saas-demo:cashback:v1',
+  usosCashback: 'saas-demo:cashback-usos:v1',
+  cupons: 'saas-demo:cupons-retorno:v1',
+  contatos: 'saas-demo:contatos-clientes:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -555,6 +587,21 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
       // as vendas dos exemplos ficam ligadas ao caixa do dia delas
       for (const v of vendas) if (diaNoFuso(v.criadaEm, opcoes.fuso) === dia) v.caixaId = caixa.id;
     }
+    // cashback das vendas de exemplo com cliente (como se o programa já estivesse ligado): a Maria e o João
+    // começam com saldo para usar na Frente de caixa (módulo 7)
+    if (lerDaLoja<LoteCashback>(CHAVES.cashback, lojaId).length === 0) {
+      const regrasCb = configuracaoDemo(lojaId).regras.cashback;
+      const clientesEx = lerDaLoja<Cliente>(CHAVES.clientes, lojaId);
+      const lotes: LoteCashback[] = [];
+      for (const v of vendas) {
+        const cli = v.cliente ? clientesEx.find((c) => c.id === v.cliente!.id) : undefined;
+        const l = v.status === 'finalizada' ? gerarCashback(v, cli, regrasCb, { dia: diaNoFuso(v.criadaEm, opcoes.fuso), em: v.criadaEm, por: v.vendedor, novoId }) : null;
+        if (!l) continue;
+        lotes.push(l);
+        v.cashbackGeradoCentavos = l.valorCentavos;
+      }
+      gravarDaLoja(CHAVES.cashback, lojaId, lotes);
+    }
     gravarDaLoja(CHAVES.vendas, lojaId, vendas);
     gravarDaLoja(CHAVES.caixas, lojaId, caixas);
   }
@@ -768,6 +815,84 @@ export function criarApiLocal({
     return porForma;
   };
 
+  // ---------------------------------------------------------------- fidelidade (módulo 7)
+  const lotesDaLoja = () => lerDaLoja<LoteCashback>(CHAVES.cashback, lojaId);
+  const gravarLotes = (lotes: LoteCashback[]) => gravarDaLoja(CHAVES.cashback, lojaId, lotes);
+  const usosDaLoja = () => lerDaLoja<UsoCashback>(CHAVES.usosCashback, lojaId);
+  const juntarUso = (uso: Omit<UsoCashback, 'id'>) => gravarDaLoja(CHAVES.usosCashback, lojaId, [...usosDaLoja(), comId(uso)]);
+  const cuponsDaLoja = () => lerDaLoja<CupomRetorno>(CHAVES.cupons, lojaId);
+  const gravarCupons = (cupons: CupomRetorno[]) => gravarDaLoja(CHAVES.cupons, lojaId, cupons);
+  const contatosDaLoja = () => lerDaLoja<ContatoCliente>(CHAVES.contatos, lojaId);
+  /** Dia da última compra (não cancelada) de cada cliente. */
+  const ultimasCompras = (vendas: readonly Venda[]) => {
+    const m = new Map<string, string>();
+    for (const v of vendas) {
+      if (v.status === 'cancelada' || !v.cliente) continue;
+      const dia = diaNoFuso(v.criadaEm, fuso);
+      if ((m.get(v.cliente.id) ?? '') < dia) m.set(v.cliente.id, dia);
+    }
+    return m;
+  };
+  const cupomResumido = (k: CupomRetorno | null) => (k ? { id: k.id, pct: k.pct, venceEm: k.venceEm } : null);
+  /** Cliente da loja que pode participar das listas e mensagens (não excluído pela LGPD). */
+  const exigirClienteDaFidelidade = (id: string) => {
+    const c = clientesDaLoja().find((x) => x.id === id);
+    if (!c || c.dadosExcluidos || c.nome === NOME_CLIENTE_REMOVIDO) throw new ErroApi(404, 'Cliente não encontrado.');
+    return c;
+  };
+  /**
+   * Cashback e cupom quando a venda volta (cancelamento ou devolução), como o DaniPets (DEV-07):
+   *   - o cashback USADO que voltou para o cliente vira lote novo, com prazo novo;
+   *   - o cashback que a compra GEROU sai (proporcional na devolução; tudo no cancelamento); o que já tinha
+   *     sido usado ou vencido fica no histórico como "não recuperado";
+   *   - no cancelamento, o cupom usado volta a valer (até a validade dele).
+   * Confere antes e devolve a função que grava (e a venda com o cashback retirado).
+   */
+  const prepararFidelidadeDoEstorno = (venda: Venda, estornos: readonly Pagamento[], quando: { tipo: 'cancelamento' } | { tipo: 'devolucao'; numero: number; antesCentavos: number; agoraCentavos: number }, em: string, por: Operador) => {
+    const hoje = hojeNaLoja();
+    const devolvido = estornos.filter((e) => e.forma === 'cashback').reduce((t, e) => t + e.valorCentavos, 0);
+    const cliente = venda.cliente ? clientesDaLoja().find((c) => c.id === venda.cliente!.id && !c.dadosExcluidos) : undefined;
+    if (devolvido > 0 && !cliente) throw new ErroApi(409, 'O cliente desta venda não foi encontrado para devolver o cashback.');
+    const rotulo = quando.tipo === 'cancelamento' ? 'Cancelamento' : `Devolução nº ${quando.numero}`;
+    const retirar = quando.tipo === 'cancelamento' ? cashbackARetirar(venda) : cashbackARetirar(venda, quando.antesCentavos, quando.agoraCentavos);
+    const vendaDepois: Venda = retirar > 0 ? { ...venda, cashbackRetiradoCentavos: (venda.cashbackRetiradoCentavos ?? 0) + retirar } : venda;
+    return {
+      venda: vendaDepois,
+      gravar: () => {
+        let lotes = lotesDaLoja();
+        if (devolvido > 0 && cliente) {
+          const novo = creditarCashback(devolvido, {
+            dia: hoje,
+            em,
+            por,
+            novoId,
+            clienteId: cliente.id,
+            validadeDias: regras().cashback.validadeDias,
+            origem: `${rotulo} • venda ${formatarNumeroVenda(venda.numero)}`,
+            vendaId: venda.id,
+            vendaNumero: venda.numero,
+          });
+          if (novo) lotes = [...lotes, novo];
+        }
+        if (retirar > 0 && venda.cliente) {
+          const r = retirarCashbackDaVenda(lotes, { id: venda.id, clienteId: venda.cliente.id }, retirar, hoje);
+          lotes = r.lotes;
+          if (r.tiradoCentavos > 0) {
+            juntarUso({ clienteId: venda.cliente.id, tipo: 'retirada', dia: hoje, valorCentavos: r.tiradoCentavos, vendaId: venda.id, vendaNumero: venda.numero, lotes: r.usados, rotulo, criadoEm: em, por });
+          }
+          if (r.naoRecuperadoCentavos > 0) {
+            auditar('cliente.cashback_nao_recuperado', { tipo: 'cliente', id: venda.cliente.id }, { rotulo: quando.tipo, numero: venda.numero, valorCentavos: r.naoRecuperadoCentavos });
+          }
+        }
+        gravarLotes(lotes);
+        if (quando.tipo === 'cancelamento') {
+          const cupons = cuponsDaLoja();
+          if (cupons.some((k) => k.uso?.vendaId === venda.id)) gravarCupons(cupons.map((k) => (k.uso?.vendaId === venda.id ? { ...k, uso: null } : k)));
+        }
+      },
+    };
+  };
+
   /**
    * Desfaz no financeiro o que voltou para o cliente. Confere antes de gravar qualquer coisa
    * (devolução em dinheiro não passa do que há no Caixa) e devolve a função que grava.
@@ -973,6 +1098,11 @@ export function criarApiLocal({
         const validacao = validarNovaVenda(dados);
         if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
 
+        // cashback e cupom de retorno do cliente identificado (módulo 7): o servidor decide, nunca a tela
+        const hoje = hojeNaLoja();
+        const lotes = lotesDaLoja();
+        const clientePedido = validacao.valor.clienteId ? (clientesDaLoja().find((c) => c.id === validacao.valor.clienteId) ?? null) : null;
+        const cupom = clientePedido ? cupomAtivo(cuponsDaLoja(), clientePedido, hoje, regras().retorno) : null;
         const catalogo = new Map<string, ProdutoParaVenda>(produtosDaLoja().map((p) => [p.id, p]));
         const calculo = calcularVenda(validacao.valor, catalogo, {
           operador: quem,
@@ -982,6 +1112,8 @@ export function criarApiLocal({
           clientes: new Map(clientesDaLoja().map((c) => [c.id, c])),
           limiteDescontoPct: regras().venda.descontoSemSenhaPct,
           custos: custosMedios(movimentosDaLoja()),
+          cashbackDisponivelCentavos: clientePedido ? saldoCashback(lotes, clientePedido, hoje) : 0,
+          cupom: cupom ? { id: cupom.id, clienteId: cupom.clienteId, pct: cupom.pct } : null,
         });
         if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
         // fiado acima do limite ou com fiado vencido: só com a liberação de um Dono, com motivo (DaniPets PDV-10)
@@ -1025,8 +1157,30 @@ export function criarApiLocal({
           caixaId: caixa.id,
           ...(fiadoLiberado ? { fiadoLiberado } : {}),
         };
+        // cashback (módulo 7): o usado sai dos lotes (primeiro o que vence antes); a compra gera o dela
+        const cliVenda = calculo.valor.cliente ? (clientesDaLoja().find((c) => c.id === calculo.valor.cliente!.id) ?? null) : null;
+        let lotesDepois = lotes;
+        let usoCashback: Omit<UsoCashback, 'id'> | null = null;
+        const usadoCashback = venda.pagamentos.filter((p) => p.forma === 'cashback').reduce((t, p) => t + p.valorCentavos, 0);
+        if (usadoCashback > 0 && cliVenda) {
+          const r = exigirOk(consumirCashback(lotes, cliVenda, usadoCashback, hoje));
+          lotesDepois = r.lotes;
+          usoCashback = { clienteId: cliVenda.id, tipo: 'venda', dia: hoje, valorCentavos: usadoCashback, vendaId: venda.id, vendaNumero: venda.numero, lotes: r.usados, rotulo: null, criadoEm: venda.criadaEm, por: venda.vendedor };
+        }
+        const ganho = gerarCashback(venda, cliVenda, regras().cashback, { dia: hoje, em: venda.criadaEm, por: venda.vendedor, novoId });
+        if (ganho) {
+          lotesDepois = [...lotesDepois, ganho];
+          venda.cashbackGeradoCentavos = ganho.valorCentavos;
+        }
+        if (calculo.valor.cupomUsado) venda.cupomId = calculo.valor.cupomUsado;
         const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
         gravarVendas([...daLoja, venda]);
+        if (lotesDepois !== lotes) gravarLotes(lotesDepois);
+        if (usoCashback) juntarUso(usoCashback);
+        if (cupom && calculo.valor.cupomUsado === cupom.id) {
+          gravarCupons(cuponsDaLoja().map((k) => (k.id === cupom.id ? { ...k, uso: { dia: hoje, vendaId: venda.id, vendaNumero: venda.numero } } : k)));
+          auditar('cliente.cupom_usado', { tipo: 'cliente', id: cupom.clienteId }, { pct: cupom.pct, numero: venda.numero });
+        }
         juntarMovimentos(movimentosDaVenda(venda));
         juntarLancamentos(financeiro.lancamentos);
         gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...financeiro.recebiveis.map(comId)]);
@@ -1087,9 +1241,10 @@ export function criarApiLocal({
         if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível cancelar.', r.erros);
         const em = agora().toISOString();
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
+        const fidelidade = prepararFidelidadeDoEstorno(venda, r.valor.estornos, { tipo: 'cancelamento' }, em, pessoa(quem));
         if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
         const cancelada: Venda = {
-          ...venda,
+          ...fidelidade.venda,
           status: 'cancelada',
           cancelamento: { em, por: pessoa(quem), autorizadoPor: r.valor.autorizadoPor, motivo: validacao.valor.motivo, estornos: r.valor.estornos },
         };
@@ -1097,6 +1252,7 @@ export function criarApiLocal({
         gravarVendas(vendas);
         juntarMovimentos(movimentosDoCancelamento(cancelada, { motivo: validacao.valor.motivo, em, por: pessoa(quem) }));
         gravarFinanceiro();
+        fidelidade.gravar();
         auditar('venda.cancelada', null, { numero: venda.numero, valorCentavos: venda.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
         return cancelada;
       });
@@ -1120,6 +1276,8 @@ export function criarApiLocal({
         const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
         const em = agora().toISOString();
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
+        const antes = venda.devolucoes.reduce((t, d) => t + d.totalCentavos, 0);
+        const fidelidade = prepararFidelidadeDoEstorno(venda, r.valor.estornos, { tipo: 'devolucao', numero, antesCentavos: antes, agoraCentavos: r.valor.totalCentavos }, em, pessoa(quem));
         if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
         const devolucao: Devolucao = {
           id: novoId(),
@@ -1132,10 +1290,11 @@ export function criarApiLocal({
           feitaPor: pessoa(quem),
           autorizadaPor: r.valor.autorizadoPor,
         };
-        vendas[i] = { ...venda, devolucoes: [...venda.devolucoes, devolucao] };
+        vendas[i] = { ...fidelidade.venda, devolucoes: [...venda.devolucoes, devolucao] };
         gravarVendas(vendas);
         juntarMovimentos(movimentosDaDevolucao(venda, devolucao));
         gravarFinanceiro();
+        fidelidade.gravar();
         auditar('venda.devolucao', null, { numero: venda.numero, devolucao: numero, valorCentavos: devolucao.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
         return { venda: vendas[i]!, devolucao };
       });
@@ -1230,6 +1389,9 @@ export function criarApiLocal({
       if (!String(termo ?? '').trim()) return [];
       const recebiveis = recebiveisDaLoja();
       const hoje = hojeNaLoja();
+      const lotes = lotesDaLoja();
+      const cupons = cuponsDaLoja();
+      const r = regras();
       return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => {
         const f = fiadoDoCliente(recebiveis, c.id, hoje);
         return {
@@ -1241,6 +1403,11 @@ export function criarApiLocal({
           limiteFiadoCentavos: c.limiteFiadoCentavos ?? 0,
           fiadoVencidoCentavos: f.vencidoCentavos,
           diasVencido: f.diasVencido,
+          // fidelidade (módulo 7): a faixa do cliente mostra o cashback e o cupom (DaniPets PDV-11)
+          cashbackCentavos: saldoCashback(lotes, c, hoje),
+          cashbackVencimento: proximoVencimento(lotes, c, hoje),
+          cupom: cupomResumido(cupomAtivo(cupons, c, hoje, r.retorno)),
+          completo: cadastroCompleto(c),
         };
       });
     },
@@ -1371,6 +1538,9 @@ export function criarApiLocal({
       const hoje = hojeNaLoja();
       const recebiveis = recebiveisDaLoja();
       const vendas = vendasDaLoja();
+      const lotes = lotesDaLoja();
+      const ultimas = ultimasCompras(vendas);
+      const diasRetorno = regras().retorno.diasSemComprar;
       const linhas = clientesDaLoja()
         .filter((c) => !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO && (filtro === 'desativados' ? !c.ativo : c.ativo))
         .filter(
@@ -1399,13 +1569,24 @@ export function criarApiLocal({
               completo: cadastroCompleto(c),
               compras: r.compras,
               ultimaCompraEm: r.ultimaCompraEm,
+              cashbackCentavos: saldoCashback(lotes, c, hoje),
               fiado: veFiado ? { devendoCentavos: f.devendoCentavos, vencidoCentavos: f.vencidoCentavos, diasVencido: f.diasVencido, limiteCentavos: c.limiteFiadoCentavos ?? 0 } : null,
             },
           };
         })
-        .filter(({ c, f }) =>
-          filtro === 'fiado' ? f.devendoCentavos > 0 : filtro === 'vencido' ? f.vencidoCentavos > 0 : filtro === 'incompleto' ? !cadastroCompleto(c) : filtro === 'nao_incomodar' ? Boolean(c.naoIncomodar) : true,
-        )
+        .filter(({ c, f, linha }) => {
+          if (filtro === 'fiado') return f.devendoCentavos > 0;
+          if (filtro === 'vencido') return f.vencidoCentavos > 0;
+          if (filtro === 'incompleto') return !cadastroCompleto(c);
+          if (filtro === 'nao_incomodar') return Boolean(c.naoIncomodar);
+          // fidelidade (módulo 7): com cashback para usar; sem comprar há "dias sem comprar" ou mais
+          if (filtro === 'cashback') return linha.cashbackCentavos > 0;
+          if (filtro === 'sumidos') {
+            const u = ultimas.get(c.id);
+            return u !== undefined && Math.round((Date.parse(`${hoje}T12:00:00Z`) - Date.parse(`${u}T12:00:00Z`)) / 86_400_000) >= diasRetorno;
+          }
+          return true;
+        })
         .map((x) => x.linha)
         .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       return { clientes: linhas.slice(0, LIMITES_CLIENTE.listaMax), total: linhas.length };
@@ -1418,12 +1599,25 @@ export function criarApiLocal({
       if (!c || c.dadosExcluidos) throw new ErroApi(404, 'Cliente não encontrado.');
       const vendas = vendasDaLoja();
       const recebiveis = recebiveisDaLoja();
-      const f = fiadoDoCliente(recebiveis, id, hojeNaLoja());
+      const hoje = hojeNaLoja();
+      const f = fiadoDoCliente(recebiveis, id, hoje);
+      const lotes = lotesDaLoja();
+      const r = regras();
+      const ultima = ultimasCompras(vendas).get(id);
       const { cpf, ...semCpf } = c;
       return {
         cliente: { ...semCpf, cpfMascarado: mascararCpf(cpf) },
         resumo: resumirCliente(vendas, id),
-        extrato: extratoDoCliente(id, vendas, recebiveis, fuso),
+        // compras, fiado, cashback, cupons e lembretes (módulo 7), do mais novo para o mais antigo
+        extrato: extratoCompletoDoCliente(id, vendas, recebiveis, fuso, { lotes, usos: usosDaLoja(), cupons: cuponsDaLoja(), contatos: contatosDaLoja() }, hoje),
+        fidelidade: {
+          saldoCentavos: saldoCashback(lotes, c, hoje),
+          vencendoCentavos: cashbackVencendo(lotes, c, hoje, r.cashback.avisoDias),
+          proximoVencimento: proximoVencimento(lotes, c, hoje),
+          vencidoCentavos: cashbackVencido(lotes, id, hoje),
+          cupom: cupomResumido(cupomAtivo(cuponsDaLoja(), c, hoje, r.retorno)),
+          sumido: ultima !== undefined && Math.round((Date.parse(`${hoje}T12:00:00Z`) - Date.parse(`${ultima}T12:00:00Z`)) / 86_400_000) >= r.retorno.diasSemComprar,
+        },
         fiado: {
           devendoCentavos: f.devendoCentavos,
           vencidoCentavos: f.vencidoCentavos,
@@ -1527,6 +1721,7 @@ export function criarApiLocal({
           clienteId: c.id,
           nome: c.nome,
           telefone: c.telefone,
+          whatsapp: temWhatsapp(c),
           ativo: c.ativo,
           devendoCentavos: f.devendoCentavos,
           vencidoCentavos: f.vencidoCentavos,
@@ -1555,6 +1750,12 @@ export function criarApiLocal({
         const anonimo = anonimizarCliente(cliente!, agora(), { por: { id: a.autorizador.id, nome: a.autorizador.nome }, motivo: lib.motivo });
         autorizacoes.delete(a.id);
         gravarDaLoja(CHAVES.clientes, lojaId, daLoja.map((c) => (c.id === id ? anonimo : c)));
+        // o cliente perde o cashback que sobrou (DaniPets cliAnonimizar); fica registrado como "retirado"
+        const zerado = zerarCashbackDoCliente(lotesDaLoja(), id);
+        if (zerado.valorCentavos > 0) {
+          gravarLotes(zerado.lotes);
+          juntarUso({ clienteId: id, tipo: 'retirada', dia: hojeNaLoja(), valorCentavos: zerado.valorCentavos, vendaId: null, vendaNumero: null, lotes: zerado.usados, rotulo: 'Exclusão dos dados', criadoEm: agora().toISOString(), por: pessoa(quem) });
+        }
         // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
         gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
         const doCliente = new Set(recebiveis.filter((r) => r.cliente?.id === id).map((r) => r.id));
@@ -1570,6 +1771,179 @@ export function criarApiLocal({
         );
         auditar('cliente.dados_excluidos', { tipo: 'cliente', id }, { autorizadoPor: a.autorizador.id });
         return anonimo;
+      });
+    },
+
+    // ---------------------------------------------------------------- fidelidade (módulo 7)
+    async listarRetorno() {
+      await preparar();
+      exigirOperador();
+      const hoje = hojeNaLoja();
+      const r = regras();
+      const vendas = vendasDaLoja();
+      const lotes = lotesDaLoja();
+      const contatos = contatosDaLoja();
+      const clientes = clientesDaLoja().filter((c) => c.ativo && !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO);
+      const porId = new Map(clientesDaLoja().map((c) => [c.id, c]));
+      const analise = analisarRetorno({ clientes, ultimaCompra: ultimasCompras(vendas), lotes, contatos, cupons: cuponsDaLoja(), regras: r, hoje });
+      const base = (id: string) => {
+        const c = porId.get(id)!;
+        return { clienteId: id, nome: c.nome, telefone: c.telefone, bloqueio: motivoSemMensagem(c, 'retorno') };
+      };
+      /** O que levou na última compra (DaniPets: "Última compra em 10/10: Ração, Areia"). */
+      const itensDaUltima = (id: string) => {
+        const u = vendas.filter((v) => v.cliente?.id === id && v.status !== 'cancelada').sort((a, b) => b.criadaEm.localeCompare(a.criadaEm))[0];
+        return u ? u.itens.map((i) => i.nome).join(', ') : '';
+      };
+      const compras = vendas.filter((v) => v.cliente && v.status !== 'cancelada').map((v) => ({ clienteId: v.cliente!.id, dia: diaNoFuso(v.criadaEm, fuso), vendaNumero: v.numero }));
+      const resultado = resultadoDosLembretes(contatos, compras, hoje);
+      return {
+        hoje,
+        regras: { cashback: r.cashback, retorno: r.retorno },
+        retorno: analise.retorno.map((x) => ({ ...base(x.clienteId), diasSemComprar: x.diasSemComprar, ultimaCompraDia: x.ultimaCompraDia, ultimaCompraItens: itensDaUltima(x.clienteId), cashbackCentavos: saldoCashback(lotes, porId.get(x.clienteId), hoje) })),
+        cashback: analise.cashback.map((x) => ({ ...base(x.clienteId), bloqueio: motivoSemMensagem(porId.get(x.clienteId)!, 'cashback'), venceEm: x.venceEm, valorCentavos: x.valorCentavos })),
+        fora: analise.fora.map((x) => ({ clienteId: x.clienteId, nome: porId.get(x.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO, motivo: x.motivo })),
+        resultado: {
+          linhas: resultado.linhas.slice(0, 100).map((l) => ({
+            contatoId: l.contato.id,
+            dia: l.contato.dia,
+            clienteNome: porId.get(l.contato.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO,
+            canal: l.contato.canal,
+            situacao: l.situacao,
+            voltou: l.voltou,
+          })),
+          enviados: resultado.enviados,
+          voltaram: resultado.voltaram,
+          taxaPct: resultado.taxaPct,
+        },
+      };
+    },
+
+    async resumoDoCashback() {
+      await preparar();
+      exigirOperador();
+      const hoje = hojeNaLoja();
+      const r = regras();
+      const lotes = lotesDaLoja();
+      const usos = usosDaLoja();
+      const clientes = clientesDaLoja().filter((c) => c.ativo && !c.dadosExcluidos);
+      const porId = new Map(clientesDaLoja().map((c) => [c.id, c]));
+      const soma = (xs: readonly { valorCentavos: number }[]) => xs.reduce((t, x) => t + x.valorCentavos, 0);
+      const linhas = clientes
+        .map((c) => {
+          const dele = lotes.filter((l) => l.clienteId === c.id);
+          const usosDele = usos.filter((u) => u.clienteId === c.id);
+          return {
+            clienteId: c.id,
+            nome: c.nome,
+            gerado: soma(dele.filter((l) => l.tipo === 'compra')),
+            devolvido: soma(dele.filter((l) => l.tipo === 'estorno')),
+            usado: soma(usosDele.filter((u) => u.tipo === 'venda')),
+            retirado: soma(usosDele.filter((u) => u.tipo === 'retirada')),
+            vencido: cashbackVencido(lotes, c.id, hoje),
+            aberto: saldoCashback(lotes, c, hoje),
+            proximo: proximoVencimento(lotes, c, hoje),
+          };
+        })
+        .filter((x) => x.gerado > 0 || x.devolvido > 0)
+        .sort((a, b) => b.aberto - a.aberto || a.nome.localeCompare(b.nome, 'pt-BR'));
+      const total = (k: 'gerado' | 'devolvido' | 'usado' | 'retirado' | 'vencido' | 'aberto') => linhas.reduce((t, x) => t + x[k], 0);
+      const limite = somarDias(hoje, r.cashback.avisoDias);
+      const vencendo = clientes.flatMap((c) =>
+        lotesValidos(lotes, c.id, hoje)
+          .filter((l) => l.venceEm <= limite)
+          .map((l) => ({ clienteId: c.id, nome: c.nome, dia: l.dia, origem: l.origem, valorCentavos: l.restanteCentavos, venceEm: l.venceEm })),
+      );
+      return {
+        hoje,
+        regras: r.cashback,
+        abertoCentavos: total('aberto'),
+        clientesComSaldo: linhas.filter((x) => x.aberto > 0).length,
+        vencendoCentavos: vencendo.reduce((t, x) => t + x.valorCentavos, 0),
+        geradoCentavos: total('gerado'),
+        devolvidoCentavos: total('devolvido'),
+        usadoCentavos: total('usado'),
+        retiradoCentavos: total('retirado'),
+        vencidoCentavos: total('vencido'),
+        linhas: linhas.map((x) => ({
+          clienteId: x.clienteId,
+          nome: porId.get(x.clienteId)?.nome ?? x.nome,
+          geradoCentavos: x.gerado + x.devolvido,
+          usadoCentavos: x.usado + x.retirado,
+          vencidoCentavos: x.vencido,
+          abertoCentavos: x.aberto,
+          proximoVencimento: x.proximo,
+        })),
+        vencendo: vencendo.sort((a, b) => a.venceEm.localeCompare(b.venceEm) || a.nome.localeCompare(b.nome, 'pt-BR')),
+      };
+    },
+
+    async mensagemParaCliente(clienteId, tipo) {
+      await preparar();
+      const quem = exigirOperador();
+      if (!(TIPOS_CONTATO as readonly string[]).includes(tipo)) throw new ErroApi(400, 'Escolha o tipo de lembrete.');
+      // o lembrete de pagamento é sobre o fiado: só quem vê o fiado de todos (DaniPets: aba Fiado)
+      if (tipo === 'cobranca' && !pode(quem.papel, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
+      const c = exigirClienteDaFidelidade(clienteId);
+      const hoje = hojeNaLoja();
+      const r = regras();
+      const f = fiadoDoCliente(recebiveisDaLoja(), c.id, hoje);
+      const existente = tipo === 'retorno' ? cupomAtivo(cuponsDaLoja(), c, hoje, r.retorno) : null;
+      const cupom = tipo === 'retorno' && cadastroCompleto(c) && r.retorno.cupomPct > 0 ? (existente ? { pct: existente.pct, venceEm: existente.venceEm } : { pct: r.retorno.cupomPct, venceEm: somarDias(hoje, r.retorno.cupomValidadeDias) }) : null;
+      const texto = mensagemDoCliente(tipo, {
+        nomeLoja: config().dados.nome,
+        cliente: c,
+        hoje,
+        regras: r,
+        ultimaCompraDia: ultimasCompras(vendasDaLoja()).get(c.id) ?? null,
+        proximoVencimento: proximoVencimento(lotesDaLoja(), c, hoje),
+        devendoCentavos: f.devendoCentavos,
+        vencimentoFiado: f.abertos[0]?.venceEm ?? null,
+        cupom,
+      });
+      return { tipo, clienteId: c.id, nome: c.nome, telefone: c.telefone, texto, cupom, bloqueio: motivoSemMensagem(c, tipo) };
+    },
+
+    async registrarContato(clienteId, dados) {
+      await preparar();
+      return gravarOperacao(() => {
+        const quem = exigirOperador();
+        const tipo = dados?.tipo as TipoContato;
+        const canal = dados?.canal as CanalContato;
+        if (!(TIPOS_CONTATO as readonly string[]).includes(tipo) || (canal !== 'whatsapp' && canal !== 'outro')) throw new ErroApi(400, 'Lembrete inválido.');
+        if (tipo === 'cobranca' && !pode(quem.papel, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
+        const c = exigirClienteDaFidelidade(clienteId);
+        // pelo WhatsApp, só para quem tem WhatsApp e autorizou (o lembrete de pagamento só pede o WhatsApp)
+        const bloqueio = canal === 'whatsapp' ? motivoSemMensagem(c, tipo) : null;
+        if (bloqueio) throw new ErroApi(409, bloqueio);
+        const r = registrarContato(c, tipo, canal, { dia: hojeNaLoja(), em: agora().toISOString(), por: pessoa(quem), novoId, cupons: cuponsDaLoja(), regras: regras().retorno });
+        gravarDaLoja(CHAVES.contatos, lojaId, [...contatosDaLoja(), r.contato]);
+        if (r.cupom && r.cupomNovo) gravarCupons([...cuponsDaLoja(), r.cupom]);
+        auditar(ACAO_DO_CONTATO[tipo], { tipo: 'cliente', id: c.id }, { canal, ...(r.cupom ? { cupomPct: r.cupom.pct, cupomVenceEm: r.cupom.venceEm } : {}) });
+        return { contato: r.contato, cupom: r.cupom };
+      });
+    },
+
+    async adiarLembrete(clienteId) {
+      await preparar();
+      return gravarOperacao(() => {
+        exigirOperador();
+        const c = exigirClienteDaFidelidade(clienteId);
+        const ate = somarDias(hojeNaLoja(), DIAS_ADIAR_LEMBRETE);
+        gravarDaLoja(CHAVES.clientes, lojaId, clientesDaLoja().map((x) => (x.id === c.id ? { ...x, lembreteAdiadoAte: ate, atualizadoEm: agora().toISOString() } : x)));
+        auditar('cliente.lembrete_adiado', { tipo: 'cliente', id: c.id }, { ate });
+        return { ate };
+      });
+    },
+
+    async marcarNaoIncomodar(clienteId) {
+      await preparar();
+      return gravarOperacao(() => {
+        exigirOperador();
+        const c = exigirClienteDaFidelidade(clienteId);
+        if (c.naoIncomodar) return;
+        gravarDaLoja(CHAVES.clientes, lojaId, clientesDaLoja().map((x) => (x.id === c.id ? { ...x, naoIncomodar: true, atualizadoEm: agora().toISOString() } : x)));
+        auditar('cliente.nao_incomodar', { tipo: 'cliente', id: c.id }, { ativo: true });
       });
     },
 
