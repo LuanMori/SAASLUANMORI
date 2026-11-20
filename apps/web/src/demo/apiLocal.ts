@@ -29,6 +29,16 @@
 //
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  cadastroCompleto,
+  clienteTemHistorico,
+  extratoDoCliente,
+  fiadoDoCliente,
+  liberacaoDoFiadoServe,
+  mensagemFiadoPrecisaDono,
+  motivosDoFiado,
+  receberFiado,
+  semAcento,
+  temWhatsapp,
   abrirCaixa,
   autorizacaoServe,
   type CaixaDoDia,
@@ -185,6 +195,8 @@ const CHAVES = {
   contasPagar: 'saas-demo:contas-pagar:v1',
   /** Caixa do dia de cada loja: um por dia (módulo 5). */
   caixas: 'saas-demo:caixas:v1',
+  /** Clientes sem histórico excluídos pelo Vendedor, até o Dono ou o Administrador marcar "Ciente" (módulo 6). */
+  avisosClientes: 'saas-demo:avisos-clientes:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -299,8 +311,9 @@ const PRODUTOS_EXEMPLO: { nome: string; codigoBarras: string | null; precoCentav
 const ESTOQUE_PRODUTO_ANTIGO = 20;
 
 /** Clientes fictícios (CPFs de teste, que começam com 000). */
-const CLIENTES_EXEMPLO: NovoCliente[] = [
-  { nome: 'Maria Oliveira', telefone: '41999990001', cpf: '00000000191' },
+/** A Maria tem R$ 200,00 de limite de fiado (para a demonstração do fiado). */
+const CLIENTES_EXEMPLO: (Pick<NovoCliente, 'nome' | 'telefone' | 'cpf'> & { limiteFiadoCentavos?: number })[] = [
+  { nome: 'Maria Oliveira', telefone: '41999990001', cpf: '00000000191', limiteFiadoCentavos: 20_000 },
   { nome: 'João Pereira', telefone: '41999990002', cpf: '00000000272' },
   { nome: 'Fernanda Lima', telefone: '4133330003', cpf: '00000000353' },
 ];
@@ -438,6 +451,16 @@ function criarExemplos(lojaId: string, agora: Date, fuso: string): boolean {
 }
 
 const IMPLANTACAO: Operador = { id: 'implantacao', nome: 'Implantação do sistema' };
+/** Cliente sem histórico excluído pelo Vendedor (o Dono e o Administrador veem até marcar "Ciente"). */
+interface AvisoDeCliente {
+  id: string;
+  clienteNome: string;
+  telefone: string;
+  motivo: string;
+  por: Operador;
+  em: string;
+  ciente: { por: Operador; em: string } | null;
+}
 /** Quem abriu e fechou o caixa nos dias dos exemplos (a Dona da loja de exemplo) e o fundo de troco. */
 const DONO_EXEMPLO: Operador = { id: 'ana', nome: 'Ana' };
 const FUNDO_EXEMPLO = 10_000;
@@ -961,7 +984,27 @@ export function criarApiLocal({
           custos: custosMedios(movimentosDaLoja()),
         });
         if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
+        // fiado acima do limite ou com fiado vencido: só com a liberação de um Dono, com motivo (DaniPets PDV-10)
+        const noFiado = calculo.valor.pagamentos.filter((p) => p.forma === 'fiado').reduce((t, p) => t + p.valorCentavos, 0);
+        let fiadoLiberado: Venda['fiadoLiberado'] = null;
+        let liberacaoUsada: string | null = null;
+        if (noFiado > 0 && calculo.valor.cliente) {
+          const cli = clientesDaLoja().find((c) => c.id === calculo.valor.cliente!.id);
+          if (!cli || !cadastroCompleto(cli)) throw new ErroApi(409, 'Fiado só com o cadastro completo do cliente (nome, telefone e CPF).');
+          const f = fiadoDoCliente(recebiveisDaLoja(), cli.id, hojeNaLoja());
+          const motivos = motivosDoFiado(cli.limiteFiadoCentavos ?? 0, f, noFiado, regras().fiado.vencidoPedeDono);
+          if (motivos.length) {
+            const lf = validacao.valor.liberacaoFiado;
+            const a = lf ? (autorizacoesDaLoja().get(lf.autorizacao) ?? null) : null;
+            if (!lf || !liberacaoDoFiadoServe(a, cli.id, noFiado, agora())) {
+              throw new ErroApi(409, mensagemFiadoPrecisaDono(cli.nome, motivos), [{ campo: 'liberacaoFiado', mensagem: motivos.join('; ') }], 'fiado_liberacao');
+            }
+            fiadoLiberado = { por: { id: a.autorizador.id, nome: a.autorizador.nome }, motivo: lf.motivo, motivos };
+            liberacaoUsada = a.id;
+          }
+        }
         calculo.valor.autorizacoesUsadas.forEach((id) => autorizacoes.delete(id)); // uso único
+        if (liberacaoUsada) autorizacoes.delete(liberacaoUsada);
 
         const daLoja = vendasDaLoja();
         const venda: Venda = {
@@ -980,12 +1023,14 @@ export function criarApiLocal({
           cancelamento: null,
           devolucoes: [],
           caixaId: caixa.id,
+          ...(fiadoLiberado ? { fiadoLiberado } : {}),
         };
         const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
         gravarVendas([...daLoja, venda]);
         juntarMovimentos(movimentosDaVenda(venda));
         juntarLancamentos(financeiro.lancamentos);
         gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...financeiro.recebiveis.map(comId)]);
+        if (fiadoLiberado) auditar('venda.fiado_liberado', null, { numero: venda.numero, valorCentavos: noFiado, autorizadoPor: fiadoLiberado.por.id });
         if (venda.descontoCentavos > 0) {
           const comSenha = venda.itens.find((i) => i.desconto?.autorizadoComSenha);
           auditar('venda.desconto', null, {
@@ -1017,6 +1062,8 @@ export function criarApiLocal({
         if (acao.tipo === 'dia_fechado' && !pode(g.papel, 'dia_fechado.liberar')) {
           throw new ErroApi(403, 'Lançamento em dia com o caixa já fechado: só com a liberação de um Dono.');
         }
+        if (acao.tipo === 'fiado' && !pode(g.papel, 'fiado.liberar')) throw new ErroApi(403, 'Fiado acima do limite ou vencido: só com a liberação de um Dono.');
+        if (acao.tipo === 'excluir_dados_cliente' && !pode(g.papel, 'clientes.excluir_dados')) throw new ErroApi(403, 'Excluir os dados de um cliente: só com a liberação de um Dono.');
         const id = novoId();
         autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
         return { autorizacao: id, autorizador: g };
@@ -1182,13 +1229,20 @@ export function criarApiLocal({
       exigirOperador();
       if (!String(termo ?? '').trim()) return [];
       const recebiveis = recebiveisDaLoja();
-      return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => ({
-        id: c.id,
-        nome: c.nome,
-        cpfMascarado: mascararCpf(c.cpf),
-        telefone: c.telefone,
-        fiadoEmAbertoCentavos: fiadoEmAberto(recebiveis, c.id),
-      }));
+      const hoje = hojeNaLoja();
+      return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => {
+        const f = fiadoDoCliente(recebiveis, c.id, hoje);
+        return {
+          id: c.id,
+          nome: c.nome,
+          cpfMascarado: mascararCpf(c.cpf),
+          telefone: c.telefone,
+          fiadoEmAbertoCentavos: f.devendoCentavos,
+          limiteFiadoCentavos: c.limiteFiadoCentavos ?? 0,
+          fiadoVencidoCentavos: f.vencidoCentavos,
+          diasVencido: f.diasVencido,
+        };
+      });
     },
 
     async listarClientes(termo = '') {
@@ -1200,16 +1254,32 @@ export function criarApiLocal({
     async cadastrarCliente(dados) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
-        exigirOperador();
-        const validacao = validarNovoCliente(dados);
+        const quem = exigirOperador();
+        const validacao = validarNovoCliente(dados, { hoje: hojeNaLoja() });
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
+        const v = validacao.valor;
+        // o limite de fiado é do Dono e do Administrador (DaniPets customerLimit)
+        if ((v.limiteFiadoCentavos ?? 0) > 0) exigir('clientes.limite');
         const daLoja = clientesDaLoja();
-        const unico = conferirCpfUnico(validacao.valor.cpf, daLoja);
+        const unico = conferirCpfUnico(v.cpf, daLoja);
         if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
         const quando = agora().toISOString();
-        const cliente: Cliente = { id: novoId(), ...validacao.valor, ativo: true, criadoEm: quando, atualizadoEm: quando };
+        const { autorizaMensagens, ...resto } = v;
+        const cliente: Cliente = {
+          id: novoId(),
+          ...resto,
+          whatsapp: v.whatsapp ?? temWhatsapp({ telefone: v.telefone }),
+          limiteFiadoCentavos: v.limiteFiadoCentavos ?? 0,
+          autorizaMensagens: autorizaMensagens ? { em: quando, por: pessoa(quem) } : null,
+          naoIncomodar: v.naoIncomodar ?? false,
+          ativo: true,
+          criadoEm: quando,
+          atualizadoEm: quando,
+        };
         gravarDaLoja(CHAVES.clientes, lojaId, [...daLoja, cliente]);
         auditar('cliente.cadastrado', { tipo: 'cliente', id: cliente.id });
+        if (cliente.autorizaMensagens) auditar('cliente.mensagens', { tipo: 'cliente', id: cliente.id }, { autorizou: true });
+        if ((cliente.limiteFiadoCentavos ?? 0) > 0) auditar('cliente.limite', { tipo: 'cliente', id: cliente.id }, { de: 0, para: cliente.limiteFiadoCentavos });
         return cliente;
       });
     },
@@ -1217,21 +1287,42 @@ export function criarApiLocal({
     async atualizarCliente(id, dados) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
-        exigirOperador();
-        const validacao = validarNovoCliente(dados);
-        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
+        const quem = exigirOperador();
         const daLoja = clientesDaLoja();
         const i = daLoja.findIndex((c) => c.id === id);
         if (i < 0) throw new ErroApi(404, 'Cliente não encontrado.');
-        const unico = conferirCpfUnico(validacao.valor.cpf, daLoja, id);
-        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
         const antes = daLoja[i]!;
-        const atualizado: Cliente = { ...antes, ...validacao.valor, atualizadoEm: agora().toISOString() };
-        const campos = (Object.keys(validacao.valor) as (keyof NovoCliente)[]).filter((k) => antes[k] !== atualizado[k]);
-        if (campos.length === 0) return antes;
+        // a tela não tem o CPF inteiro (LGPD): sem CPF no pedido, fica o do cadastro
+        const pedido = dados && typeof dados === 'object' && !String((dados as { cpf?: unknown }).cpf ?? '').trim() ? { ...dados, cpf: antes.cpf } : dados;
+        const validacao = validarNovoCliente(pedido, { hoje: hojeNaLoja() });
+        if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Dados do cliente inválidos.', validacao.erros);
+        const v = validacao.valor;
+        const unico = conferirCpfUnico(v.cpf, daLoja, id);
+        if (!unico.ok) throw new ErroApi(409, unico.erros[0]!.mensagem, unico.erros);
+        const limiteAntes = antes.limiteFiadoCentavos ?? 0;
+        const limite = v.limiteFiadoCentavos ?? limiteAntes;
+        if (limite !== limiteAntes) exigir('clientes.limite');
+        const quando = agora().toISOString();
+        const { autorizaMensagens, ...resto } = v;
+        const atualizado: Cliente = {
+          ...antes,
+          ...resto,
+          limiteFiadoCentavos: limite,
+          autorizaMensagens: autorizaMensagens === undefined ? (antes.autorizaMensagens ?? null) : autorizaMensagens ? (antes.autorizaMensagens ?? { em: quando, por: pessoa(quem) }) : null,
+          atualizadoEm: quando,
+        };
+        const simples = ['nome', 'telefone', 'cpf', 'extra', 'nascimento', 'endereco', 'observacoes', 'whatsapp'] as const;
+        const campos = simples.filter((k) => k in resto && (antes[k] ?? null) !== (atualizado[k] ?? null));
+        const mudouMensagens = Boolean(antes.autorizaMensagens) !== Boolean(atualizado.autorizaMensagens);
+        const mudouNaoIncomodar = Boolean(antes.naoIncomodar) !== Boolean(atualizado.naoIncomodar);
+        if (!campos.length && limite === limiteAntes && !mudouMensagens && !mudouNaoIncomodar) return antes;
         daLoja[i] = atualizado;
         gravarDaLoja(CHAVES.clientes, lojaId, daLoja);
-        auditar('cliente.alterado', { tipo: 'cliente', id }, { campos });
+        const alvo = { tipo: 'cliente', id };
+        if (campos.length) auditar('cliente.alterado', alvo, { campos });
+        if (limite !== limiteAntes) auditar('cliente.limite', alvo, { de: limiteAntes, para: limite });
+        if (mudouMensagens) auditar('cliente.mensagens', alvo, { autorizou: Boolean(atualizado.autorizaMensagens) });
+        if (mudouNaoIncomodar) auditar('cliente.nao_incomodar', alvo, { ativo: Boolean(atualizado.naoIncomodar) });
         return atualizado;
       });
     },
@@ -1267,7 +1358,186 @@ export function criarApiLocal({
       return { cliente, resumo: resumirCliente(vendas, id), vendas, fiadoEmAbertoCentavos: fiadoEmAberto(recebiveisDaLoja(), id) };
     },
 
-    async excluirDadosDoCliente(id) {
+    async listarContasDeClientes(pedido = {}) {
+      await preparar();
+      const quem = exigirOperador();
+      const veFiado = pode(quem.papel, 'clientes.fiado');
+      const filtro = pedido.filtro ?? 'todos';
+      if ((filtro === 'fiado' || filtro === 'vencido' || filtro === 'desativados') && !pode(quem.papel, filtro === 'desativados' ? 'clientes.desativar' : 'clientes.fiado')) {
+        throw new ErroApi(403, mensagemSemPermissao(filtro === 'desativados' ? 'clientes.desativar' : 'clientes.fiado'));
+      }
+      const termo = semAcento(String(pedido.termo ?? '').trim().slice(0, LIMITES_CLIENTE.buscaMax));
+      const digitos = termo.replace(/\D/g, '');
+      const hoje = hojeNaLoja();
+      const recebiveis = recebiveisDaLoja();
+      const vendas = vendasDaLoja();
+      const linhas = clientesDaLoja()
+        .filter((c) => !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO && (filtro === 'desativados' ? !c.ativo : c.ativo))
+        .filter(
+          (c) =>
+            !termo ||
+            semAcento(c.nome).includes(termo) ||
+            semAcento(c.extra ?? '').includes(termo) ||
+            (digitos.length >= 3 && (c.cpf.includes(digitos) || c.telefone.includes(digitos))),
+        )
+        .map((c) => {
+          const f = fiadoDoCliente(recebiveis, c.id, hoje);
+          const r = resumirCliente(vendas, c.id);
+          return {
+            c,
+            f,
+            linha: {
+              id: c.id,
+              nome: c.nome,
+              extra: c.extra ?? null,
+              telefone: c.telefone,
+              whatsapp: temWhatsapp(c),
+              aceitaMensagens: Boolean(c.autorizaMensagens),
+              cpfMascarado: mascararCpf(c.cpf),
+              ativo: c.ativo,
+              naoIncomodar: Boolean(c.naoIncomodar),
+              completo: cadastroCompleto(c),
+              compras: r.compras,
+              ultimaCompraEm: r.ultimaCompraEm,
+              fiado: veFiado ? { devendoCentavos: f.devendoCentavos, vencidoCentavos: f.vencidoCentavos, diasVencido: f.diasVencido, limiteCentavos: c.limiteFiadoCentavos ?? 0 } : null,
+            },
+          };
+        })
+        .filter(({ c, f }) =>
+          filtro === 'fiado' ? f.devendoCentavos > 0 : filtro === 'vencido' ? f.vencidoCentavos > 0 : filtro === 'incompleto' ? !cadastroCompleto(c) : filtro === 'nao_incomodar' ? Boolean(c.naoIncomodar) : true,
+        )
+        .map((x) => x.linha)
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      return { clientes: linhas.slice(0, LIMITES_CLIENTE.listaMax), total: linhas.length };
+    },
+
+    async contaDoCliente(id) {
+      await preparar();
+      exigirOperador();
+      const c = clientesDaLoja().find((x) => x.id === id);
+      if (!c || c.dadosExcluidos) throw new ErroApi(404, 'Cliente não encontrado.');
+      const vendas = vendasDaLoja();
+      const recebiveis = recebiveisDaLoja();
+      const f = fiadoDoCliente(recebiveis, id, hojeNaLoja());
+      const { cpf, ...semCpf } = c;
+      return {
+        cliente: { ...semCpf, cpfMascarado: mascararCpf(cpf) },
+        resumo: resumirCliente(vendas, id),
+        extrato: extratoDoCliente(id, vendas, recebiveis, fuso),
+        fiado: {
+          devendoCentavos: f.devendoCentavos,
+          vencidoCentavos: f.vencidoCentavos,
+          diasVencido: f.diasVencido,
+          abertos: f.abertos.map((r) => ({ vendaNumero: r.vendaNumero, criadoEm: r.criadoEm, venceEm: r.venceEm, abertoCentavos: r.brutoCentavos - r.estornadoBrutoCentavos })),
+        },
+        limiteFiadoCentavos: c.limiteFiadoCentavos ?? 0,
+        temHistorico: clienteTemHistorico(id, vendas, recebiveis),
+      };
+    },
+
+    async verCpfDoCliente(id) {
+      await preparar();
+      return gravarOperacao(() => {
+        exigir('clientes.cpf');
+        const c = clientesDaLoja().find((x) => x.id === id);
+        if (!c || c.dadosExcluidos) throw new ErroApi(404, 'Cliente não encontrado.');
+        auditar('cliente.cpf_visto', { tipo: 'cliente', id });
+        return { cpf: c.cpf };
+      });
+    },
+
+    async excluirCliente(id, motivo) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('clientes');
+        const texto = typeof motivo === 'string' ? motivo.normalize('NFC').trim().replace(/\s+/g, ' ') : '';
+        if (!texto) throw new ErroApi(400, 'Informe o motivo da exclusão.', [{ campo: 'motivo', mensagem: 'Informe o motivo.' }]);
+        if (texto.length > LIMITES_CLIENTE.motivoMax) throw new ErroApi(400, `O motivo pode ter até ${LIMITES_CLIENTE.motivoMax} caracteres.`);
+        const daLoja = clientesDaLoja();
+        const c = daLoja.find((x) => x.id === id);
+        if (!c) throw new ErroApi(404, 'Cliente não encontrado.');
+        if (clienteTemHistorico(id, vendasDaLoja(), recebiveisDaLoja())) {
+          throw new ErroApi(409, 'Cliente com compras ou fiado não pode ser excluído. Um Dono pode excluir os dados (LGPD) na conta do cliente.');
+        }
+        gravarDaLoja(CHAVES.clientes, lojaId, daLoja.filter((x) => x.id !== id));
+        auditar('cliente.excluido', { tipo: 'cliente', id });
+        // feito pelo Vendedor: o Dono e o Administrador ficam sabendo (DaniPets avisosClientes)
+        if (!pode(quem.papel, 'clientes.desativar')) {
+          const aviso = { id: novoId(), clienteNome: c.nome, telefone: c.telefone, motivo: texto, por: pessoa(quem), em: agora().toISOString(), ciente: null };
+          gravarDaLoja(CHAVES.avisosClientes, lojaId, [...lerDaLoja<AvisoDeCliente>(CHAVES.avisosClientes, lojaId), aviso]);
+        }
+      });
+    },
+
+    async listarAvisosDeClientes() {
+      await preparar();
+      exigir('clientes.desativar');
+      return maisNovosPrimeiro(lerDaLoja<AvisoDeCliente>(CHAVES.avisosClientes, lojaId).map((a) => ({ ...a, criadoEm: a.em }))).map(({ criadoEm: _c, ...a }) => a);
+    },
+
+    async conferirAvisoDeCliente(id) {
+      await preparar();
+      return gravarOperacao(() => {
+        const quem = exigir('clientes.desativar');
+        const avisos = lerDaLoja<AvisoDeCliente>(CHAVES.avisosClientes, lojaId);
+        const i = avisos.findIndex((a) => a.id === id);
+        if (i < 0) throw new ErroApi(404, 'Aviso não encontrado.');
+        if (avisos[i]!.ciente) throw new ErroApi(409, 'Este aviso já foi conferido.');
+        avisos[i] = { ...avisos[i]!, ciente: { por: pessoa(quem), em: agora().toISOString() } };
+        gravarDaLoja(CHAVES.avisosClientes, lojaId, avisos);
+        auditar('cliente.aviso_conferido');
+        return avisos[i]!;
+      });
+    },
+
+    async receberFiadoDoCliente(id, dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('vender');
+        exigirHojeNaoFechado();
+        const c = clientesDaLoja().find((x) => x.id === id);
+        if (!c || c.dadosExcluidos) throw new ErroApi(404, 'Cliente não encontrado.');
+        // dinheiro entra na gaveta: só com o caixa de hoje aberto (DaniPets: "Para receber em dinheiro, abra o caixa de hoje")
+        if (dados?.forma === 'dinheiro') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
+        const hoje = hojeNaLoja();
+        const todos = recebiveisDaLoja();
+        const f = fiadoDoCliente(todos, id, hoje);
+        const r = receberFiado(f, dados?.valorCentavos, dados?.forma, { cliente: { id: c.id, nome: c.nome }, em: agora().toISOString(), hoje, por: pessoa(quem), novoId, taxas: taxasDaLoja() });
+        if (!r.ok) throw new ErroApi(r.erros[0]!.campo === '_' ? 409 : 400, r.erros[0]!.mensagem, r.erros);
+        const novos = new Map(r.valor.atualizados.map((x) => [x.id, x]));
+        const cartao = r.valor.cartao ? [comId(r.valor.cartao)] : [];
+        gravarDaLoja(CHAVES.recebiveis, lojaId, [...todos.map((x) => novos.get(x.id) ?? x), ...r.valor.partesPagas, ...cartao]);
+        if (r.valor.lancamento) juntarLancamentos([r.valor.lancamento]);
+        auditar('cliente.fiado_recebido', { tipo: 'cliente', id }, { valorCentavos: dados.valorCentavos, forma: dados.forma });
+        return { abatidas: r.valor.abatidas, ficaDevendoCentavos: f.devendoCentavos - (dados.valorCentavos as number) };
+      });
+    },
+
+    async listarFiado() {
+      await preparar();
+      exigir('clientes.fiado');
+      const hoje = hojeNaLoja();
+      const recebiveis = recebiveisDaLoja();
+      const clientes = clientesDaLoja().filter((c) => !c.dadosExcluidos);
+      const linhas = clientes
+        .map((c) => ({ c, f: fiadoDoCliente(recebiveis, c.id, hoje) }))
+        .filter(({ f }) => f.devendoCentavos > 0)
+        .sort((a, b) => b.f.diasVencido - a.f.diasVencido || b.f.devendoCentavos - a.f.devendoCentavos)
+        .map(({ c, f }) => ({
+          clienteId: c.id,
+          nome: c.nome,
+          telefone: c.telefone,
+          ativo: c.ativo,
+          devendoCentavos: f.devendoCentavos,
+          vencidoCentavos: f.vencidoCentavos,
+          diasVencido: f.diasVencido,
+          limiteCentavos: c.limiteFiadoCentavos ?? 0,
+          maisAntiga: { vendaNumero: f.abertos[0]!.vendaNumero, venceEm: f.abertos[0]!.venceEm },
+        }));
+      return { linhas, limitesCentavos: clientes.filter((c) => c.ativo).reduce((s, c) => s + (c.limiteFiadoCentavos ?? 0), 0) };
+    },
+
+    async excluirDadosDoCliente(id, opcoes = {}) {
       await preparar();
       return gravarOperacao(() => {
         const quem = exigirOperador();
@@ -1276,7 +1546,14 @@ export function criarApiLocal({
         const recebiveis = recebiveisDaLoja();
         const permitido = conferirExclusaoDeCliente(quem.papel, cliente, fiadoEmAberto(recebiveis, id));
         if (!permitido.ok) throw new ErroApi(cliente ? 403 : 404, permitido.erros[0]!.mensagem, permitido.erros);
-        const anonimo = anonimizarCliente(cliente!, agora());
+        // a exclusão precisa da liberação de um Dono, com motivo (DaniPets cliAnonimizar)
+        const lib = exigirOk(validarLiberacao(opcoes.liberacao), 400);
+        const a = lib ? (autorizacoesDaLoja().get(lib.autorizacao) ?? null) : null;
+        if (!lib || !autorizacaoServe(a, 'clientes.excluir_dados', (x) => x.tipo === 'excluir_dados_cliente' && x.clienteId === id, agora())) {
+          throw new ErroApi(403, 'A exclusão precisa da liberação de um Dono.', [{ campo: 'liberacao', mensagem: 'Falta a liberação de um Dono.' }], 'precisa_liberacao');
+        }
+        const anonimo = anonimizarCliente(cliente!, agora(), { por: { id: a.autorizador.id, nome: a.autorizador.nome }, motivo: lib.motivo });
+        autorizacoes.delete(a.id);
         gravarDaLoja(CHAVES.clientes, lojaId, daLoja.map((c) => (c.id === id ? anonimo : c)));
         // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
         gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
@@ -1286,10 +1563,12 @@ export function criarApiLocal({
           CHAVES.lancamentos,
           lojaId,
           lancamentosDaLoja().map((l) =>
-            l.recebivelId && doCliente.has(l.recebivelId) ? { ...l, descricao: l.descricao.split(` • ${cliente!.nome}`).join(` • ${NOME_CLIENTE_REMOVIDO}`) } : l,
+            (l.recebivelId && doCliente.has(l.recebivelId)) || (l.tipo === 'recebimento_fiado' && l.descricao.includes(` • ${cliente!.nome} • `))
+              ? { ...l, descricao: l.descricao.split(` • ${cliente!.nome}`).join(` • ${NOME_CLIENTE_REMOVIDO}`) }
+              : l,
           ),
         );
-        auditar('cliente.dados_excluidos', { tipo: 'cliente', id });
+        auditar('cliente.dados_excluidos', { tipo: 'cliente', id }, { autorizadoPor: a.autorizador.id });
         return anonimo;
       });
     },

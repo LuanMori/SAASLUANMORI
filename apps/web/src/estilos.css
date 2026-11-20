@@ -951,6 +951,7 @@ h2 { font-size: 1.05rem; }
 .caixa-historico .pe-situacao { margin-left: 0; }
 .pdv-caixa-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 16px 0; }
 .pdv-pilula.pdv-caixa-ok { background: #0b5f40; color: #fff; }
+.pdv-chip.pdv-chip-ruim { background: var(--erro-fundo); color: var(--erro); }
 .pdv-pilula.pdv-caixa-ruim { background: #9c2617; color: #fff; }
 .vg-caixa { margin-top: 6px; }
 @media (max-width: 760px) {
@@ -965,6 +966,47 @@ h2 { font-size: 1.05rem; }
   .caixa-historico td[data-rotulo='Dia']::before, .caixa-historico td[data-rotulo='Ação']::before { content: none; }
   .caixa-historico td[data-rotulo='Diferença'], .caixa-historico td[data-rotulo='Quem'], .caixa-historico td[data-rotulo='Ação'] { grid-column: 1 / -1; }
   .caixa-historico td[data-rotulo='Ação'] > .suave { display: none; }
+}
+
+/* Clientes (Fase 2, módulo 6; DaniPets pageCustomers) */
+.cli-abas { display: flex; gap: 6px; flex-wrap: wrap; }
+.cli-abas button { font: inherit; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--borda); background: var(--superficie); color: var(--texto); cursor: pointer; }
+.cli-abas button.cli-aba-on { background: var(--primaria); border-color: var(--primaria); color: #fff; }
+.cli-contagem { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, currentColor 15%, transparent); font-size: 0.8rem; }
+.cli-barra { flex-wrap: wrap; align-items: center; }
+.cli-ferramentas { display: flex; gap: 8px; flex-wrap: wrap; }
+.cli-ferramentas input, .cli-ferramentas select { font: inherit; padding: 8px 10px; border: 1px solid var(--borda-campo); border-radius: 8px; background: var(--superficie); color: var(--texto); min-width: 0; }
+.cli-ferramentas input { width: 240px; max-width: 100%; }
+.cli-linha { cursor: pointer; }
+.cli-nome { font-weight: 700; color: var(--texto); text-align: left; }
+.cli-tag { background: var(--fundo); color: var(--suave); border: 1px solid var(--borda); }
+.cli-tabela .pe-situacao { margin: 0 6px 2px 0; }
+.cli-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.cli-conta .card-cabeca .pe-situacao { margin-left: 6px; }
+.cli-sub { margin: -6px 0 0; padding: 0 20px 12px; }
+.cli-metricas { padding: 0 20px 4px; }
+.cli-metricas .caixa-metrica { border: 1px solid var(--borda); border-radius: 12px; }
+.cli-acoes { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; }
+.cli-acoes-linha { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cli-dados { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; padding: 12px 20px 18px; border-top: 1px solid var(--borda); }
+.cli-dados dt { color: var(--suave); font-size: 0.85rem; }
+.cli-dados dd { margin: 0; overflow-wrap: anywhere; }
+.cli-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.cli-chip { padding: 5px 12px; font-size: 0.85rem; }
+.cli-chip-on { background: var(--primaria-clara); border-color: var(--primaria); color: var(--primaria-texto-forte); }
+.cli-quebra { white-space: normal !important; min-width: 220px; }
+.cli-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 14px; }
+.cli-form .campo { margin: 0; }
+.cli-checks { display: grid; gap: 8px; font-size: 0.92rem; }
+.cli-previa { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--fundo); font-size: 0.9rem; }
+.cli-previa dt { color: var(--suave); }
+.cli-previa dd { margin: 0; font-weight: 600; }
+@media (max-width: 760px) {
+  .cli-form { grid-template-columns: minmax(0, 1fr); }
+  .cli-ferramentas, .cli-ferramentas input, .cli-ferramentas select { width: 100%; }
+  .cli-sub, .cli-metricas, .cli-acoes, .cli-dados { padding-left: 14px; padding-right: 14px; }
+  .cli-dados { grid-template-columns: minmax(0, 1fr); }
+  .cli-quebra { min-width: 0; }
 }
 
 /* Tema escuro (DaniPets ACE-15): as mesmas variáveis, com outras cores. O verde dos botões continua

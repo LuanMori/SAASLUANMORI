@@ -44,6 +44,10 @@ export interface ClienteNaVenda {
   cpfMascarado: string;
   /** Quanto deve no fiado quando foi identificado (só para mostrar). */
   fiadoEmAbertoCentavos?: number;
+  /** Limite de fiado e o que já venceu (só para mostrar; quem confere é o servidor). */
+  limiteFiadoCentavos?: number;
+  fiadoVencidoCentavos?: number;
+  diasVencido?: number;
 }
 
 export interface ParteDividida {
@@ -233,6 +237,9 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
             nome: c.nome,
             cpfMascarado: c.cpfMascarado,
             ...(Number.isSafeInteger(c.fiadoEmAbertoCentavos) ? { fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos } : {}),
+            ...(Number.isSafeInteger(c.limiteFiadoCentavos) ? { limiteFiadoCentavos: c.limiteFiadoCentavos } : {}),
+            ...(Number.isSafeInteger(c.fiadoVencidoCentavos) ? { fiadoVencidoCentavos: c.fiadoVencidoCentavos } : {}),
+            ...(Number.isSafeInteger(c.diasVencido) ? { diasVencido: c.diasVencido } : {}),
           }
         : null;
     const pagamento: EstadoPagamento = { dividido: Boolean(p?.dividido) && partes.length > 1, forma, partes, recebidoTexto: String(p?.recebidoTexto ?? '') };

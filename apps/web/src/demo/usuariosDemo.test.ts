@@ -156,7 +156,7 @@ describe('excluir os dados de um cliente (LGPD) na demonstração', () => {
   it('só o Dono; com fiado em aberto, não; sem, apaga nome, CPF e telefone e tira o nome das vendas', async () => {
     const ana = api('ana', 'dono');
     const bruno = api('bruno', 'vendedor');
-    const cliente = await ana.cadastrarCliente({ nome: 'Maria Souza', cpf: '529.982.247-25', telefone: '11987654321' });
+    const cliente = await ana.cadastrarCliente({ nome: 'Maria Souza', cpf: '529.982.247-25', telefone: '11987654321', limiteFiadoCentavos: 5000 });
     const produto = await ana.criarProduto({ nome: 'Petisco', codigoBarras: null, precoCentavos: 1000 });
     await ana.lancarMovimentoEstoque({ produtoId: produto.id, tipo: 'entrada', quantidade: 10, motivo: 'Nota 1' });
     await bruno.criarVenda({ itens: [{ produtoId: produto.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 1000 }], clienteId: cliente.id });
@@ -167,7 +167,10 @@ describe('excluir os dados de um cliente (LGPD) na demonstração', () => {
 
     const fiado = (await ana.listarRecebiveis()).find((r) => r.forma === 'fiado')!;
     await ana.receberRecebivel(fiado.id, 'caixa');
-    const anonimo = await ana.excluirDadosDoCliente(cliente.id);
+    // mesmo o Dono precisa da liberação (senha e motivo), como no DaniPets
+    expect((await erro(ana.excluirDadosDoCliente(cliente.id))).message).toBe('A exclusão precisa da liberação de um Dono.');
+    const { autorizacao } = await ana.autorizar({ usuarioId: 'ana', senha: 'demo1234', acao: { tipo: 'excluir_dados_cliente', clienteId: cliente.id } });
+    const anonimo = await ana.excluirDadosDoCliente(cliente.id, { liberacao: { autorizacao, motivo: 'pedido do cliente' } });
     expect(anonimo).toMatchObject({ nome: NOME_CLIENTE_REMOVIDO, cpf: '', telefone: '', ativo: false });
     const tudo = Object.values(localStorage).join('\n');
     expect(tudo).not.toContain('Maria Souza');

@@ -144,7 +144,8 @@ function PassoBuscar({
   );
 }
 
-type Campo = keyof NovoCliente;
+/** O cadastro rápido do F6 tem só os três campos obrigatórios (o resto fica na aba Clientes). */
+type Campo = 'nome' | 'telefone' | 'cpf';
 
 function PassoNovo({
   api,

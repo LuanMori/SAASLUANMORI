@@ -92,7 +92,7 @@ describe('TelaVisaoGeral · formato', () => {
   it('venda no fiado: não entra no saldo, aparece como "a receber no fiado" no card', async () => {
     const { api, agora } = await preparar();
     const [produto] = await api.listarProdutos();
-    const maria = await api.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const maria = await api.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725', limiteFiadoCentavos: 10_000 });
     await api.criarVenda({ itens: [{ produtoId: produto!.id, quantidade: 1 }], pagamentos: [{ forma: 'fiado', valorCentavos: 2490 }], clienteId: maria.id });
     render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} aoVerFinanceiro={vi.fn()} />);
     const saldo = await screen.findByRole('button', { name: /Saldo das contas/ });

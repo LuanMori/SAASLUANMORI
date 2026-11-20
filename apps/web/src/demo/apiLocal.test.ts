@@ -373,7 +373,7 @@ describe('proteções do servidor (o que a tela não decide)', () => {
     const { ana, bruno } = await loja('busca');
     const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
     expect(await bruno.buscarClientesParaVenda('maria')).toEqual([
-      { id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888', fiadoEmAbertoCentavos: 0 },
+      { id: maria.id, nome: 'Maria Souza', cpfMascarado: '***.982.247-**', telefone: '41999998888', fiadoEmAbertoCentavos: 0, limiteFiadoCentavos: 0, fiadoVencidoCentavos: 0, diasVencido: 0 },
     ]);
     expect(JSON.stringify(await bruno.buscarClientesParaVenda('982.247'))).not.toContain('52998224725');
     expect(await bruno.buscarClientesParaVenda('   ')).toEqual([]); // sem termo, não devolve a lista inteira
@@ -416,6 +416,8 @@ describe('fiado', () => {
     expect((await ana.listarEstoque())[0]!.saldo + (await ana.listarEstoque())[1]!.saldo).toBe(20);
 
     const maria = await bruno.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    // o limite de fiado é do Dono (sem limite, a venda no fiado pede a liberação de um Dono)
+    await ana.atualizarCliente(maria.id, { nome: maria.nome, telefone: maria.telefone, cpf: maria.cpf, limiteFiadoCentavos: 10_000 });
     const v = await bruno.criarVenda({
       itens: [{ produtoId: petisco.id, quantidade: 3 }],
       pagamentos: [

@@ -67,6 +67,14 @@ export const ACOES_AUDITORIA = {
   'cliente.desativado': 'Cliente desativado',
   'cliente.reativado': 'Cliente reativado',
   'cliente.dados_excluidos': 'Dados do cliente excluídos (LGPD)',
+  'cliente.excluido': 'Cliente excluído',
+  'cliente.aviso_conferido': 'Exclusão de cliente conferida',
+  'cliente.limite': 'Limite de fiado alterado',
+  'cliente.mensagens': 'Autorização de mensagens',
+  'cliente.nao_incomodar': 'Não incomodar',
+  'cliente.cpf_visto': 'CPF completo visto',
+  'cliente.fiado_recebido': 'Fiado recebido',
+  'venda.fiado_liberado': 'Fiado liberado pelo Dono',
   // financeiro
   'financeiro.entrada': 'Entrada lançada',
   'financeiro.despesa': 'Despesa lançada',
@@ -108,6 +116,19 @@ const NOME_CAMPO_PRODUTO: Record<string, string> = {
   unidade: 'unidade',
   fornecedorId: 'fornecedor',
 };
+
+const NOME_CAMPO_CLIENTE: Record<string, string> = {
+  nome: 'nome',
+  telefone: 'telefone',
+  cpf: 'CPF',
+  extra: 'campo extra',
+  nascimento: 'nascimento',
+  endereco: 'endereço',
+  observacoes: 'observações',
+  whatsapp: 'WhatsApp',
+};
+
+const NOME_FORMA: Record<string, string> = { dinheiro: 'Dinheiro', pix: 'Pix', debito: 'Cartão de débito', credito: 'Cartão de crédito' };
 
 const NOME_CAMPO_FORNECEDOR: Record<string, string> = { nome: 'nome', documento: 'documento', telefone: 'telefone', contato: 'contato', observacao: 'observação' };
 
@@ -186,6 +207,25 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'fornecedor.alterado':
       partes.push(lista(d.campos, NOME_CAMPO_FORNECEDOR));
       break;
+    case 'cliente.alterado':
+      partes.push(lista(d.campos, NOME_CAMPO_CLIENTE));
+      break;
+    case 'cliente.limite':
+      partes.push(dinheiro(d.de) && dinheiro(d.para) ? `${dinheiro(d.de)} → ${dinheiro(d.para)}` : null);
+      break;
+    case 'cliente.mensagens':
+      partes.push(d.autorizou === true ? 'autorizou mensagens da loja' : d.autorizou === false ? 'cancelou a autorização de mensagens' : null);
+      break;
+    case 'cliente.nao_incomodar':
+      partes.push(d.ativo === true ? 'saiu das listas de lembrete' : d.ativo === false ? 'voltou para as listas de lembrete' : null);
+      break;
+    case 'cliente.fiado_recebido':
+      partes.push(dinheiro(d.valorCentavos), typeof d.forma === 'string' ? (NOME_FORMA[d.forma] ?? null) && `em ${NOME_FORMA[d.forma]}` : null);
+      break;
+    case 'venda.fiado_liberado':
+      // quem liberou fica em `autorizadoPor`, mas o texto é "liberado por"
+      partes.push(numeroVenda(d.numero), dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} no fiado`, autorizou && `liberado por ${autorizou}`);
+      return partes.filter((p): p is string => Boolean(p)).join(' • ');
     case 'caixa.aberto':
       partes.push(diaBr(d.dia), dinheiro(d.fundoCentavos) && `fundo de troco ${dinheiro(d.fundoCentavos)}`);
       break;

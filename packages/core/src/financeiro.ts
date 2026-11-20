@@ -156,7 +156,10 @@ export interface Recebivel {
   estornadoBrutoCentavos: number;
   estornadoTaxaCentavos: number;
   situacao: SituacaoRecebivel;
-  recebimento: { em: string; conta: ContaId; valorCentavos: number; por: Operador } | null;
+  /** `forma`: como o cliente pagou o fiado (Dinheiro, Pix ou cartão), quando foi pela conta do cliente. */
+  recebimento: { em: string; conta: ContaId; valorCentavos: number; por: Operador; forma?: FormaPagamento } | null;
+  /** 'fiado' = cartão usado para pagar o fiado do cliente (sem venda; vendaId vazio e vendaNumero 0). */
+  origem?: 'fiado' | null;
 }
 
 export type NovoRecebivel = Omit<Recebivel, 'id'>;
@@ -387,7 +390,10 @@ export function receberRecebivel(
         conta: ctx.conta,
         tipo: r.forma === 'fiado' ? 'recebimento_fiado' : 'recebimento_cartao',
         valorCentavos: valor,
-        descricao: `${NOME_FORMA_PAGAMENTO[r.forma]}${r.cliente ? ` • ${r.cliente.nome}` : ''} • venda ${formatarNumeroVenda(r.vendaNumero)}`,
+        descricao:
+          r.origem === 'fiado'
+            ? `${NOME_FORMA_PAGAMENTO[r.forma]} • fiado de ${r.cliente?.nome ?? 'cliente'}`
+            : `${NOME_FORMA_PAGAMENTO[r.forma]}${r.cliente ? ` • ${r.cliente.nome}` : ''} • venda ${formatarNumeroVenda(r.vendaNumero)}`,
         criadoEm: ctx.em,
         vendaId: r.vendaId,
         vendaNumero: r.vendaNumero,

@@ -76,7 +76,7 @@ describe('configurações da loja', () => {
   it('o prazo do fiado da loja vale no vencimento', async () => {
     const { ana, bruno, racao } = await loja();
     await ana.salvarRegrasDaLoja({ fiado: { prazoDias: 15 } });
-    const maria = await bruno.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725', limiteFiadoCentavos: 10_000 });
     await bruno.criarVenda({ itens: [{ produtoId: racao.id, quantidade: 1 }], pagamentos: [{ forma: 'fiado', valorCentavos: 5000 }], clienteId: maria.id });
     const [fiado] = (await ana.listarRecebiveis()).filter((r) => r.forma === 'fiado');
     expect(fiado!.venceEm).toBe('2026-12-01');
@@ -141,7 +141,9 @@ describe('histórico de todas as ações (DaniPets ACE-17)', () => {
   it('depois da exclusão de dados (LGPD), o histórico mostra "Cliente removido"', async () => {
     const { ana } = await loja();
     const maria = await ana.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
-    await ana.excluirDadosDoCliente(maria.id);
+    await autorizadoresDemo('loja-a');
+    const { autorizacao } = await ana.autorizar({ usuarioId: 'ana', senha: 'demo1234', acao: { tipo: 'excluir_dados_cliente', clienteId: maria.id } });
+    await ana.excluirDadosDoCliente(maria.id, { liberacao: { autorizacao, motivo: 'pedido do cliente' } });
     const hist = await ana.listarAuditoria();
     expect(hist.filter((h) => h.alvo?.tipo === 'cliente').map((h) => h.alvo!.nome)).toEqual(['Cliente removido', 'Cliente removido']);
   });

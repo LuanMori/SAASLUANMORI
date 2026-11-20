@@ -6,6 +6,8 @@
 import type {
   AcaoAutorizada,
   CaixaDoDia,
+  FormaReceberFiado,
+  LinhaExtrato,
   EstadoCaixa,
   FormaPagamento,
   Gaveta,
@@ -199,6 +201,80 @@ export interface ClienteDaBusca {
   telefone: string;
   /** Quanto deve no fiado (a Frente de caixa mostra na faixa do cliente, como no DaniPets). */
   fiadoEmAbertoCentavos: number;
+  /** Limite de fiado do cadastro (0 = sem fiado sem a liberação de um Dono). */
+  limiteFiadoCentavos?: number;
+  /** Parte do fiado que já venceu e há quantos dias. */
+  fiadoVencidoCentavos?: number;
+  diasVencido?: number;
+}
+
+/** Cliente sem o CPF inteiro (LGPD): o que as telas recebem. O CPF completo só por `verCpfDoCliente`. */
+export type ClienteSemCpf = Omit<Cliente, 'cpf'> & { cpfMascarado: string };
+
+export type FiltroClientes = 'todos' | 'fiado' | 'vencido' | 'incompleto' | 'nao_incomodar' | 'desativados';
+
+/** Uma linha da lista da aba Clientes. */
+export interface LinhaCliente {
+  id: string;
+  nome: string;
+  extra: string | null;
+  telefone: string;
+  whatsapp: boolean;
+  aceitaMensagens: boolean;
+  cpfMascarado: string;
+  ativo: boolean;
+  naoIncomodar: boolean;
+  /** Nome, telefone e CPF válidos (sem isso, não compra no fiado). */
+  completo: boolean;
+  compras: number;
+  ultimaCompraEm: string | null;
+  /** Só para quem vê o fiado de todos (Dono e Administrador). */
+  fiado: { devendoCentavos: number; vencidoCentavos: number; diasVencido: number; limiteCentavos: number } | null;
+}
+
+/** Uma compra no fiado em aberto, na conta do cliente. */
+export interface FiadoEmAberto {
+  vendaNumero: number;
+  criadoEm: string;
+  venceEm: string;
+  /** O que ainda falta pagar desta compra. */
+  abertoCentavos: number;
+}
+
+/** A conta do cliente (DaniPets cliContaHtml): cadastro, resumo, fiado e extrato. */
+export interface ContaDoCliente {
+  cliente: ClienteSemCpf;
+  resumo: ResumoCliente;
+  extrato: LinhaExtrato[];
+  fiado: { devendoCentavos: number; vencidoCentavos: number; diasVencido: number; abertos: FiadoEmAberto[] };
+  limiteFiadoCentavos: number;
+  /** Tem compra ou fiado: não pode ser excluído (só os dados, pela LGPD, por um Dono). */
+  temHistorico: boolean;
+}
+
+/** Uma conta em aberto na aba Fiado. */
+export interface LinhaFiado {
+  clienteId: string;
+  nome: string;
+  telefone: string;
+  ativo: boolean;
+  devendoCentavos: number;
+  vencidoCentavos: number;
+  diasVencido: number;
+  limiteCentavos: number;
+  /** A compra em aberto que vence primeiro. */
+  maisAntiga: { vendaNumero: number; venceEm: string };
+}
+
+/** Cliente sem histórico excluído pelo Vendedor: o Dono e o Administrador veem até marcar "Ciente". */
+export interface AvisoExclusaoCliente {
+  id: string;
+  clienteNome: string;
+  telefone: string;
+  motivo: string;
+  por: { id: string; nome: string };
+  em: string;
+  ciente: { por: { id: string; nome: string }; em: string } | null;
 }
 
 export interface ApiClientes {
@@ -213,10 +289,24 @@ export interface ApiClientes {
   definirClienteAtivo(id: string, ativo: boolean): Promise<Cliente>;
   historicoDoCliente(id: string): Promise<HistoricoCliente>;
   /**
-   * LGPD: apaga nome, CPF e telefone do cliente (fica "Cliente removido"; as vendas continuam, sem o
-   * nome). Só o Dono, e só sem fiado em aberto (a dívida precisa do cadastro até ser paga).
+   * LGPD: apaga nome, CPF, telefone e os outros dados do cliente (fica "Cliente removido"; as vendas
+   * continuam, sem o nome). Só o Dono, só sem fiado em aberto (a dívida precisa do cadastro até ser paga) e
+   * com a liberação de um Dono (senha e motivo).
    */
-  excluirDadosDoCliente(id: string): Promise<Cliente>;
+  excluirDadosDoCliente(id: string, opcoes?: { liberacao?: PedidoLiberacao | null }): Promise<Cliente>;
+  /** Lista da aba Clientes (até 300; a busca acha os outros): nome, campo extra, CPF ou telefone. */
+  listarContasDeClientes(filtro?: { termo?: string; filtro?: FiltroClientes }): Promise<{ clientes: LinhaCliente[]; total: number }>;
+  contaDoCliente(id: string): Promise<ContaDoCliente>;
+  /** O CPF completo (Dono e Administrador); fica registrado no histórico. */
+  verCpfDoCliente(id: string): Promise<{ cpf: string }>;
+  /** Só cliente sem compra nem fiado, com motivo. Feito pelo Vendedor, vira um aviso para o Dono e o Administrador. */
+  excluirCliente(id: string, motivo: string): Promise<void>;
+  listarAvisosDeClientes(): Promise<AvisoExclusaoCliente[]>;
+  conferirAvisoDeCliente(id: string): Promise<AvisoExclusaoCliente>;
+  /** Fiado pela conta do cliente: abate primeiro a compra mais antiga. Dinheiro só com o caixa de hoje aberto. */
+  receberFiadoDoCliente(id: string, dados: { valorCentavos: number; forma: FormaReceberFiado }): Promise<{ abatidas: { vendaNumero: number; valorCentavos: number }[]; ficaDevendoCentavos: number }>;
+  /** Aba Fiado (Dono e Administrador): quem deve, da conta mais vencida para a menos. */
+  listarFiado(): Promise<{ linhas: LinhaFiado[]; limitesCentavos: number }>;
 }
 
 // ---- Financeiro (só Dono e Administrador; Vendedor recebe 403)

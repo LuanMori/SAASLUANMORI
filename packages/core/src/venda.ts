@@ -105,6 +105,8 @@ export interface NovaVenda {
   recebidoDinheiroCentavos?: number | null;
   /** Cliente identificado (F6). O nome sai do cadastro. */
   clienteId?: string | null;
+  /** Fiado acima do limite ou com fiado vencido: a liberação de um Dono (autorização dada com senha e motivo). */
+  liberacaoFiado?: { autorizacao: string; motivo: string } | null;
 }
 
 /** Cliente gravado na venda (o nome como estava no cadastro na hora da venda). */
@@ -197,6 +199,8 @@ export interface Venda {
   devolucoes: Devolucao[];
   /** Caixa do dia em que a venda foi feita (sem: venda de antes do Caixa do dia). */
   caixaId?: string | null;
+  /** Fiado liberado por um Dono (acima do limite ou com fiado vencido): quem, o motivo e por quê. */
+  fiadoLiberado?: { por: Operador; motivo: string; motivos: string[] } | null;
 }
 
 /** Produto como o cadastro o tem na hora da venda. */
@@ -220,7 +224,11 @@ export type AcaoAutorizada =
   /** Fechamento com diferença acima da tolerância feito pelo Vendedor. */
   | { tipo: 'fechamento'; dia: string; contadoCentavos: number }
   /** Lançamento num dia com o caixa já fechado: só com a liberação de um Dono. */
-  | { tipo: 'dia_fechado'; dia: string };
+  | { tipo: 'dia_fechado'; dia: string }
+  /** Venda no fiado acima do limite ou com fiado vencido: só com a liberação de um Dono. */
+  | { tipo: 'fiado'; clienteId: string; valorCentavos: number }
+  /** Excluir os dados de um cliente (LGPD): só com a liberação de um Dono. */
+  | { tipo: 'excluir_dados_cliente'; clienteId: string };
 
 /** Autorização guardada pelo servidor depois de conferir a senha de quem autoriza. */
 export interface Autorizacao {
@@ -318,7 +326,7 @@ function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza
 }
 
 // ------------------------------------------------------------------ validação do pedido
-const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos', 'clienteId']);
+const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos', 'clienteId', 'liberacaoFiado']);
 const CAMPOS_ITEM = new Set(['produtoId', 'quantidade', 'desconto']);
 const CAMPOS_DESCONTO = new Set(['precoFinalCentavos', 'motivo', 'autorizacao']);
 const CAMPOS_PAGAMENTO = new Set(['forma', 'valorCentavos']);
@@ -442,11 +450,22 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
     } else clienteId = c.trim();
   }
 
+  // liberação do Dono para o fiado acima do limite ou com fiado vencido (módulo 6)
+  let liberacaoFiado: { autorizacao: string; motivo: string } | null = null;
+  const lf = entrada.liberacaoFiado;
+  if (lf !== undefined && lf !== null) {
+    const ok = ehObjeto(lf) && typeof lf.autorizacao === 'string' && lf.autorizacao.trim() !== '' && typeof lf.motivo === 'string';
+    const motivo = ok ? (lf.motivo as string).normalize('NFC').trim().replace(/\s+/g, ' ') : '';
+    if (!ok || !motivo || motivo.length > 200 || CONTROLE.test(motivo)) erros.push({ campo: 'liberacaoFiado', mensagem: 'Liberação do fiado inválida: informe o motivo.' });
+    else liberacaoFiado = { autorizacao: (lf.autorizacao as string).trim(), motivo };
+  }
+
   if (erros.length > 0) return { ok: false, erros };
   return {
     ok: true,
     valor: {
       clienteId,
+      ...(liberacaoFiado ? { liberacaoFiado } : {}),
       itens: [...porProduto.values()],
       // na ordem de FORMAS_PAGAMENTO, para a venda ficar igual não importa a ordem em que foi digitada
       pagamentos: FORMAS_PAGAMENTO.filter((f) => porForma.has(f)).map((forma) => ({ forma, valorCentavos: porForma.get(forma)! })),

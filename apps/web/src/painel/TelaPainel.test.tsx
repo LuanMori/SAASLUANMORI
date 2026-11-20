@@ -82,7 +82,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Relatórios', 'Usuários', 'Dados e backup'];
+    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Clientes', 'Relatórios', 'Usuários', 'Dados e backup'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');

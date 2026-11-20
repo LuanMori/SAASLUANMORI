@@ -12,7 +12,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
 | 5. Caixa do dia | **Concluído** (19/11/2026) |
-| 6. Clientes | a fazer |
+| 6. Clientes | **Concluído** (20/11/2026) |
 | 7. Fidelidade | a fazer |
 | 8. Vale-troca | a fazer |
 | 9. Financeiro | a fazer |
@@ -245,6 +245,72 @@ Sem tabela nova (decisão P3). A parte do caixa responde 501 no sistema real at�
   - a Ana desfaz o fechamento;
   - uma compra com a data de ontem é liberada pela Dona;
   - o histórico mostra as ações novas;
+  - tema escuro;
+  - celular (390 px) sem rolagem para o lado;
+  - console sem erros nem avisos.
+
+---
+
+## Módulo 6 — Clientes e fiado
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| CLI-01 | Cadastro: nome, telefone, CPF, pet, aniversário, endereço, observações, limite de fiado (gestor), WhatsApp, autorização de mensagens (com data), não incomodar | Igual. O **"Pet" virou o campo extra da loja** (decisão P12): ligado e com o nome que a loja escolher, em "Regras dos clientes" (desligado no padrão). O limite de fiado só o Dono e o Administrador mudam (a API recusa o Vendedor). A autorização de mensagens guarda quando e quem registrou | Adaptado |
+| CLI-02 | Cadastro completo (nome, telefone, CPF) exigido para o fiado | No sistema novo todo cadastro já é completo; a regra fica valendo para dados de fora: fiado só com o cadastro completo | Mantido |
+| CLI-03 | Lista: busca (nome, pet, CPF, telefone), filtros, até 300 linhas, situação | **Aba Clientes**: busca por nome, campo extra, CPF ou telefone (3 números ou mais); filtros (todos, com fiado, fiado vencido, cadastro incompleto, não incomodar, desativados); até 300 linhas; situação (cadastro incompleto, fiado vencido, acima do limite, não incomodar, em dia) | Criado |
+| CLI-04 | Conta do cliente: resumo + extrato | **Conta do cliente**: fiado em aberto, limite e disponível, compras (total e ticket médio), última compra, dados do cadastro, as compras no fiado em aberto e o **extrato** (Tudo, Compras, Fiado: compras, devoluções, compras no fiado, pagamentos e estornos do fiado) | Criado (cashback, vale e contatos entram no extrato nos módulos 7 e 8) |
+| CLI-05 | CPF mascarado; completo só quando pedido | Igual: as telas recebem o CPF mascarado (nem chega o número inteiro). O Dono e o Administrador clicam em "Mostrar", e isso fica no histórico ("CPF completo visto"). Na edição, o CPF em branco mantém o do cadastro | Adaptado |
+| CLI-06 | Editar cliente | Igual ("Editar cadastro"), com o histórico do que mudou | Criado |
+| CLI-07 | Excluir cliente sem histórico (motivo); se foi o Vendedor, aviso no painel do gestor até "Ciente" | Igual. O aviso aparece no alto da aba Clientes para o Dono e o Administrador, porque as pendências da Visão geral ainda estão a definir | Adaptado |
+| CLI-08 | Excluir dados (LGPD): só Dono, com liberação e motivo; não com fiado aberto | Igual: "Excluir dados (LGPD)" pede a **liberação do Dono** (senha e motivo). Apaga também o campo extra, o nascimento, o endereço, as observações, o limite e a autorização. As vendas continuam, sem identificar o cliente. A parte do cashback entra no módulo 7 | Adaptado |
+| CLI-09 | Desativar e reativar (gestor) | Igual ("Desativar" e "Reativar" na conta); o cliente desativado some da busca da Frente de caixa | Criado |
+| CLI-15 | Aba Fiado (gestor): devendo, limite, disponível, mais antiga, vencido ou vence em, totais, receber; aviso do CDC art. 42 | Igual: totais (a receber, vencido, limite concedido) e as contas em aberto da mais vencida para a menos, com "Receber" e "Abrir conta". O "Lembrar" (WhatsApp) entra no módulo 7 | Criado |
+| CLI-16 | Receber fiado pela conta: abate o mais antigo; dinheiro (com caixa aberto), Pix ou cartão (com taxa) | Igual: o valor (todo ou parte) abate primeiro a compra que vence primeiro. A janela mostra o que vai ser abatido e quanto fica devendo. Dinheiro só com o caixa de hoje aberto; Pix na Conta bancária; cartão fica a receber da operadora, com a taxa. O Vendedor também recebe, como no DaniPets | Criado |
+| PDV-10 | Fiado só com cadastro completo; limite por cliente; acima do limite ou com fiado vencido → liberação do Dono | Igual: na Frente de caixa, a venda no fiado que passa do limite, de cliente sem limite (limite 0) ou com fiado vencido (regra da loja, ligada no padrão) abre a **"Liberação do Dono"** (senha e motivo). O Administrador não libera. A venda guarda quem liberou e por quê | Criado |
+| PDV-11 | F6: faixa com cashback, vale, fiado/limite e cupom | A faixa do cliente mostra o fiado em aberto, o limite com o disponível (ou "Sem limite de fiado") e o fiado vencido. Cashback, vale e cupom entram nos módulos 7 e 8 | Em parte (M7, M8) |
+
+### Outros pontos
+
+- **Permissões novas**:
+  - Dono e Administrador: definir o limite de fiado, ver o CPF completo e ver o fiado de todos os clientes (a aba Fiado e o filtro de fiado);
+  - só o Dono: liberar fiado acima do limite ou com fiado vencido.
+- **Regras dos clientes** (Dono e Administrador), dentro da própria aba (decisão P5): o campo extra e as regras do fiado (prazo e "fiado vencido pede a liberação do Dono").
+- **Fiado pago em parte**: a parte paga fica separada, como "recebida". Assim, se a compra for devolvida depois, o sistema abate primeiro o que ainda estava em aberto e devolve o resto pela conta em que o pagamento entrou.
+- **Demonstração**: a cliente de exemplo Maria Oliveira tem R$ 200,00 de limite de fiado.
+- **Mudança que a pessoa vai notar**: cliente com limite 0 só compra no fiado com a liberação do Dono, como no DaniPets. Antes de registrar o fiado, defina o limite de quem compra fiado.
+
+### O que ficou para outro módulo (e por quê)
+
+- **Cashback, cupom de retorno, aba Retorno, lembretes pelo WhatsApp** ("Lembrar pagamento", "Avisar cashback") e o **regulamento** do programa: módulo 7.
+- **Vale-troca** na conta e no extrato: módulo 8.
+- **Registro de alterações dentro da conta do cliente**: o histórico completo continua em Usuários → Histórico.
+- **Avisos na Visão geral** (clientes para lembrar, fiado vencido): dependem das pendências (decisão P6, a definir).
+
+### Servidor
+
+Sem tabela nova (decisão P3). A parte nova de clientes responde 501 no sistema real até o servidor ganhar essa parte.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 339 (+14): cadastro completo, fiado do cliente, limite e liberação, receber abatendo a mais antiga, pagamento em parte e devolução depois, extrato, histórico;
+  - servidor 134;
+  - tela 292 (+14): 9 da API de clientes e 5 de telas (lista e conta, CPF, receber, aba Fiado, exclusão com aviso, regras com o campo extra, LGPD com liberação, fiado acima do limite na Frente de caixa).
+  - Os testes antigos de fiado passaram a dar limite ao cliente e a liberação para a exclusão LGPD.
+- **Navegador**:
+  - lista com o CPF oculto e o limite da Maria;
+  - "Mostrar CPF" para a Dona;
+  - extrato com as compras de exemplo;
+  - campo extra "Pet" ligado nas regras e preenchido;
+  - venda no fiado dentro do limite;
+  - venda no fiado do João (sem limite) liberada pela Dona;
+  - aba Fiado com os totais e "acima do limite";
+  - receber em dinheiro (com o caixa aberto) e em Pix;
+  - LGPD do João com liberação;
+  - em outra aba, o Bruno exclui um cliente sem histórico; o aviso aparece para a Ana (a aba atualiza sozinha) e ela marca "Ciente";
+  - histórico com as ações novas;
   - tema escuro;
   - celular (390 px) sem rolagem para o lado;
   - console sem erros nem avisos.

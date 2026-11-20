@@ -512,7 +512,13 @@ describe('Frente de caixa · cliente (F6)', () => {
 
   it('F6 acha o cliente pelo nome; a venda leva o cliente e a faixa volta para "Não identificado"', async () => {
     const loja = await criarLoja(BRUNO);
-    const maria = await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    // o limite de fiado é do Dono (sem limite, a venda no fiado pede a liberação de um Dono)
+    const maria = await criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 }).cadastrarCliente({
+      nome: 'Maria Souza',
+      telefone: '41999998888',
+      cpf: '52998224725',
+      limiteFiadoCentavos: 100_000,
+    });
     const { api } = await abrir(loja.base, BRUNO, null);
     expect(within(faixa()).getByText('Não identificado')).toBeTruthy();
     await userEvent.keyboard('{F6}');
@@ -590,7 +596,13 @@ describe('Frente de caixa · fiado (F7)', () => {
 
   it('com cliente: F7 escolhe o fiado, a venda vai para a conta do cliente e a próxima venda volta para Pix', async () => {
     const loja = await criarLoja(BRUNO);
-    const maria = await loja.base.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
+    // o limite de fiado é do Dono (sem limite, a venda no fiado pede a liberação de um Dono)
+    const maria = await criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 }).cadastrarCliente({
+      nome: 'Maria Souza',
+      telefone: '41999998888',
+      cpf: '52998224725',
+      limiteFiadoCentavos: 100_000,
+    });
     const { api } = await abrir(loja.base, BRUNO, null);
     await userEvent.keyboard('{F6}');
     await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');

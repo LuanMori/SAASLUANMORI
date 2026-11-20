@@ -45,6 +45,12 @@ retroativo liberado (o que foi lançado, o dia e quem liberou). Os textos livres
 fechamento, motivo de desfazer, motivo da liberação) ficam no próprio caixa, na compra ou no movimento de
 estoque, e não nos detalhes do histórico.
 
+Módulo 6 (Clientes e fiado, 20/11/2026): limite de fiado alterado (de → para), autorização de mensagens
+(autorizou ou cancelou), não incomodar, CPF completo visto, fiado recebido (valor e forma), fiado liberado
+pelo Dono (venda, valor e quem liberou), cliente excluído (sem histórico), exclusão de cliente conferida e
+dados do cliente excluídos (LGPD, com quem liberou). O motivo da exclusão feita pelo Vendedor fica no aviso
+para o Dono e o Administrador; o motivo da liberação, na venda ou no cadastro anonimizado.
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,

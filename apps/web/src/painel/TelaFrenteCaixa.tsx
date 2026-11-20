@@ -64,6 +64,7 @@ import {
 import { ModalCliente } from './caixa/ModalCliente';
 import { ModalDesconto } from './caixa/ModalDesconto';
 import { ModalDevolucao } from './caixa/ModalDevolucao';
+import { ModalSenha } from './caixa/ModalSenha';
 import { dataNoFuso, horaNoFuso } from './formato';
 import { usarCarga } from './usarCarga';
 
@@ -94,7 +95,13 @@ const FORMA_DA_TECLA: Record<string, FormaPagamento> = { F4: 'dinheiro', F7: 'fi
 const proximaVenda = (forma: FormaPagamento): FormaPagamento => (forma === 'fiado' ? 'pix' : forma);
 
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
-type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
+type Janela =
+  | { tipo: 'desconto'; produtoId: string }
+  | { tipo: 'devolucao' }
+  | { tipo: 'cliente' }
+  /** Fiado acima do limite ou com fiado vencido: a liberação de um Dono (módulo 6). */
+  | { tipo: 'liberarFiado'; texto: string; valorCentavos: number }
+  | null;
 
 export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa }: Props) {
   const { estado: carga, recarregar } = usarCarga(async () => {
@@ -278,7 +285,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     });
 
   // ------------------------------------------------------------------ finalizar e limpar
-  async function finalizar() {
+  async function finalizar(liberacaoFiado?: { autorizacao: string; motivo: string }) {
     if (usaFiado(pag) && !cliente) return erro(MENSAGEM_FIADO_SEM_CLIENTE);
     if (enviando || linhas.length === 0) return;
     if (pag.dividido && conta.invalido) return erro('Há um valor inválido no pagamento dividido (ex.: 12,50).');
@@ -293,7 +300,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     setEnviando(true);
     setAviso(null);
     try {
-      const venda = await api.criarVenda(montarPedido(linhas, conta, cliente));
+      const pedido = montarPedido(linhas, conta, cliente);
+      const venda = await api.criarVenda(liberacaoFiado ? { ...pedido, liberacaoFiado } : pedido);
       setLinhas([]);
       setUltimo(null);
       setCliente(null);
@@ -308,6 +316,12 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       void recarregar(); // estoque novo
       focarCodigo();
     } catch (e) {
+      // fiado acima do limite ou com fiado vencido: pede a liberação de um Dono e finaliza depois dela
+      if (e instanceof ErroApi && e.codigo === 'fiado_liberacao' && cliente && !liberacaoFiado) {
+        const noFiado = montarPedido(linhas, conta, cliente).pagamentos.filter((p) => p.forma === 'fiado').reduce((t, p) => t + p.valorCentavos, 0);
+        setJanela({ tipo: 'liberarFiado', texto: e.message, valorCentavos: noFiado });
+        return;
+      }
       erro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
       void recarregar(); // a recusa pode ser falta de estoque: mostra o saldo de agora
       if (e instanceof ErroApi && e.codigo === 'caixa') void recarregarCaixa(); // o caixa fechou em outra aba
@@ -471,6 +485,18 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                 {(cliente.fiadoEmAbertoCentavos ?? 0) > 0 && (
                   <span className="pdv-chip" title="Compras no fiado ainda não pagas">
                     Fiado em aberto {formatarCentavos(cliente.fiadoEmAbertoCentavos!)}
+                  </span>
+                )}
+                {(cliente.fiadoVencidoCentavos ?? 0) > 0 && (
+                  <span className="pdv-chip pdv-chip-ruim" title="Fiado que já passou do vencimento">
+                    {formatarCentavos(cliente.fiadoVencidoCentavos!)} vencido{cliente.diasVencido ? ` há ${cliente.diasVencido} ${cliente.diasVencido === 1 ? 'dia' : 'dias'}` : ''}
+                  </span>
+                )}
+                {cliente.limiteFiadoCentavos !== undefined && (
+                  <span className="pdv-chip" title="Limite de fiado do cadastro">
+                    {cliente.limiteFiadoCentavos > 0
+                      ? `Limite ${formatarCentavos(cliente.limiteFiadoCentavos)} • disponível ${formatarCentavos(Math.max(0, cliente.limiteFiadoCentavos - (cliente.fiadoEmAbertoCentavos ?? 0)))}`
+                      : 'Sem limite de fiado'}
                   </span>
                 )}
                 <button type="button" className="pdv-remover" onClick={tirarCliente} aria-label="Tirar o cliente da venda" title="Tirar o cliente da venda">
@@ -814,11 +840,34 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           aoFechar={fecharJanela}
         />
       )}
+      {janela?.tipo === 'liberarFiado' && cliente && (
+        <ModalSenha
+          api={api}
+          liberacao
+          acao={{ tipo: 'fiado', clienteId: cliente.id, valorCentavos: janela.valorCentavos }}
+          texto={janela.texto}
+          aoAutorizar={async (a) => {
+            fecharJanela();
+            await finalizar({ autorizacao: a.autorizacao, motivo: a.motivo });
+          }}
+          aoFechar={() => {
+            fecharJanela();
+            erro('Venda não finalizada: o fiado precisa da liberação de um Dono.');
+          }}
+        />
+      )}
       {janela?.tipo === 'cliente' && (
         <ModalCliente
           api={api}
           aoEscolher={(c, cadastradoAgora) => {
-            setCliente({ id: c.id, nome: c.nome, cpfMascarado: c.cpfMascarado, fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos });
+            setCliente({
+              id: c.id,
+              nome: c.nome,
+              cpfMascarado: c.cpfMascarado,
+              fiadoEmAbertoCentavos: c.fiadoEmAbertoCentavos,
+              ...(c.limiteFiadoCentavos !== undefined ? { limiteFiadoCentavos: c.limiteFiadoCentavos } : {}),
+              ...(c.fiadoVencidoCentavos !== undefined ? { fiadoVencidoCentavos: c.fiadoVencidoCentavos, diasVencido: c.diasVencido ?? 0 } : {}),
+            });
             setAviso({ tipo: 'ok', texto: `${cadastradoAgora ? 'Cliente cadastrado' : 'Cliente'}: ${c.nome}.` });
             fecharJanela();
           }}

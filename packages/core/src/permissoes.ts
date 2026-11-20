@@ -17,6 +17,9 @@ export const PERMISSOES = {
   caixa: 'Abrir e fechar o caixa',
   clientes: 'Cadastrar e consultar clientes',
   'clientes.desativar': 'Desativar e reativar cliente',
+  'clientes.limite': 'Definir o limite de fiado do cliente',
+  'clientes.cpf': 'Ver o CPF completo do cliente',
+  'clientes.fiado': 'Ver o fiado de todos os clientes (aba Fiado)',
   'produtos.cadastrar': 'Cadastrar produto novo',
   'produtos.alterar': 'Alterar, inativar e excluir produto',
   'estoque.lancar': 'Lançar entrada, ajuste e estoque mínimo',
@@ -36,6 +39,7 @@ export const PERMISSOES = {
   'caixa.diferenca': 'Fechar o caixa com diferença acima da tolerância sem pedir senha',
   'caixa.desfazer': 'Desfazer o fechamento do caixa',
   'dia_fechado.liberar': 'Liberar lançamento em dia com o caixa já fechado',
+  'fiado.liberar': 'Liberar venda no fiado acima do limite ou com fiado vencido',
 } as const;
 
 export type Permissao = keyof typeof PERMISSOES;
@@ -45,7 +49,7 @@ export const LISTA_PERMISSOES = Object.keys(PERMISSOES) as Permissao[];
 const TODAS = new Set<Permissao>(LISTA_PERMISSOES);
 
 /** Só o Dono, como no DaniPets. */
-const SO_DONO = new Set<Permissao>(['brinde', 'usuarios.donos', 'usuarios.excluir_dados', 'clientes.excluir_dados', 'dia_fechado.liberar']);
+const SO_DONO = new Set<Permissao>(['brinde', 'usuarios.donos', 'usuarios.excluir_dados', 'clientes.excluir_dados', 'dia_fechado.liberar', 'fiado.liberar']);
 
 /** A matriz. Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */
 const PODE: Record<PapelDeLoja, ReadonlySet<Permissao>> = {
