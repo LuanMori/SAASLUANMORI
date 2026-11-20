@@ -35,7 +35,7 @@ import { usarCarga } from './usarCarga';
 
 interface Props {
   /** resumoFinanceiro só é chamado para quem vê o Financeiro (aoVerFinanceiro). */
-  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'> & Partial<Pick<ApiPainel, 'resumoFinanceiro'>>;
+  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'> & Partial<Pick<ApiPainel, 'resumoFinanceiro' | 'lerSituacaoDoCaixa'>>;
   nome: string;
   fuso: string;
   agora?: () => Date;
@@ -45,6 +45,8 @@ interface Props {
   aoVerFinanceiro?: () => void;
   /** Link para Relatórios no rodapé do relatório. Sem isto (sem permissão), fica só o texto. */
   aoVerRelatorios?: () => void;
+  /** A situação do caixa no cabeçalho leva para o Caixa do dia (DaniPets ACE-16). */
+  aoVerCaixa?: () => void;
   /** Pendências do card. null = ainda não definidas (o card diz isso). */
   pendencias?: readonly Pendencia[] | null;
   /** Botão de uma pendência leva para a aba onde se resolve. */
@@ -63,6 +65,7 @@ export function TelaVisaoGeral({
   aoVerProdutos,
   aoVerFinanceiro,
   aoVerRelatorios,
+  aoVerCaixa,
   pendencias = null,
   aoIrPara,
   intervaloMs = 5000,
@@ -90,6 +93,17 @@ export function TelaVisaoGeral({
     comFinanceiro ? intervaloMs : 0,
   );
   const financeiro = estadoFin.tipo === 'pronto' ? estadoFin.dados : null;
+  // situação do caixa de hoje no cabeçalho ("Caixa aberto às 08:10"), como no DaniPets
+  const { estado: estadoCaixa } = usarCarga(() => (api.lerSituacaoDoCaixa ? api.lerSituacaoDoCaixa() : Promise.resolve(null)), [api, hoje], intervaloMs);
+  const caixa = estadoCaixa.tipo === 'pronto' ? estadoCaixa.dados : null;
+  const textoCaixa = !caixa
+    ? null
+    : caixa.estado === 'aberto' && caixa.abertoEm
+      ? `Caixa aberto às ${horaNoFuso(caixa.abertoEm, fuso)}`
+      : caixa.estado === 'fechado'
+        ? 'Caixa de hoje fechado'
+        : 'Caixa de hoje não aberto';
+  const classeCaixa = `caixa-situacao vg-caixa${caixa?.estado === 'aberto' ? ' caixa-aberto' : caixa?.estado === 'nao_aberto' ? ' caixa-nao-aberto' : ''}`;
 
   const produtos = estadoProdutos.tipo === 'pronto' ? estadoProdutos.dados : null;
   const ativos = produtos ? produtos.filter((p) => p.ativo).length : 0;
@@ -105,6 +119,14 @@ export function TelaVisaoGeral({
             {saudacao(instante, fuso)}, {nome} · <span className="painel-data">{dataPorExtenso(instante, fuso)}</span>
           </p>
         </div>
+        {textoCaixa &&
+          (aoVerCaixa ? (
+            <button type="button" className={classeCaixa} onClick={aoVerCaixa} title="Abrir o Caixa do dia">
+              {textoCaixa}
+            </button>
+          ) : (
+            <span className={classeCaixa}>{textoCaixa}</span>
+          ))}
       </header>
 
       {estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? (

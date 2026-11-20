@@ -3,6 +3,7 @@
 import { MENSAGEM_ACABOU_DE_BLOQUEAR, MENSAGEM_CREDENCIAIS, mensagemSemPermissao, NOME_CLIENTE_REMOVIDO, NOME_USUARIO_REMOVIDO } from '@saas/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ErroApi } from '../api';
+import { comCaixaAberto } from '../testes/caixa';
 import { criarApiLocal } from './apiLocal';
 import { apagarUsuariosDemo, conferirHashDemo, entrarDemo, gerarHashDemo, SENHA_DEMO } from './usuariosDemo';
 
@@ -29,8 +30,9 @@ function relogio() {
 }
 
 const entrar = (usuario: string, senha: string, agora = () => AGORA) => entrarDemo('lojaa', usuario, senha, { agora, atrasoMs: 0 });
+// abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
 const api = (operadorId: string, papel: 'dono' | 'administrador' | 'vendedor', agora = () => AGORA) =>
-  criarApiLocal({ lojaId: 'loja-a', operador: { id: operadorId, nome: operadorId, papel }, exemplos: false, atrasoMs: 0, agora });
+  comCaixaAberto(criarApiLocal({ lojaId: 'loja-a', operador: { id: operadorId, nome: operadorId, papel }, exemplos: false, atrasoMs: 0, agora }));
 
 describe('senha da demonstração', () => {
   it('fica guardada só como hash (PBKDF2), nunca o texto', async () => {

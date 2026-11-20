@@ -64,6 +64,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'caixa-do-dia',
     rotulo: 'Caixa do dia',
+    permissao: 'caixa',
     icone: (
       <Icone>
         <rect x="2.5" y="6" width="19" height="12" rx="2" />

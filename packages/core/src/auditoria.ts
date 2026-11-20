@@ -47,6 +47,15 @@ export const ACOES_AUDITORIA = {
   'compra.estornada': 'Compra estornada',
   'compra.lote_baixado': 'Baixa de lote (validade)',
   'conta_pagar.paga': 'Conta paga',
+  // caixa do dia
+  'caixa.aberto': 'Abertura de caixa',
+  'caixa.sangria': 'Sangria',
+  'caixa.retirada': 'Retirada do dono (gaveta)',
+  'caixa.suprimento': 'Suprimento',
+  'caixa.fechado': 'Fechamento de caixa',
+  'caixa.fechamento_automatico': 'Fechamento automático',
+  'caixa.fechamento_desfeito': 'Fechamento desfeito',
+  'dia_fechado.liberado': 'Lançamento retroativo liberado',
   // fornecedores
   'fornecedor.cadastrado': 'Fornecedor cadastrado',
   'fornecedor.alterado': 'Fornecedor alterado',
@@ -101,6 +110,11 @@ const NOME_CAMPO_PRODUTO: Record<string, string> = {
 };
 
 const NOME_CAMPO_FORNECEDOR: Record<string, string> = { nome: 'nome', documento: 'documento', telefone: 'telefone', contato: 'contato', observacao: 'observação' };
+
+/** O que foi lançado num dia com o caixa já fechado (liberação do Dono). */
+const NOME_LANCAMENTO_RETROATIVO: Record<string, string> = { compra: 'compra', ajuste: 'ajuste de estoque', entrada: 'entrada de estoque', financeiro: 'lançamento financeiro' };
+
+const diaBr = (dia: unknown) => (typeof dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia.split('-').reverse().join('/') : null);
 
 const numeroVenda = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 ? `venda nº ${String(n).padStart(5, '0')}` : null);
 const dinheiro = (c: unknown) => (typeof c === 'number' && Number.isSafeInteger(c) ? formatarCentavos(c) : null);
@@ -172,6 +186,38 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'fornecedor.alterado':
       partes.push(lista(d.campos, NOME_CAMPO_FORNECEDOR));
       break;
+    case 'caixa.aberto':
+      partes.push(diaBr(d.dia), dinheiro(d.fundoCentavos) && `fundo de troco ${dinheiro(d.fundoCentavos)}`);
+      break;
+    case 'caixa.sangria':
+      partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} da gaveta para a Conta bancária`);
+      break;
+    case 'caixa.retirada':
+      partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} da gaveta`);
+      break;
+    case 'caixa.suprimento':
+      partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} na gaveta`);
+      break;
+    case 'caixa.fechado': {
+      const dif = typeof d.diferencaCentavos === 'number' && Number.isSafeInteger(d.diferencaCentavos) ? d.diferencaCentavos : null;
+      partes.push(
+        diaBr(d.dia),
+        dinheiro(d.esperadoCentavos) && `esperado ${dinheiro(d.esperadoCentavos)}`,
+        dinheiro(d.contadoCentavos) && `contado ${dinheiro(d.contadoCentavos)}`,
+        dif === null ? null : dif === 0 ? 'sem diferença' : `${dif < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(dif))} (ajuste no Caixa físico)`,
+      );
+      break;
+    }
+    case 'caixa.fechamento_automatico':
+      partes.push(diaBr(d.dia), 'sem contagem e sem ajuste');
+      break;
+    case 'caixa.fechamento_desfeito':
+      partes.push(diaBr(d.dia), d.automatico === true ? 'era automático' : null);
+      break;
+    case 'dia_fechado.liberado':
+      // quem liberou fica em `autorizadoPor` (o servidor já busca esse nome), mas o texto é "liberado por"
+      partes.push(typeof d.oque === 'string' ? (NOME_LANCAMENTO_RETROATIVO[d.oque] ?? null) : null, diaBr(d.dia) && `data ${diaBr(d.dia)}`, autorizou && `liberado por ${autorizou}`);
+      return partes.filter((p): p is string => Boolean(p)).join(' • ');
     case 'produto.excluido':
       partes.push(typeof d.nome === 'string' ? d.nome : null, typeof d.codigo === 'string' ? `código ${d.codigo}` : null);
       break;

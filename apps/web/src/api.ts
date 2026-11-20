@@ -5,6 +5,15 @@
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
   AcaoAutorizada,
+  CaixaDoDia,
+  EstadoCaixa,
+  FormaPagamento,
+  Gaveta,
+  NovaAbertura,
+  OperacaoCaixa,
+  PedidoDesfazer,
+  PedidoFechamento,
+  PedidoLiberacao,
   Cliente,
   ConfiguracaoDaLoja,
   ContaId,
@@ -159,8 +168,11 @@ export interface ApiEstoque {
   listarEstoque(): Promise<SaldoEstoque[]>;
   /** Do mais novo para o mais antigo. */
   listarMovimentosEstoque(filtro?: FiltroMovimentosEstoque): Promise<MovimentoEstoque[]>;
-  /** Entrada (compra) ou ajuste com motivo (perda, avaria, contagem). Só Dono e Administrador. */
-  lancarMovimentoEstoque(dados: MovimentoManual): Promise<SaldoEstoque>;
+  /**
+   * Entrada (compra) ou ajuste com motivo (perda, avaria, contagem). Só Dono e Administrador. Com `dia` de um
+   * dia já fechado no Caixa do dia: 409 com codigo "dia_fechado"; `liberacao` (senha e motivo do Dono) libera.
+   */
+  lancarMovimentoEstoque(dados: MovimentoManual, opcoes?: { liberacao?: PedidoLiberacao | null }): Promise<SaldoEstoque>;
   /** Estoque mínimo do produto (null ou 0 = sem aviso). Só Dono e Administrador. */
   definirEstoqueMinimo(produtoId: string, minimo: number | null): Promise<SaldoEstoque>;
 }
@@ -257,8 +269,11 @@ export interface ApiFornecedores {
 export interface ApiCompras {
   /** Da mais nova para a mais antiga (pelo dia da compra). */
   listarCompras(filtro?: FiltroVendas): Promise<Compra[]>;
-  /** Nota repetida do mesmo fornecedor: 409 com codigo "nf_repetida"; `mesmoAssim` registra. */
-  registrarCompra(dados: NovaCompra, opcoes?: { mesmoAssim?: boolean }): Promise<Compra>;
+  /**
+   * Nota repetida do mesmo fornecedor: 409 com codigo "nf_repetida"; `mesmoAssim` registra. Data de um dia já
+   * fechado no Caixa do dia: 409 com codigo "dia_fechado"; `liberacao` (senha e motivo do Dono) libera.
+   */
+  registrarCompra(dados: NovaCompra, opcoes?: { mesmoAssim?: boolean; liberacao?: PedidoLiberacao | null }): Promise<Compra>;
   /** Compra lançada errada: estorna um item (estoque, dinheiro ou conta a pagar voltam). */
   estornarItemDaCompra(compraId: string, linha: number, motivo: string): Promise<Compra>;
   /** Contas a pagar (das compras a prazo), do vencimento mais próximo para o mais distante. */
@@ -268,6 +283,63 @@ export interface ApiCompras {
   listarLotesVencendo(): Promise<LoteVencendo[]>;
   /** O que ainda estava na prateleira sai do estoque como "Produto vencido" (0 = o lote já tinha acabado). */
   darBaixaNoLote(compraId: string, linha: number, dados: { quantidade: number; observacao?: string }): Promise<Compra>;
+}
+
+// ---- Caixa do dia (Fase 2, módulo 5): Dono, Administrador e Vendedor (permissão "caixa").
+
+/** Tudo o que a aba Caixa do dia mostra. */
+export interface PainelCaixa {
+  hoje: string;
+  /** Situação do caixa de hoje. */
+  estado: EstadoCaixa;
+  /** O caixa de hoje (aberto ou fechado), ou null. */
+  caixa: CaixaDoDia | null;
+  /** Dia anterior ainda aberto: precisa ser fechado antes de abrir o de hoje. */
+  atrasado: CaixaDoDia | null;
+  /** O caixa a fechar agora (o dia mais antigo em aberto) e a conta da gaveta dele. */
+  aFechar: { caixa: CaixaDoDia; gaveta: Gaveta } | null;
+  /** Vendas de hoje por forma de pagamento (sem as canceladas). */
+  vendasDeHoje: Record<FormaPagamento, number>;
+  /** Dinheiro movimentado desde a abertura do caixa de hoje (sem caixa aberto: o de hoje no Caixa físico). */
+  movimentos: Lancamento[];
+  /** Todos os caixas, do dia mais novo para o mais antigo. */
+  historico: CaixaDoDia[];
+  /** Saldo do Caixa físico no sistema (para conferir o fundo de troco na abertura). Só para quem vê o Financeiro. */
+  saldoCaixaFisicoCentavos: number | null;
+  /** Diferença que fecha sem a senha do Dono ou do Administrador (regras da loja). */
+  toleranciaCentavos: number;
+  ultimoDiaFechado: string | null;
+}
+
+/** A situação do caixa de hoje para a Frente de caixa e a Visão geral ("Caixa aberto às 08:10"). */
+export interface SituacaoDoCaixaHoje {
+  hoje: string;
+  estado: EstadoCaixa;
+  /** ISO 8601. */
+  abertoEm: string | null;
+  fechadoEm: string | null;
+  responsavel: string | null;
+  /** Caixa de um dia anterior ainda aberto (fecha sozinho à meia-noite; aparece só se não fechou). */
+  atrasado: string | null;
+}
+
+export interface ApiCaixa {
+  lerCaixa(): Promise<PainelCaixa>;
+  lerSituacaoDoCaixa(): Promise<SituacaoDoCaixaHoje>;
+  /** Só o de hoje, uma vez, depois de fechar os dias anteriores. Quem está logado é o responsável. */
+  abrirCaixa(dados: Partial<NovaAbertura>): Promise<CaixaDoDia>;
+  /**
+   * Sangria (deposita na Conta bancária), retirada do dono ou suprimento. Não tira mais do que o esperado na
+   * gaveta. Retirada do dono feita pelo Vendedor: a autorização dada com a senha do Dono ou do Administrador.
+   */
+  operarCaixa(dados: Omit<OperacaoCaixa, 'autorizacao'> & { autorizacao?: string | null }): Promise<Lancamento[]>;
+  /**
+   * Fecha o dia mais antigo em aberto. Diferença precisa de justificativa; acima da tolerância, o Vendedor
+   * precisa da autorização (403 com codigo "precisa_autorizacao").
+   */
+  fecharCaixa(dados: Omit<PedidoFechamento, 'justificativa' | 'autorizacao'> & { justificativa?: string | null; autorizacao?: string | null }): Promise<CaixaDoDia>;
+  /** Só o último fechamento, pelo Dono ou pelo Administrador. */
+  desfazerFechamento(caixaId: string, dados: Omit<PedidoDesfazer, 'explicacao'> & { explicacao?: string | null }): Promise<CaixaDoDia>;
 }
 
 // ---- Dados e regras da loja (Fase 2, módulo 1): todos os logados leem; Dono e Administrador alteram.
@@ -286,7 +358,7 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

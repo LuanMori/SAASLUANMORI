@@ -17,3 +17,4 @@ export * from './cliente';
 export * from './fornecedor';
 export * from './compra';
 export * from './financeiro';
+export * from './caixa';

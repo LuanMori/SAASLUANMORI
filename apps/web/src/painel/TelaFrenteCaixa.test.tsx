@@ -27,6 +27,7 @@ async function criarLoja(operador: OperadorComPapel = BRUNO, agora?: () => Date)
   const petisco = await base.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
   await base.criarProduto({ nome: 'Petisco Ossinho', codigoBarras: null, precoCentavos: 500 });
   await darEstoque('pdv', 100); // produto novo começa sem estoque
+  await base.abrirCaixa({ fundoCentavos: 10000 }); // só vende com o caixa do dia aberto (Caixa do dia)
   return { base, racao, petisco };
 }
 
@@ -35,7 +36,9 @@ async function montar({ operador = BRUNO, chave = 'carrinho-teste' }: { operador
   return abrir(loja.base, operador, chave, loja);
 }
 
-async function abrir(base: ApiPainel, operador: OperadorComPapel, chave: string | null, extra: object = {}) {
+async function abrir(base: ApiPainel, operador: OperadorComPapel, chave: string | null, extra: object = {}, { semCaixa = false } = {}) {
+  // a Frente de caixa só vende com o caixa de hoje aberto: abre, se ainda não estiver (menos no teste do caixa fechado)
+  if (!semCaixa && (await base.lerSituacaoDoCaixa()).estado === 'nao_aberto') await base.abrirCaixa({ fundoCentavos: 10000 });
   const api = { ...base, criarVenda: vi.fn(base.criarVenda) };
   const aoSair = vi.fn();
   const ui = render(
@@ -631,6 +634,7 @@ describe('Frente de caixa · produto por kg (Fase 2, módulo 2)', () => {
   async function lojaComGranel() {
     const base = criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 });
     const granel = await base.criarProduto({ nome: 'Ração a granel', codigoBarras: '2000000000015', precoCentavos: 1990, unidade: 'kg', estoqueInicial: 10_000 });
+    await base.abrirCaixa({ fundoCentavos: 10000 }); // só vende com o caixa do dia aberto
     return { base, granel };
   }
 

@@ -29,6 +29,33 @@
 //
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  abrirCaixa,
+  autorizacaoServe,
+  type CaixaDoDia,
+  conferirCaixaAberto,
+  conferirCaixaParaVender,
+  conferirDesfazer,
+  conferirFechamento,
+  conferirHojeNaoFechado,
+  conferirLiberacao,
+  desfazerFechamento,
+  diaDoLancamento,
+  fecharCaixa,
+  fecharDiasPassados,
+  FORMAS_PAGAMENTO,
+  type FormaPagamento,
+  formatarCentavos,
+  gavetaDoCaixa,
+  lancamentosDaOperacao,
+  type Liberacao,
+  movimentosDaGaveta,
+  type Resultado,
+  situacaoDoCaixa,
+  validarAbertura,
+  validarLiberacao,
+  validarOperacaoCaixa,
+  validarPedidoDesfazer,
+  validarPedidoFechamento,
   type AcaoAuditoria,
   type AcaoAutorizada,
   anonimizarCliente,
@@ -156,6 +183,8 @@ const CHAVES = {
   /** Compras por nota fiscal e contas a pagar (módulo 4). */
   compras: 'saas-demo:compras:v1',
   contasPagar: 'saas-demo:contas-pagar:v1',
+  /** Caixa do dia de cada loja: um por dia (módulo 5). */
+  caixas: 'saas-demo:caixas:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -328,9 +357,11 @@ export function instanteNoFuso(dia: string, hora: number, minuto: number, fuso: 
   return new Date(palpite - (noFuso - palpite));
 }
 
-function criarExemplos(lojaId: string, agora: Date, fuso: string): void {
+/** Cria os exemplos da loja (uma vez). Devolve true se criou as vendas de exemplo agora. */
+function criarExemplos(lojaId: string, agora: Date, fuso: string): boolean {
   const feitos = ler<string[]>(CHAVES.exemplos, []);
-  if (feitos.includes(lojaId)) return;
+  if (feitos.includes(lojaId)) return false;
+  let criouVendas = false;
 
   const criadoEm = new Date(agora.getTime() - 3 * 86_400_000).toISOString();
   const existentes = lerDaLoja<Produto>(CHAVES.produtos, lojaId);
@@ -354,6 +385,7 @@ function criarExemplos(lojaId: string, agora: Date, fuso: string): void {
 
   const vendas: Venda[] = lerDaLoja<Venda>(CHAVES.vendas, lojaId);
   if (vendas.length === 0 && produtos.length >= PRODUTOS_EXEMPLO.length) {
+    criouVendas = true;
     VENDAS_EXEMPLO.forEach((e, n) => {
       // dia e hora no fuso da loja, como todo o resto do sistema
       const quando = instanteNoFuso(somarDias(diaNoFuso(agora, fuso), -e.diasAtras), e.hora, e.minuto, fuso);
@@ -402,16 +434,20 @@ function criarExemplos(lojaId: string, agora: Date, fuso: string): void {
   gravarDaLoja(CHAVES.produtos, lojaId, produtos);
   gravarDaLoja(CHAVES.vendas, lojaId, vendas);
   gravar(CHAVES.exemplos, [...feitos, lojaId]);
+  return criouVendas;
 }
 
 const IMPLANTACAO: Operador = { id: 'implantacao', nome: 'Implantação do sistema' };
+/** Quem abriu e fechou o caixa nos dias dos exemplos (a Dona da loja de exemplo) e o fundo de troco. */
+const DONO_EXEMPLO: Operador = { id: 'ana', nome: 'Ana' };
+const FUNDO_EXEMPLO = 10_000;
 
 /**
  * Uma vez por loja: monta o estoque e o financeiro a partir das vendas que já existem (exemplos ou
  * vendas feitas em versões anteriores da demonstração). O estoque inicial de cada produto é lançado
  * de forma que, depois das vendas, sobre a quantidade do exemplo (nunca fica negativo).
  */
-function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: boolean }): void {
+function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: boolean; vendasDeExemplo?: boolean }): void {
   const feitos = ler<string[]>(CHAVES.ecossistema, []);
   if (feitos.includes(lojaId)) return;
 
@@ -460,6 +496,45 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
   }
 
   if (opcoes.exemplos) criarClientesExemplo(lojaId, produtos[0]?.criadoEm ?? new Date().toISOString());
+  // Caixa do dia dos exemplos: nos dias com vendas, o caixa abriu às 08:00 com R$ 100,00 de troco e fechou às
+  // 18:30 sem diferença. O Caixa físico começa com esses R$ 100,00 (saldo inicial da implantação), para a
+  // gaveta e o saldo baterem. O caixa de hoje fica para a pessoa abrir.
+  const caixas = lerDaLoja<CaixaDoDia>(CHAVES.caixas, lojaId);
+  if (opcoes.vendasDeExemplo && vendas.length > 0 && caixas.length === 0) {
+    const antigos = lerDaLoja<Lancamento>(CHAVES.lancamentos, lojaId);
+    const primeiroDia = vendas.map((v) => diaNoFuso(v.criadaEm, opcoes.fuso)).sort()[0]!;
+    if (!antigos.some((l) => l.conta === 'caixa' && l.tipo === 'saldo_inicial')) {
+      lancamentos.unshift(
+        comId({
+          conta: 'caixa' as const,
+          tipo: 'saldo_inicial' as const,
+          valorCentavos: FUNDO_EXEMPLO,
+          descricao: 'Saldo inicial (implantação)',
+          criadoEm: instanteNoFuso(somarDias(primeiroDia, -1), 18, 0, opcoes.fuso).toISOString(),
+          vendaId: null,
+          vendaNumero: null,
+          recebivelId: null,
+          categoria: null,
+          por: IMPLANTACAO,
+        }),
+      );
+    }
+    const todos = [...antigos, ...lancamentos];
+    const dias = [...new Set(vendas.map((v) => diaNoFuso(v.criadaEm, opcoes.fuso)))].sort();
+    for (const dia of dias) {
+      const aberto = abrirCaixa({ fundoCentavos: FUNDO_EXEMPLO, observacao: null }, { id: novoId(), hoje: dia, em: instanteNoFuso(dia, 8, 0, opcoes.fuso).toISOString(), por: DONO_EXEMPLO });
+      const gaveta = gavetaDoCaixa(aberto, todos, opcoes.fuso);
+      const { caixa } = fecharCaixa(
+        { caixa: aberto, gaveta, contadoCentavos: gaveta.esperadoCentavos, diferencaCentavos: 0, justificativa: null, precisaAutorizacao: false },
+        { em: instanteNoFuso(dia, 18, 30, opcoes.fuso).toISOString(), por: DONO_EXEMPLO, autorizadoPor: null, vendas, lancamentos: todos, fuso: opcoes.fuso },
+      );
+      caixas.push(caixa);
+      // as vendas dos exemplos ficam ligadas ao caixa do dia delas
+      for (const v of vendas) if (diaNoFuso(v.criadaEm, opcoes.fuso) === dia) v.caixaId = caixa.id;
+    }
+    gravarDaLoja(CHAVES.vendas, lojaId, vendas);
+    gravarDaLoja(CHAVES.caixas, lojaId, caixas);
+  }
   gravarDaLoja(CHAVES.estoque, lojaId, [...iniciais, ...lerDaLoja<MovimentoEstoque>(CHAVES.estoque, lojaId), ...movimentos]);
   gravarDaLoja(CHAVES.lancamentos, lojaId, [...lerDaLoja<Lancamento>(CHAVES.lancamentos, lojaId), ...lancamentos]);
   gravarDaLoja(CHAVES.recebiveis, lojaId, [...lerDaLoja<Recebivel>(CHAVES.recebiveis, lojaId), ...recebiveis]);
@@ -507,14 +582,21 @@ export function criarApiLocal({
     if (!lojaPreparada(lojaId, exemplos)) {
       await comTrava(() =>
         transacao(() => {
-          if (exemplos) criarExemplos(lojaId, agora(), fuso);
-          prepararEcossistema(lojaId, { fuso, exemplos });
+          const vendasDeExemplo = exemplos ? criarExemplos(lojaId, agora(), fuso) : false;
+          prepararEcossistema(lojaId, { fuso, exemplos, vendasDeExemplo });
         }),
       );
     }
   };
-  /** Toda operação que grava: trava entre abas + tudo ou nada. */
-  const gravarOperacao = <T,>(fn: () => T): Promise<T> => gravando(fn);
+  /**
+   * Toda operação que grava: trava entre abas + tudo ou nada. Antes, o caixa de um dia anterior que ficou
+   * aberto fecha sozinho (DaniPets: fechamento automático à meia-noite, sem contagem e sem ajuste).
+   */
+  const gravarOperacao = <T,>(fn: () => T): Promise<T> =>
+    gravando(() => {
+      fecharCaixasPassados();
+      return fn();
+    });
   /**
    * Quem está logado, como está AGORA no cadastro (o servidor também confere a cada pedido): desativado
    * em outra aba perde o acesso; papel mudado vale na hora.
@@ -571,10 +653,7 @@ export function criarApiLocal({
     if (i < 0) throw new ErroApi(404, 'Venda não encontrada.');
     return i;
   };
-  const noPeriodo = (iso: string, filtro: FiltroVendas) => {
-    const dia = diaNoFuso(iso, fuso);
-    return (!filtro.de || dia >= filtro.de) && (!filtro.ate || dia <= filtro.ate);
-  };
+  const diaNoPeriodo = (dia: string, filtro: FiltroVendas) => (!filtro.de || dia >= filtro.de) && (!filtro.ate || dia <= filtro.ate);
   const saldoDoProduto = (produtoId: string): SaldoEstoque => {
     const saldo = saldosDeEstoque(movimentosDaLoja()).get(produtoId) ?? 0;
     const minimo = minimosDaLoja()[produtoId] ?? null;
@@ -612,17 +691,73 @@ export function criarApiLocal({
     }
   };
 
+  // ---------------------------------------------------------------- caixa do dia (módulo 5)
+  const caixasDaLoja = () => lerDaLoja<CaixaDoDia>(CHAVES.caixas, lojaId);
+  const gravarCaixas = (caixas: CaixaDoDia[]) => gravarDaLoja(CHAVES.caixas, lojaId, caixas);
+  const hojeNaLoja = () => diaNoFuso(agora(), fuso);
+  const situacaoCaixa = () => situacaoDoCaixa(caixasDaLoja(), hojeNaLoja());
+  /** Com o caixa de hoje aberto: o dinheiro esperado na gaveta (o limite do que pode sair dela). */
+  const gavetaDeHoje = (): { esperadoCentavos: number } | null => {
+    const s = situacaoCaixa();
+    return s.estado === 'aberto' && s.caixa ? gavetaDoCaixa(s.caixa, lancamentosDaLoja(), fuso) : null;
+  };
+  const temCaixaPassadoAberto = () => {
+    const hoje = hojeNaLoja();
+    return caixasDaLoja().some((c) => !c.fechamento && c.dia < hoje);
+  };
+  /** Caixas de dias anteriores que ficaram abertos fecham sozinhos (sem contagem e sem ajuste). */
+  function fecharCaixasPassados() {
+    if (!temCaixaPassadoAberto()) return;
+    const r = fecharDiasPassados(caixasDaLoja(), { hoje: hojeNaLoja(), em: agora().toISOString(), vendas: vendasDaLoja(), lancamentos: lancamentosDaLoja(), fuso });
+    gravarCaixas(r.caixas);
+    for (const c of r.fechados) {
+      registrarAuditoriaDemo(lojaId, null, 'caixa.fechamento_automatico', null, { dia: c.dia, esperadoCentavos: c.fechamento!.esperadoCentavos }, agora());
+    }
+  }
+  /** Resultado das regras: recusa com a mensagem da regra (e o código para a tela reagir). */
+  const exigirOk = <T,>(r: Resultado<T>, status = 409, codigo: string | null = null): T => {
+    if (!r.ok) throw new ErroApi(status, r.erros[0]?.mensagem ?? 'Não foi possível concluir.', r.erros, codigo);
+    return r.valor;
+  };
+  const exigirHojeNaoFechado = () => exigirOk(conferirHojeNaoFechado(situacaoCaixa()), 409, 'caixa');
+  /**
+   * Dia já fechado no Caixa do dia: só com a liberação de um Dono (senha e motivo, DaniPets assertRetro).
+   * `confirmar` (no fim da operação) gasta a autorização e registra no histórico.
+   */
+  const exigirLiberacao = (dia: string, oque: string, codigo: 'compra' | 'ajuste' | 'entrada' | 'financeiro', pedido: unknown) => {
+    const v = exigirOk(validarLiberacao(pedido), 400);
+    const a = v ? (autorizacoesDaLoja().get(v.autorizacao) ?? null) : null;
+    const r = exigirOk(conferirLiberacao(dia, { hoje: hojeNaLoja(), caixas: caixasDaLoja(), oque, liberacao: v, autorizacao: a, agora: agora() }), 409, 'dia_fechado');
+    return {
+      liberacao: r.liberacao as Liberacao | null,
+      confirmar: () => {
+        if (r.autorizacaoUsada) autorizacoes.delete(r.autorizacaoUsada); // uso único
+        if (r.liberacao) auditar('dia_fechado.liberado', null, { oque: codigo, dia, autorizadoPor: r.liberacao.por.id });
+      },
+    };
+  };
+  const vendasDoDia = (dia: string): Record<FormaPagamento, number> => {
+    const porForma = Object.fromEntries(FORMAS_PAGAMENTO.map((f) => [f, 0])) as Record<FormaPagamento, number>;
+    for (const v of vendasDaLoja()) {
+      if (v.status === 'cancelada' || diaNoFuso(v.criadaEm, fuso) !== dia) continue;
+      for (const p of v.pagamentos) porForma[p.forma] += p.valorCentavos;
+    }
+    return porForma;
+  };
+
   /**
    * Desfaz no financeiro o que voltou para o cliente. Confere antes de gravar qualquer coisa
    * (devolução em dinheiro não passa do que há no Caixa) e devolve a função que grava.
    */
   const prepararEstornoFinanceiro = (venda: Venda, estornos: Pagamento[], rotulo: string, em: string, por: Operador) => {
     const todos = recebiveisDaLoja();
+    const gaveta = gavetaDeHoje();
     const r = efeitosFinanceirosDoEstorno(
       venda,
       estornos,
       todos.filter((x) => x.vendaId === venda.id),
-      { rotulo, em, por, saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa },
+      // com o caixa de hoje aberto, a devolução em dinheiro não passa do esperado na gaveta (DaniPets DEV-05)
+      { rotulo, em, por, saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa, ...(gaveta ? { gavetaCentavos: gaveta.esperadoCentavos } : {}) },
     );
     if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível estornar no financeiro.', r.erros);
     return () => {
@@ -809,6 +944,8 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigirOperador();
+        // só vende com o caixa de hoje aberto, com o responsável identificado (DaniPets PDV-12)
+        const caixa = exigirOk(conferirCaixaParaVender(situacaoCaixa()), 409, 'caixa');
 
         const validacao = validarNovaVenda(dados);
         if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
@@ -842,6 +979,7 @@ export function criarApiLocal({
           status: 'finalizada',
           cancelamento: null,
           devolucoes: [],
+          caixaId: caixa.id,
         };
         const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
         gravarVendas([...daLoja, venda]);
@@ -876,6 +1014,9 @@ export function criarApiLocal({
         if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g.papel, 'brinde')) {
           throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
         }
+        if (acao.tipo === 'dia_fechado' && !pode(g.papel, 'dia_fechado.liberar')) {
+          throw new ErroApi(403, 'Lançamento em dia com o caixa já fechado: só com a liberação de um Dono.');
+        }
         const id = novoId();
         autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
         return { autorizacao: id, autorizador: g };
@@ -892,7 +1033,10 @@ export function criarApiLocal({
         const i = acharVenda(vendas, vendaId);
         const venda = vendas[i]!;
         const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
-        const r = calcularCancelamento(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+        const s = situacaoCaixa();
+        // cancelar a venda inteira só com o caixa daquela venda aberto (DaniPets canCancelSale)
+        const caixaAberto = s.estado === 'aberto' && s.caixa ? { id: s.caixa.id } : null;
+        const r = calcularCancelamento(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso, caixaAberto });
         if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível cancelar.', r.erros);
         const em = agora().toISOString();
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
@@ -921,8 +1065,11 @@ export function criarApiLocal({
         const i = acharVenda(vendas, vendaId);
         const venda = vendas[i]!;
         const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
+        exigirHojeNaoFechado();
         const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
         if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível registrar a devolução.', r.erros);
+        // devolver em dinheiro: com o caixa de hoje aberto, e sem passar do que há na gaveta (DaniPets DEV-05)
+        if (r.valor.estornos.some((e) => e.forma === 'dinheiro' && e.valorCentavos > 0)) exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Devolução em dinheiro'), 409, 'caixa');
         const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
         const em = agora().toISOString();
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
@@ -979,16 +1126,20 @@ export function criarApiLocal({
     async listarMovimentosEstoque(filtro = {}) {
       await preparar();
       exigirOperador();
-      return maisNovosPrimeiro(movimentosDaLoja().filter((m) => (!filtro.produtoId || m.produtoId === filtro.produtoId) && noPeriodo(m.criadoEm, filtro)));
+      return maisNovosPrimeiro(movimentosDaLoja().filter((m) => (!filtro.produtoId || m.produtoId === filtro.produtoId) && diaNoPeriodo(m.dia ?? diaNoFuso(m.criadoEm, fuso), filtro)));
     },
 
-    async lancarMovimentoEstoque(dados) {
+    async lancarMovimentoEstoque(dados, opcoes = {}) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('estoque.lancar');
-        const validacao = validarMovimentoManual(dados);
+        const hoje = hojeNaLoja();
+        const validacao = validarMovimentoManual(dados, { hoje });
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Movimento inválido.', validacao.erros);
         const p = exigirProduto(validacao.valor.produtoId);
+        // data de um dia com o caixa já fechado: só com a liberação de um Dono (DaniPets assertRetro)
+        const tipoMov = validacao.valor.tipo;
+        const lib = exigirLiberacao(validacao.valor.dia ?? hoje, `${tipoMov === 'ajuste' ? 'ajuste' : 'entrada'} de estoque de ${p.nome}`, tipoMov, opcoes.liberacao);
         const unidade = unidadeDe(p.unidade);
         if (validacao.valor.tipo === 'ajuste' && !regras().estoque.motivosAjuste.includes(validacao.valor.motivo)) {
           throw new ErroApi(400, `Escolha o motivo do ajuste: ${regras().estoque.motivosAjuste.join(', ')}.`, [{ campo: 'motivo', mensagem: 'Motivo fora da lista da loja.' }]);
@@ -997,13 +1148,15 @@ export function criarApiLocal({
         if (antes + validacao.valor.quantidade < 0) {
           throw new ErroApi(409, `O ajuste deixaria o saldo de ${p.nome} negativo (saldo atual ${formatarQuantidade(antes, unidade)}).`, [{ campo: 'quantidade', mensagem: 'Saldo negativo.' }]);
         }
-        juntarMovimentos([movimentoManual(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) })]);
+        juntarMovimentos([{ ...movimentoManual(validacao.valor, { em: agora().toISOString(), por: pessoa(quem), hoje }), ...(lib.liberacao ? { liberacao: lib.liberacao } : {}) }]);
         auditar(validacao.valor.tipo === 'entrada' ? 'estoque.entrada' : 'estoque.ajuste', { tipo: 'produto', id: p.id }, {
           quantidade: validacao.valor.quantidade,
           unidade,
           motivo: validacao.valor.motivo,
           ...(validacao.valor.observacao ? { observacao: validacao.valor.observacao } : {}),
+          ...(validacao.valor.dia && validacao.valor.dia !== hoje ? { dia: validacao.valor.dia } : {}),
         });
+        lib.confirmar();
         return saldoDoProduto(p.id);
       });
     },
@@ -1158,7 +1311,7 @@ export function criarApiLocal({
     async listarLancamentos(filtro = {}) {
       await preparar();
       exigir('financeiro');
-      return maisNovosPrimeiro(lancamentosDaLoja().filter((l) => (!filtro.conta || l.conta === filtro.conta) && noPeriodo(l.criadoEm, filtro)));
+      return maisNovosPrimeiro(lancamentosDaLoja().filter((l) => (!filtro.conta || l.conta === filtro.conta) && diaNoPeriodo(diaDoLancamento(l, fuso), filtro)));
     },
 
     async listarRecebiveis(filtro = {}) {
@@ -1173,6 +1326,9 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirHojeNaoFechado();
+        // dinheiro entrando na gaveta: com o caixa de hoje aberto (senão não entra na conta da gaveta)
+        if (conta === 'caixa') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
         const todos = recebiveisDaLoja();
         const atual = todos.find((r) => r.id === id);
         if (!atual) throw new ErroApi(404, 'Recebimento não encontrado.');
@@ -1191,8 +1347,9 @@ export function criarApiLocal({
         const quem = exigir('financeiro');
         const validacao = validarLancamentoManual(dados);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
+        exigirHojeNaoFechado();
         const novos = lancamentosManuais(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) });
-        const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()));
+        const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje());
         if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
         const v = validacao.valor;
         auditar(
@@ -1208,6 +1365,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirHojeNaoFechado();
         const validacao = validarSaldoInicial(dados, lancamentosDaLoja());
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
         const [lancamento] = juntarLancamentos([
@@ -1247,6 +1405,159 @@ export function criarApiLocal({
       });
     },
 
+    // ---------------------------------------------------------------- caixa do dia (módulo 5)
+    async lerCaixa() {
+      await preparar();
+      const quem = exigir('caixa');
+      if (temCaixaPassadoAberto()) await gravarOperacao(() => undefined); // fecha sozinho o que passou da meia-noite
+      const caixas = caixasDaLoja();
+      const hoje = hojeNaLoja();
+      const s = situacaoDoCaixa(caixas, hoje);
+      const lancamentos = lancamentosDaLoja();
+      const primeiro = caixas.filter((c) => !c.fechamento).sort((a, b) => a.dia.localeCompare(b.dia))[0] ?? null;
+      const movimentos =
+        s.estado === 'aberto' && s.caixa
+          ? movimentosDaGaveta(s.caixa, lancamentos, fuso)
+          : lancamentos.filter((l) => l.conta === 'caixa' && diaDoLancamento(l, fuso) === hoje);
+      return {
+        hoje,
+        estado: s.estado,
+        caixa: s.caixa,
+        atrasado: s.atrasado,
+        aFechar: primeiro ? { caixa: primeiro, gaveta: gavetaDoCaixa(primeiro, lancamentos, fuso) } : null,
+        vendasDeHoje: vendasDoDia(hoje),
+        movimentos: [...movimentos].sort((a, b) => a.criadoEm.localeCompare(b.criadoEm)),
+        historico: [...caixas].sort((a, b) => b.dia.localeCompare(a.dia)),
+        // o saldo das contas é do Financeiro (Dono e Administrador)
+        saldoCaixaFisicoCentavos: pode(quem.papel, 'financeiro') ? saldosDasContas(lancamentos).porConta.caixa : null,
+        toleranciaCentavos: regras().caixa.toleranciaCentavos,
+        ultimoDiaFechado: s.ultimoDiaFechado,
+      };
+    },
+
+    async lerSituacaoDoCaixa() {
+      await preparar();
+      exigirOperador();
+      if (temCaixaPassadoAberto()) await gravarOperacao(() => undefined);
+      const s = situacaoCaixa();
+      return {
+        hoje: s.hoje,
+        estado: s.estado,
+        abertoEm: s.caixa?.abertura.em ?? null,
+        fechadoEm: s.caixa?.fechamento?.em ?? null,
+        responsavel: s.caixa?.abertura.por.nome ?? null,
+        atrasado: s.atrasado?.dia ?? null,
+      };
+    },
+
+    async abrirCaixa(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa');
+        const caixas = caixasDaLoja();
+        const hoje = hojeNaLoja();
+        const v = validarAbertura(dados, { hoje, caixas });
+        if (!v.ok) throw new ErroApi(v.erros[0]?.campo === '_' ? 409 : 400, v.erros[0]!.mensagem, v.erros);
+        const caixa = abrirCaixa(v.valor, { id: novoId(), hoje, em: agora().toISOString(), por: pessoa(quem) });
+        gravarCaixas([...caixas, caixa]);
+        auditar('caixa.aberto', null, { dia: hoje, fundoCentavos: caixa.abertura.fundoCentavos });
+        return caixa;
+      });
+    },
+
+    async operarCaixa(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa');
+        const s = situacaoCaixa();
+        exigirHojeNaoFechado();
+        if (s.estado !== 'aberto' || !s.caixa) throw new ErroApi(409, 'Abra o caixa de hoje primeiro.', [], 'caixa');
+        const op = exigirOk(validarOperacaoCaixa(dados), 400);
+        // retirada do dono: o Vendedor precisa da senha do Dono ou do Administrador (DaniPets V9.3.3)
+        let autorizadoPor: Operador | null = null;
+        let usada: string | null = null;
+        if (op.tipo === 'retirada' && !pode(quem.papel, 'caixa.retirada')) {
+          const a = op.autorizacao ? (autorizacoesDaLoja().get(op.autorizacao) ?? null) : null;
+          if (!autorizacaoServe(a, 'caixa.retirada', (x) => x.tipo === 'retirada' && x.valorCentavos === op.valorCentavos, agora())) {
+            throw new ErroApi(403, 'Retirada do dono: precisa da senha do Dono ou do Administrador.', [], 'precisa_autorizacao');
+          }
+          autorizadoPor = { id: a.autorizador.id, nome: a.autorizador.nome };
+          usada = a.id;
+        }
+        const novos = lancamentosDaOperacao(op, { caixa: s.caixa, em: agora().toISOString(), por: pessoa(quem), autorizadoPor });
+        // ninguém tira da gaveta mais do que o esperado nela (DaniPets CX-07)
+        exigirOk(conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje()));
+        const gravados = juntarLancamentos(novos);
+        if (usada) autorizacoes.delete(usada);
+        if (op.tipo === 'sangria') auditar('caixa.sangria', null, { valorCentavos: op.valorCentavos });
+        else if (op.tipo === 'retirada') auditar('caixa.retirada', null, { valorCentavos: op.valorCentavos, autorizadoPor: autorizadoPor?.id ?? null });
+        else auditar('caixa.suprimento', null, { valorCentavos: op.valorCentavos });
+        return gravados;
+      });
+    },
+
+    async fecharCaixa(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa');
+        const pedido = exigirOk(validarPedidoFechamento(dados), 400);
+        const caixas = caixasDaLoja();
+        const lancamentos = lancamentosDaLoja();
+        const tolerancia = regras().caixa.toleranciaCentavos;
+        const c = conferirFechamento(pedido, {
+          caixas,
+          hoje: hojeNaLoja(),
+          lancamentos,
+          fuso,
+          toleranciaCentavos: tolerancia,
+          podeQualquerDiferenca: pode(quem.papel, 'caixa.diferenca'),
+        });
+        if (!c.ok) throw new ErroApi(c.erros[0]?.campo === 'justificativa' ? 400 : 409, c.erros[0]!.mensagem, c.erros);
+        // diferença acima da tolerância: o Vendedor precisa da senha do Dono ou do Administrador (DaniPets CX-04)
+        let autorizadoPor: Operador | null = null;
+        let usada: string | null = null;
+        if (c.valor.precisaAutorizacao) {
+          const a = pedido.autorizacao ? (autorizacoesDaLoja().get(pedido.autorizacao) ?? null) : null;
+          const serve = autorizacaoServe(a, 'caixa.diferenca', (x) => x.tipo === 'fechamento' && x.dia === pedido.dia && x.contadoCentavos === pedido.contadoCentavos, agora());
+          if (!serve) {
+            throw new ErroApi(403, `Diferença acima de ${formatarCentavos(tolerancia)}: o fechamento precisa da autorização do Dono ou do Administrador.`, [], 'precisa_autorizacao');
+          }
+          autorizadoPor = { id: a.autorizador.id, nome: a.autorizador.nome };
+          usada = a.id;
+        }
+        const r = fecharCaixa(c.valor, { em: agora().toISOString(), por: pessoa(quem), autorizadoPor, vendas: vendasDaLoja(), lancamentos, fuso });
+        gravarCaixas(caixas.map((x) => (x.id === r.caixa.id ? r.caixa : x)));
+        if (r.ajuste) juntarLancamentos([r.ajuste]);
+        if (usada) autorizacoes.delete(usada);
+        const f = r.caixa.fechamento!;
+        auditar('caixa.fechado', null, {
+          dia: r.caixa.dia,
+          esperadoCentavos: f.esperadoCentavos,
+          contadoCentavos: f.contadoCentavos,
+          diferencaCentavos: f.diferencaCentavos,
+          autorizadoPor: autorizadoPor?.id ?? null,
+        });
+        return r.caixa;
+      });
+    },
+
+    async desfazerFechamento(caixaId, dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa.desfazer');
+        const pedido = exigirOk(validarPedidoDesfazer(dados), 400);
+        const caixas = caixasDaLoja();
+        const c = conferirDesfazer(caixas, caixaId, pedido);
+        if (!c.ok) throw new ErroApi(c.erros[0]!.mensagem === 'Caixa não encontrado.' ? 404 : c.erros[0]!.campo === 'explicacao' ? 400 : 409, c.erros[0]!.mensagem, c.erros);
+        const automatico = c.valor.fechamento!.automatico;
+        const r = desfazerFechamento(c.valor, { em: agora().toISOString(), por: pessoa(quem), motivo: pedido.motivo, explicacao: pedido.explicacao });
+        gravarCaixas(caixas.map((x) => (x.id === r.caixa.id ? r.caixa : x)));
+        if (r.estorno) juntarLancamentos([r.estorno]);
+        auditar('caixa.fechamento_desfeito', null, { dia: r.caixa.dia, automatico });
+        return r.caixa;
+      });
+    },
+
     // ---------------------------------------------------------------- compras e contas a pagar (módulo 4)
     async listarCompras(filtro = {}) {
       await preparar();
@@ -1272,6 +1583,11 @@ export function criarApiLocal({
         const produtos = produtosDaLoja();
         const montados = montarItensDaCompra(pedido.itens, new Map(produtos.map((p) => [p.id, p])));
         if (!montados.ok) throw new ErroApi(400, montados.erros[0]?.mensagem ?? 'Itens inválidos.', montados.erros);
+        // data de um dia com o caixa já fechado: só com a liberação de um Dono; à vista hoje: o caixa de hoje não pode estar fechado
+        const hoje = hojeNaLoja();
+        const n = montados.valor.itens.length;
+        const lib = exigirLiberacao(pedido.data, n === 1 ? `compra de ${montados.valor.itens[0]!.nome}` : `compra de ${n} itens`, 'compra', opcoes.liberacao);
+        if (pedido.pagamento.tipo === 'avista' && pedido.data === hoje) exigirHojeNaoFechado();
         const daLoja = comprasDaLoja();
         const repetida = notaRepetida(daLoja, fornecedor?.id ?? null, pedido.notaFiscal ?? null);
         if (repetida && !opcoes.mesmoAssim) {
@@ -1288,10 +1604,12 @@ export function criarApiLocal({
           totalCentavos: montados.valor.totalCentavos,
           pagamento: pedido.pagamento,
           por: pessoa(quem),
+          ...(lib.liberacao ? { liberacao: lib.liberacao } : {}),
         };
         const efeitos = efeitosDaCompra(compra);
         if (efeitos.lancamentos.length) {
-          const saida = conferirSaida(efeitos.lancamentos, saldosDasContas(lancamentosDaLoja()));
+          // à vista hoje pelo Caixa físico, com o caixa aberto: não passa do esperado na gaveta
+          const saida = conferirSaida(efeitos.lancamentos, saldosDasContas(lancamentosDaLoja()), pedido.data === hoje ? gavetaDeHoje() : null);
           if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
           juntarLancamentos(efeitos.lancamentos);
         }
@@ -1312,7 +1630,14 @@ export function criarApiLocal({
           }
           gravarDaLoja(CHAVES.produtos, lojaId, guardados);
         }
-        auditar('compra.registrada', null, { numero: compra.numero, notaFiscal: compra.notaFiscal, totalCentavos: compra.totalCentavos, pagamento: compra.pagamento.tipo });
+        auditar('compra.registrada', null, {
+          numero: compra.numero,
+          notaFiscal: compra.notaFiscal,
+          totalCentavos: compra.totalCentavos,
+          pagamento: compra.pagamento.tipo,
+          ...(compra.data !== hoje ? { dia: compra.data } : {}),
+        });
+        lib.confirmar();
         return compra;
       });
     },
@@ -1336,6 +1661,8 @@ export function criarApiLocal({
           contaPagar: cp,
         });
         if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+        // o dinheiro volta hoje para a conta: o caixa de hoje não pode estar fechado (DaniPets assertOpen)
+        if (r.valor.lancamento) exigirHojeNaoFechado();
         const atualizada: Compra = { ...compra, itens: compra.itens.map((x, j) => (j === linha ? r.valor.item : x)) };
         daLoja[i] = atualizada;
         gravarDaLoja(CHAVES.compras, lojaId, daLoja);
@@ -1359,10 +1686,17 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirHojeNaoFechado();
         const contas = contasPagarDaLoja();
         const cp = contas.find((x) => x.id === id);
         if (!cp) throw new ErroApi(404, 'Conta a pagar não encontrada.');
-        const r = pagarConta(cp, { conta, em: agora().toISOString(), por: pessoa(quem), saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa });
+        const r = pagarConta(cp, {
+          conta,
+          em: agora().toISOString(),
+          por: pessoa(quem),
+          saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa,
+          gavetaCentavos: gavetaDeHoje()?.esperadoCentavos ?? null,
+        });
         if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
         gravarDaLoja(CHAVES.contasPagar, lojaId, contas.map((x) => (x.id === id ? r.valor.contaPagar : x)));
         juntarLancamentos([r.valor.lancamento]);

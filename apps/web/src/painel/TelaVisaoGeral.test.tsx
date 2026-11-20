@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApiLocal } from '../demo/apiLocal';
+import { comCaixaAberto } from '../testes/caixa';
 import { darEstoque } from '../testes/estoque';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
 
@@ -24,8 +25,9 @@ async function preparar() {
   const mudar = (iso: string) => {
     relogio = new Date(iso);
   };
-  const comoAna = criarApiLocal({ lojaId: 'l', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
-  const comoBruno = criarApiLocal({ lojaId: 'l', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
+  // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+  const comoAna = comCaixaAberto(criarApiLocal({ lojaId: 'l', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora }));
+  const comoBruno = comCaixaAberto(criarApiLocal({ lojaId: 'l', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora }));
   const p = await comoAna.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
   await darEstoque('l', 50); // produto novo começa sem estoque
 
@@ -278,7 +280,7 @@ describe('TelaVisaoGeral · cancelamento, devolução, desconto e pagamento divi
 
   it('desconto aparece no item e no total; pagamento dividido entra em cada forma', async () => {
     const relogio = new Date('2026-11-12T15:00:00Z');
-    const api = criarApiLocal({ lojaId: 'd', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora: () => relogio });
+    const api = comCaixaAberto(criarApiLocal({ lojaId: 'd', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora: () => relogio }));
     const p = await api.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
     await darEstoque('d', 50);
     await api.criarVenda({

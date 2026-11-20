@@ -932,6 +932,41 @@ h2 { font-size: 1.05rem; }
   .compra-qtd input { width: 100%; }
 }
 
+/* Caixa do dia (Fase 2, módulo 5; DaniPets pageCash) */
+.caixa-situacao { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); white-space: nowrap; }
+.caixa-aberto { background: var(--primaria-clara); color: var(--primaria-texto-forte); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
+.caixa-nao-aberto { background: var(--erro-fundo); color: var(--erro); border-color: color-mix(in srgb, var(--erro) 30%, var(--superficie)); }
+.caixa-metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.caixa-metrica { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; }
+.caixa-metrica-rotulo { font-size: 0.8rem; color: var(--suave); }
+.caixa-metrica-valor { font-size: 1.45rem; }
+.caixa-metrica .suave { font-size: 0.8rem; }
+.caixa-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.caixa-form { display: grid; gap: 12px; padding: 0 20px 16px; }
+.caixa-form .campo { margin: 0; }
+.caixa-previa { margin: 0; font-size: 0.9rem; color: var(--suave); }
+.caixa-ok { color: var(--primaria-texto); }
+.caixa-dif { color: var(--erro); }
+.caixa-sem-dif { background: var(--primaria-clara); color: var(--primaria-texto-forte); }
+.caixa-historico .pe-situacao { margin-left: 0; }
+.pdv-caixa-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 16px 0; }
+.pdv-pilula.pdv-caixa-ok { background: #0b5f40; color: #fff; }
+.pdv-pilula.pdv-caixa-ruim { background: #9c2617; color: #fff; }
+.vg-caixa { margin-top: 6px; }
+@media (max-width: 760px) {
+  .caixa-grade { grid-template-columns: minmax(0, 1fr); }
+  .caixa-form { padding: 0 14px 14px; }
+  /* histórico de caixa em cartões: o dia em cima, os valores com rótulo, quem e a ação embaixo */
+  .caixa-historico tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; }
+  .caixa-historico td { min-width: 0; }
+  .caixa-historico td.numero { text-align: left; }
+  .caixa-historico td[data-rotulo]::before { content: attr(data-rotulo); display: block; margin-bottom: 2px; font-size: 0.72rem; color: var(--suave); }
+  .caixa-historico td[data-rotulo='Dia'] { grid-column: 1 / -1; font-weight: 700; }
+  .caixa-historico td[data-rotulo='Dia']::before, .caixa-historico td[data-rotulo='Ação']::before { content: none; }
+  .caixa-historico td[data-rotulo='Diferença'], .caixa-historico td[data-rotulo='Quem'], .caixa-historico td[data-rotulo='Ação'] { grid-column: 1 / -1; }
+  .caixa-historico td[data-rotulo='Ação'] > .suave { display: none; }
+}
+
 /* Tema escuro (DaniPets ACE-15): as mesmas variáveis, com outras cores. O verde dos botões continua
    #0b7f55 (texto branco por cima); o verde usado como TEXTO fica mais claro para dar contraste. */
 :root[data-tema='escuro'] {

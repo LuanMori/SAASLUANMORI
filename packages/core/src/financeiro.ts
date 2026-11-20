@@ -62,7 +62,11 @@ export type TipoLancamento =
   | 'transferencia_entrada'
   | 'pagamento_compra'
   | 'estorno_compra'
-  | 'pagamento_conta';
+  | 'pagamento_conta'
+  | 'sangria'
+  | 'deposito_sangria'
+  | 'suprimento'
+  | 'ajuste_caixa';
 
 export const NOME_LANCAMENTO: Record<TipoLancamento, string> = {
   saldo_inicial: 'Saldo inicial',
@@ -78,6 +82,10 @@ export const NOME_LANCAMENTO: Record<TipoLancamento, string> = {
   pagamento_compra: 'Pagamento de compra',
   estorno_compra: 'Estorno de compra',
   pagamento_conta: 'Conta paga',
+  sangria: 'Sangria',
+  deposito_sangria: 'Depósito da sangria',
+  suprimento: 'Suprimento',
+  ajuste_caixa: 'Ajuste do fechamento',
 };
 
 export interface Lancamento {
@@ -100,7 +108,19 @@ export interface Lancamento {
   /** Compra (à vista ou estornada) e conta a pagar que originaram o lançamento. */
   compraId?: string | null;
   contaPagarId?: string | null;
+  /**
+   * Dia do lançamento (AAAA-MM-DD, no fuso da loja) quando não é o dia de `criadoEm`: compra com data de um
+   * dia anterior, ajuste do fechamento de um dia anterior. Sem: o dia de `criadoEm`.
+   */
+  dia?: string | null;
+  /** Caixa do dia da operação (sangria, suprimento, retirada da gaveta, ajuste do fechamento). */
+  caixaId?: string | null;
+  /** Quem autorizou com senha (retirada do dono feita pelo Vendedor). */
+  autorizadoPor?: Operador | null;
 }
+
+/** Dia do lançamento no fuso da loja (o `dia` gravado ou o dia de `criadoEm`). */
+export const diaDoLancamento = (l: Pick<Lancamento, 'criadoEm' | 'dia'>, fuso: string = FUSO_PADRAO): string => l.dia ?? diaNoFuso(l.criadoEm, fuso);
 
 export type NovoLancamento = Omit<Lancamento, 'id'>;
 
@@ -286,6 +306,8 @@ export interface ContextoEstornoFinanceiro {
   por: Operador;
   /** Saldo atual do Caixa físico: a devolução em dinheiro não pode passar dele. Sem ele, não confere. */
   saldoCaixaCentavos?: number;
+  /** Com o caixa de hoje aberto: o dinheiro esperado na gaveta (vale no lugar do saldo do Caixa físico). */
+  gavetaCentavos?: number;
 }
 
 export interface EfeitosFinanceirosDoEstorno {
@@ -310,7 +332,10 @@ export function efeitosFinanceirosDoEstorno(
   for (const e of estornos) {
     const nome = NOME_FORMA_PAGAMENTO[e.forma];
     if (!ehAPrazo(e.forma)) {
-      if (e.forma === 'dinheiro' && ctx.saldoCaixaCentavos !== undefined && e.valorCentavos > ctx.saldoCaixaCentavos) {
+      if (e.forma === 'dinheiro' && ctx.gavetaCentavos !== undefined && e.valorCentavos > ctx.gavetaCentavos) {
+        return { ok: false, erros: [{ campo: 'estornos', mensagem: mensagemGaveta(e.valorCentavos, ctx.gavetaCentavos) }] };
+      }
+      if (e.forma === 'dinheiro' && ctx.gavetaCentavos === undefined && ctx.saldoCaixaCentavos !== undefined && e.valorCentavos > ctx.saldoCaixaCentavos) {
         return {
           ok: false,
           erros: [
@@ -446,9 +471,17 @@ export function lancamentosManuais(l: LancamentoManual, ctx: { em: string; por: 
 }
 
 /** Saída do Caixa físico não pode passar do dinheiro que há nele (o Banco pode ficar negativo). */
-export function conferirSaida(lancamentos: readonly NovoLancamento[], saldos: SaldosContas): Resultado<null> {
+export function conferirSaida(
+  lancamentos: readonly NovoLancamento[],
+  saldos: SaldosContas,
+  /** Com o caixa de hoje aberto, o limite é o dinheiro esperado na gaveta (DaniPets confirmNegative). */
+  gaveta: { esperadoCentavos: number } | null = null,
+): Resultado<null> {
   const saiDoCaixa = -lancamentos.filter((l) => l.conta === 'caixa').reduce((s, l) => s + l.valorCentavos, 0);
-  if (saiDoCaixa > 0 && saiDoCaixa > saldos.porConta.caixa) {
+  if (gaveta && saiDoCaixa > 0 && saiDoCaixa > gaveta.esperadoCentavos) {
+    return { ok: false, erros: [{ campo: 'valorCentavos', mensagem: mensagemGaveta(saiDoCaixa, gaveta.esperadoCentavos) }] };
+  }
+  if (!gaveta && saiDoCaixa > 0 && saiDoCaixa > saldos.porConta.caixa) {
     return {
       ok: false,
       erros: [{ campo: 'valorCentavos', mensagem: `O valor (${formatarCentavos(saiDoCaixa)}) é maior que o saldo do Caixa físico (${formatarCentavos(Math.max(0, saldos.porConta.caixa))}). Confira o valor digitado.` }],
@@ -456,6 +489,10 @@ export function conferirSaida(lancamentos: readonly NovoLancamento[], saldos: Sa
   }
   return { ok: true, valor: null };
 }
+
+/** Tirar da gaveta mais do que o esperado nela é recusado (DaniPets CX-07). */
+export const mensagemGaveta = (saiCentavos: number, esperadoCentavos: number): string =>
+  `O valor (${formatarCentavos(saiCentavos)}) é maior que o dinheiro esperado na gaveta (${formatarCentavos(Math.max(0, esperadoCentavos))}). Confira o valor digitado. Se entrou dinheiro sem registro, lance um suprimento antes.`;
 
 /** Saldo inicial (implantação): uma vez por conta. Pode ser zero; o Banco pode começar negativo. */
 export function validarSaldoInicial(entrada: unknown, lancamentos: readonly Pick<Lancamento, 'conta' | 'tipo'>[]): Resultado<{ conta: ContaId; valorCentavos: number }> {

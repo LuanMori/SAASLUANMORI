@@ -35,6 +35,16 @@ produto e o motivo); cliente cadastrado, alterado (quais campos), desativado, re
 excluídos; entrada, despesa, retirada do dono, transferência, saldo inicial, recebimento confirmado e
 taxas de cartão alteradas. Os nomes do DaniPets (`audit(...)`) foram mantidos nos textos.
 
+Módulos 3 e 4: fornecedor cadastrado, alterado, desativado e reativado; compra registrada (número, NF,
+total, à vista ou a prazo), compra estornada, baixa de lote (validade) e conta paga.
+
+Módulo 5 (Caixa do dia, 19/11/2026): abertura de caixa (dia e fundo de troco), sangria, suprimento,
+retirada do dono da gaveta (com quem autorizou), fechamento (esperado, contado, diferença e quem
+autorizou), fechamento automático (feito pelo "Sistema", sem pessoa), fechamento desfeito e lançamento
+retroativo liberado (o que foi lançado, o dia e quem liberou). Os textos livres (justificativa do
+fechamento, motivo de desfazer, motivo da liberação) ficam no próprio caixa, na compra ou no movimento de
+estoque, e não nos detalhes do histórico.
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,

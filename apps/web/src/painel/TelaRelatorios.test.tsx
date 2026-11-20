@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { criarApiLocal } from '../demo/apiLocal';
+import { comCaixaAberto } from '../testes/caixa';
 import { darEstoque } from '../testes/estoque';
 import { TelaRelatorios } from './TelaRelatorios';
 
@@ -17,8 +18,9 @@ const FUSO = 'America/Sao_Paulo';
 async function preparar() {
   let relogio = new Date();
   const agora = () => relogio;
-  const ana = criarApiLocal({ lojaId: 'r', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora });
-  const bruno = criarApiLocal({ lojaId: 'r', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora });
+  // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+  const ana = comCaixaAberto(criarApiLocal({ lojaId: 'r', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora }));
+  const bruno = comCaixaAberto(criarApiLocal({ lojaId: 'r', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora }));
   const p = await ana.criarProduto({ nome: 'Coleira M', codigoBarras: null, precoCentavos: 2990 });
   await darEstoque('r', 50); // produto novo começa sem estoque
   relogio = new Date('2026-10-20T15:00:00Z');

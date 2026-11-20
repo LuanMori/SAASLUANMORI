@@ -16,7 +16,7 @@
 // Quantidades na unidade do produto (unidades, ou gramas no kg) e custo por unidade ou por kg (quantidade.ts).
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import type { MovimentoEstoque, NovoMovimentoEstoque } from './estoque';
-import { type ContaId, ehConta, type NovoLancamento } from './financeiro';
+import { type ContaId, ehConta, mensagemGaveta, type NovoLancamento } from './financeiro';
 import { CONTROLE, ehObjeto } from './interno';
 import { formatarQuantidade, QUANTIDADE_MAX, type UnidadeVenda, unidadeDe, valorDaQuantidade } from './quantidade';
 import type { ErroCampo, Resultado } from './resultado';
@@ -90,6 +90,8 @@ export interface Compra {
   totalCentavos: number;
   pagamento: PagamentoCompra;
   por: Operador;
+  /** Compra com a data de um dia com o caixa já fechado: quem liberou (Dono), o motivo e quando. */
+  liberacao?: { por: Operador; motivo: string; em: string } | null;
 }
 
 export type SituacaoContaPagar = 'aberta' | 'paga' | 'cancelada';
@@ -275,6 +277,7 @@ export function efeitosDaCompra(compra: Compra): {
     tipo: 'compra',
     quantidade: i.quantidade,
     criadoEm: compra.criadaEm,
+    dia: compra.data,
     motivo: compra.notaFiscal ? `NF ${compra.notaFiscal}` : 'Compra',
     custoUnitarioCentavos: i.custoCentavos,
     compraId: compra.id,
@@ -301,6 +304,8 @@ export function efeitosDaCompra(compra: Compra): {
           por: compra.por,
           compraId: compra.id,
           contaPagarId: null,
+          // o dinheiro sai no dia da compra (a compra pode ter a data de um dia anterior)
+          dia: compra.data,
         },
       ],
       contaPagar: null,
@@ -396,13 +401,21 @@ export function calcularEstornoDoItem(
 /** Pagar uma conta a pagar (sai da conta escolhida; o Caixa físico não fica negativo). */
 export function pagarConta(
   cp: ContaPagar,
-  ctx: { conta: unknown; em: string; por: Operador; saldoCaixaCentavos: number },
+  ctx: {
+    conta: unknown;
+    em: string;
+    por: Operador;
+    saldoCaixaCentavos: number;
+    /** Com o caixa de hoje aberto: o dinheiro esperado na gaveta (vale no lugar do saldo do Caixa físico). */
+    gavetaCentavos?: number | null;
+  },
 ): Resultado<{ contaPagar: ContaPagar; lancamento: NovoLancamento }> {
   const erro = (mensagem: string, campo = '_'): Resultado<never> => ({ ok: false, erros: [{ campo, mensagem }] });
   if (cp.situacao === 'paga') return erro('Esta conta já foi paga.');
   if (cp.situacao === 'cancelada') return erro('Esta conta foi cancelada (compra estornada).');
   if (!ehConta(ctx.conta)) return erro('Escolha a conta de pagamento.', 'conta');
-  if (ctx.conta === 'caixa' && cp.valorCentavos > ctx.saldoCaixaCentavos) {
+  if (ctx.conta === 'caixa' && ctx.gavetaCentavos != null && cp.valorCentavos > ctx.gavetaCentavos) return erro(mensagemGaveta(cp.valorCentavos, ctx.gavetaCentavos), 'conta');
+  if (ctx.conta === 'caixa' && ctx.gavetaCentavos == null && cp.valorCentavos > ctx.saldoCaixaCentavos) {
     return erro(`O valor (${formatarCentavos(cp.valorCentavos)}) é maior que o saldo do Caixa físico (${formatarCentavos(Math.max(0, ctx.saldoCaixaCentavos))}).`, 'conta');
   }
   return {

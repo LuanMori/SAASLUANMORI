@@ -82,7 +82,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Produtos e estoque', 'Compras', 'Relatórios', 'Usuários', 'Dados e backup'];
+    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Relatórios', 'Usuários', 'Dados e backup'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
@@ -127,6 +127,7 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     const api = criarApiLocal({ lojaId: 'loja-x', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 });
     await api.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
     await darEstoque('loja-x', 10); // produto novo começa sem estoque
+    await api.abrirCaixa({ fundoCentavos: 0 }); // só vende com o caixa de hoje aberto
     render(
       <TelaPainel
         api={api}

@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApiLocal } from '../demo/apiLocal';
+import { comCaixaAberto } from '../testes/caixa';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 
 beforeEach(() => localStorage.clear());
@@ -14,7 +15,8 @@ const FUSO = 'America/Sao_Paulo';
 const ANA: OperadorComPapel = { id: 'ana', nome: 'Ana', papel: 'dono' };
 const BRUNO: OperadorComPapel = { id: 'bruno', nome: 'Bruno', papel: 'vendedor' };
 const txt = (t: string | null | undefined) => (t ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
-const api = (operador: OperadorComPapel) => criarApiLocal({ lojaId: 'pe', operador, exemplos: false, atrasoMs: 0 });
+// abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+const api = (operador: OperadorComPapel) => comCaixaAberto(criarApiLocal({ lojaId: 'pe', operador, exemplos: false, atrasoMs: 0 }));
 
 /** Abre a tela; `antes` prepara os dados pela API (antes de a tela carregar). */
 async function abrir(operador: OperadorComPapel, confirmar: (t: string) => boolean = () => true, antes?: (a: ReturnType<typeof api>) => Promise<unknown>) {
@@ -54,7 +56,8 @@ describe('Produtos e estoque · cadastro completo e kg', () => {
       'kg',
     );
     expect(txt((await screen.findByRole('status')).textContent)).toBe('Ração a granel cadastrado com o código 0001 (R$ 19,90 o kg).');
-    const linha = linhaDe('Ração a granel');
+    // a mensagem chega antes da lista recarregar: espera a linha do produto
+    const linha = await waitFor(() => linhaDe('Ração a granel'));
     expect(celula(linha, 'Produto')).toContain('a granel (kg)');
     expect(celula(linha, 'Produto')).toContain('Golden · 15 kg');
     expect(celula(linha, 'Preço')).toBe('R$ 19,90 /kg');
@@ -80,14 +83,14 @@ describe('Produtos e estoque · cadastro completo e kg', () => {
     await userEvent.click(within(janela()).getByRole('button', { name: 'Lançar ajuste' }));
     expect(txt((await screen.findByText(/Ajuste lançado/)).textContent)).toBe('Ajuste lançado: Ração a granel -0,5 kg. Saldo agora: 27 kg.');
     const movimentos = within(screen.getByRole('region', { name: 'Últimos movimentos do estoque' }));
-    expect(textoDaLinha(movimentos.getAllByRole('row')[1]!)).toMatch(/\| Ração a granel \| Ajuste \| -0,5 kg \| Perda ou avaria — saco rasgado \| Ana$/);
+    await waitFor(() => expect(textoDaLinha(movimentos.getAllByRole('row')[1]!)).toMatch(/\| Ração a granel \| Ajuste \| -0,5 kg \| Perda ou avaria — saco rasgado \| Ana$/));
 
     // mínimo em kg
     await userEvent.click(within(linhaDe('Ração a granel')).getByRole('button', { name: 'Estoque mínimo de Ração a granel' }));
     await userEvent.type(within(janela()).getByLabelText(/Estoque mínimo em kg/), '30');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Salvar mínimo' }));
     await screen.findByText('Estoque mínimo de Ração a granel: 30 kg.');
-    expect(celula(linhaDe('Ração a granel'), 'Estoque')).toBe('27 kgbaixo');
+    await waitFor(() => expect(celula(linhaDe('Ração a granel'), 'Estoque')).toBe('27 kgbaixo'));
 
     // como o saldo é calculado
     await userEvent.click(within(linhaDe('Ração a granel')).getByRole('button', { name: 'Como o saldo de Ração a granel é calculado' }));
@@ -160,7 +163,7 @@ describe('Produtos e estoque · cadastro completo e kg', () => {
 
     await userEvent.click(within(linhaDe('Shampoo 500 ml')).getByRole('button', { name: 'Inativar Shampoo 500 ml' }));
     await screen.findByText('Shampoo 500 ml foi inativado: não aparece mais na Frente de caixa.');
-    expect(celula(linhaDe('Shampoo 500 ml'), 'Produto')).toMatch(/inativo/);
+    await waitFor(() => expect(celula(linhaDe('Shampoo 500 ml'), 'Produto')).toMatch(/inativo/));
     await userEvent.click(within(linhaDe('Shampoo 500 ml')).getByRole('button', { name: 'Reativar Shampoo 500 ml' }));
     await screen.findByText('Shampoo 500 ml foi reativado.');
 
@@ -206,7 +209,7 @@ describe('Produtos e estoque · quem pode', () => {
     await userEvent.type(within(janela()).getByLabelText('Estoque inicial em unidades (opcional)'), '10');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Cadastrar produto' }));
     await screen.findByText(/Petisco cadastrado/);
-    expect(celula(linhaDe('Petisco'), 'Estoque')).toBe('10 un');
+    await waitFor(() => expect(celula(linhaDe('Petisco'), 'Estoque')).toBe('10 un'));
     // a API recusa o custo mesmo se a tela fosse forçada
     await expect(api(BRUNO).criarProduto({ nome: 'Outro', codigoBarras: null, precoCentavos: 100, estoqueInicial: 1, custoInicialCentavos: 50 })).rejects.toMatchObject({ status: 403 });
     await expect(api(BRUNO).alterarProduto('qualquer', { precoCentavos: 1 })).rejects.toMatchObject({ status: 403 });

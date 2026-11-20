@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ErroApi } from '../api';
 import { criarApiLocal } from './apiLocal';
+import { comCaixaAberto } from '../testes/caixa';
 
 const AGORA = new Date('2026-11-19T15:00:00Z'); // 12:00 em Brasília
 const HOJE = '2026-11-19';
@@ -23,8 +24,9 @@ async function erro(p: Promise<unknown>): Promise<ErroApi> {
 
 async function loja() {
   const opcoes = { lojaId: 'compras-api', exemplos: false, atrasoMs: 0, agora: () => AGORA };
-  const ana = criarApiLocal({ ...opcoes, operador: ANA });
-  const bruno = criarApiLocal({ ...opcoes, operador: BRUNO });
+  // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+  const ana = comCaixaAberto(criarApiLocal({ ...opcoes, operador: ANA }));
+  const bruno = comCaixaAberto(criarApiLocal({ ...opcoes, operador: BRUNO }));
   const racao = await ana.criarProduto({ nome: 'Ração 15 kg', codigoBarras: null, precoCentavos: 18990 });
   const granel = await ana.criarProduto({ nome: 'Ração a granel', codigoBarras: null, precoCentavos: 1990, unidade: 'kg' });
   const sul = await ana.cadastrarFornecedor({ nome: 'Pet Sul', documento: null, telefone: null, contato: null, observacao: null });

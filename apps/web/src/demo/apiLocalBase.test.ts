@@ -7,6 +7,7 @@ import { darEstoque } from '../testes/estoque';
 import { apagarDadosDemo, configuracaoDemo, criarApiLocal } from './apiLocal';
 import { usarArmazenamentoParaTeste } from './armazenamento';
 import { apagarUsuariosDemo, autorizadoresDemo } from './usuariosDemo';
+import { comCaixaAberto } from '../testes/caixa';
 
 const AGORA = new Date('2026-11-16T15:00:00Z'); // 12:00 em Brasília
 const ANA = { id: 'ana', nome: 'Ana', papel: 'dono' as const };
@@ -31,8 +32,9 @@ async function erro(p: Promise<unknown>): Promise<ErroApi> {
 
 async function loja(lojaId = 'loja-a', extra: { aoSessaoEncerrada?: (m: string) => void } = {}) {
   const opcoes = { lojaId, exemplos: false, atrasoMs: 0, agora: () => AGORA };
-  const ana = criarApiLocal({ ...opcoes, operador: ANA });
-  const bruno = criarApiLocal({ ...opcoes, operador: BRUNO, ...extra });
+  // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+  const ana = comCaixaAberto(criarApiLocal({ ...opcoes, operador: ANA }));
+  const bruno = comCaixaAberto(criarApiLocal({ ...opcoes, operador: BRUNO, ...extra }));
   const racao = await ana.criarProduto({ nome: 'Ração 3 kg', codigoBarras: null, precoCentavos: 5000 });
   await darEstoque(lojaId, 20);
   return { ana, bruno, racao };

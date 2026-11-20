@@ -8,6 +8,7 @@
 //   - últimos movimentos, com a venda de origem, o motivo e quem lançou.
 // O Vendedor cadastra produto novo e consulta, como no DaniPets.
 import {
+  diaNoFuso,
   type ConfiguracaoDaLoja,
   type Fornecedor,
   formatarCentavos,
@@ -41,6 +42,8 @@ type ApiDaTela = Pick<
   | 'lerConfiguracao'
   | 'salvarRegrasDaLoja'
   | 'listarFornecedores'
+  | 'listarAutorizadores'
+  | 'autorizar'
 >;
 
 interface Props {
@@ -357,6 +360,7 @@ export function TelaProdutosEstoque({ api, papel, fuso, intervaloMs = 5000, conf
           produto={janela.produto}
           atual={saldoDe(janela.produto)}
           motivos={dados.regras.estoque.motivosAjuste}
+          hoje={diaNoFuso(new Date(), fuso)}
           api={api}
           aoConcluir={concluir}
           aoFechar={() => setJanela(null)}

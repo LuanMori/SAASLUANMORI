@@ -64,7 +64,7 @@ import {
 import { ModalCliente } from './caixa/ModalCliente';
 import { ModalDesconto } from './caixa/ModalDesconto';
 import { ModalDevolucao } from './caixa/ModalDevolucao';
-import { dataNoFuso } from './formato';
+import { dataNoFuso, horaNoFuso } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
@@ -80,6 +80,8 @@ interface Props {
   aoSair: () => void;
   /** Desconto que o Vendedor dá sem senha (regra da loja; padrão 10%, como o DaniPets). */
   limiteDescontoPct?: number;
+  /** "Abrir caixa": vai para a aba Caixa do dia (sem caixa aberto não há vendas). */
+  aoAbrirCaixa?: () => void;
 }
 
 /** De quanto em quanto tempo o saldo de estoque é buscado de novo (outra pessoa pode ter vendido). */
@@ -94,11 +96,14 @@ const proximaVenda = (forma: FormaPagamento): FormaPagamento => (forma === 'fiad
 type Aviso = { tipo: 'ok' | 'erro'; texto: string } | null;
 type Janela = { tipo: 'desconto'; produtoId: string } | { tipo: 'devolucao' } | { tipo: 'cliente' } | null;
 
-export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct }: Props) {
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa }: Props) {
   const { estado: carga, recarregar } = usarCarga(async () => {
     const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
     return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
   }, [api], ATUALIZAR_ESTOQUE_MS);
+  // situação do caixa de hoje (DaniPets: "Caixa aberto às 08:10" / "CAIXA DE HOJE NÃO ABERTO")
+  const { estado: cargaCaixa, recarregar: recarregarCaixa } = usarCarga(() => api.lerSituacaoDoCaixa(), [api], ATUALIZAR_ESTOQUE_MS);
+  const caixa = cargaCaixa.tipo === 'pronto' ? cargaCaixa.dados : null;
   const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.produtos.filter((p) => p.ativo) : []), [carga]);
   const saldos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.saldos : new Map<string, number>()), [carga]);
   const porId = useMemo(() => new Map(produtos.map((p) => [p.id, p])), [produtos]);
@@ -305,6 +310,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     } catch (e) {
       erro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a venda. Tente de novo.');
       void recarregar(); // a recusa pode ser falta de estoque: mostra o saldo de agora
+      if (e instanceof ErroApi && e.codigo === 'caixa') void recarregarCaixa(); // o caixa fechou em outra aba
     } finally {
       setEnviando(false);
     }
@@ -382,12 +388,31 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           <span className="pdv-pilula">
             Operador: <b>{operador.nome}</b>
           </span>
+          {caixa?.estado === 'aberto' && caixa.abertoEm && <span className="pdv-pilula pdv-caixa-ok">Caixa aberto às {horaNoFuso(caixa.abertoEm, fuso)}</span>}
+          {caixa?.estado === 'fechado' && (
+            <span className="pdv-pilula pdv-caixa-ruim">CAIXA DE HOJE FECHADO{caixa.fechadoEm ? ` às ${horaNoFuso(caixa.fechadoEm, fuso)}` : ''}</span>
+          )}
+          {caixa?.estado === 'nao_aberto' && <span className="pdv-pilula pdv-caixa-ruim">CAIXA DE HOJE NÃO ABERTO</span>}
           <span className="pdv-pilula">{dataNoFuso(agora(), fuso)}</span>
         </div>
         <button type="button" className="pdv-sair" onClick={aoSair}>
           ← Painel
         </button>
       </header>
+      {caixa && caixa.estado !== 'aberto' && (
+        <div className="alerta alerta-erro pdv-caixa-aviso" role="status">
+          <span>
+            {caixa.estado === 'fechado'
+              ? 'O caixa de hoje já foi fechado. Para vender hoje, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia.'
+              : 'O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.'}
+          </span>
+          {aoAbrirCaixa && (
+            <button type="button" className="botao" onClick={aoAbrirCaixa}>
+              {caixa.estado === 'fechado' ? 'Ir para Caixa do dia' : 'Abrir caixa'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="pdv-corpo">
         <section className="pdv-esquerda" aria-label="Itens da venda">

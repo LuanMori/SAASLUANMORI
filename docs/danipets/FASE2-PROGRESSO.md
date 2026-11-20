@@ -11,7 +11,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 2. Produtos e estoque | **Concluído** (19/11/2026) |
 | 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
-| 5. Caixa do dia | a fazer |
+| 5. Caixa do dia | **Concluído** (19/11/2026) |
 | 6. Clientes | a fazer |
 | 7. Fidelidade | a fazer |
 | 8. Vale-troca | a fazer |
@@ -180,3 +180,71 @@ servidor ganhar essa parte.
   volta para a Conta bancária); custo médio R$ 118,00 em Produtos e estoque; conta do saldo com as compras;
   histórico com as ações novas; celular (390 px) sem rolagem lateral, com os itens da nota em cartões;
   console sem erros nem avisos.
+
+---
+
+## Módulo 5 — Caixa do dia
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| CX-01 | Abrir: responsável + fundo de troco; precisa fechar o dia anterior antes | **"Abrir caixa de hoje"**: fundo de troco e observação; o responsável é quem está logado (não dá para digitar outro nome). Um caixa por loja por dia (decisão P4); só o de hoje, e só depois de fechar os dias anteriores. Para o Dono e o Administrador, a dica mostra quanto o Caixa físico tem no sistema | Criado |
+| CX-02 | Sangria (deposita no banco ou retirada do dono), suprimento; não tira mais do que a gaveta tem; retirada do dono só com Dono/Admin | Igual: a sangria sai da gaveta e entra na Conta bancária; a **retirada do dono** só sai da gaveta, e o Vendedor precisa da senha do Dono ou do Administrador (quem autorizou fica no lançamento); o suprimento põe dinheiro na gaveta. Nada tira mais do que o esperado na gaveta | Criado |
+| CX-03 | Esperado na gaveta = fundo + dinheiro movimentado depois da abertura; resumo | Igual (o saldo inicial e o ajuste do fechamento não entram). No alto da aba: aberto às e responsável, fundo de troco, esperado na gaveta e as vendas de hoje por forma | Criado |
+| CX-04 | Fechar: contado, diferença, justificativa; acima de R$ 10 → senha do Dono/Admin; ajuste no Caixa físico; totais por forma | Igual, com a **tolerância da loja** ("Regras do caixa" na própria aba, decisão P5; padrão R$ 10,00). Sempre fecha o dia mais antigo em aberto. O fechamento guarda os números do dia: vendas por forma, sangrias, retiradas, suprimentos e devoluções em dinheiro | Adaptado (tolerância configurável) |
+| CX-05 | Desfazer só o último fechamento (motivo + senha), estornando o ajuste | Só o último fechamento e sem caixa aberto depois dele; só o Dono e o Administrador; motivo obrigatório (no fechamento automático, também a explicação). O ajuste é estornado com um lançamento contrário, e o fechamento desfeito continua guardado no caixa ("fechamento desfeito 1 vez") | Criado |
+| CX-06 | Fechamento automático à meia-noite, sem contagem | Igual: o caixa de um dia anterior que ficou aberto fecha sozinho, sem contagem e sem ajuste. Na demonstração isso acontece no primeiro uso do dia seguinte; no servidor, vai ser uma tarefa agendada. No histórico aparece como "Fechamento automático", feito pelo Sistema | Criado |
+| CX-07 | Histórico (dia, fundo, esperado, contado, diferença, quem) e movimentos do dia | **Histórico de caixa**: dia, fundo, esperado, contado, diferença com a justificativa, quem abriu, fechou e autorizou, e quantas vezes o fechamento foi desfeito. **Movimentos em dinheiro desde a abertura**: hora, descrição, tipo, quem fez e quem autorizou. No celular, o histórico vira cartões com rótulo | Criado |
+| CX-08 | Dia já fechado fica travado; lançar nele só com a liberação do Dono | Igual: os dias anteriores até o último caixa fechado ficam travados. **Compra** e **entrada ou ajuste de estoque** com a data de um dia travado pedem a **"Liberação do Dono"** (senha e motivo; o Administrador não libera). A liberação vale uma vez e fica registrada na compra ou no movimento e no histórico ("Lançamento retroativo liberado"). Com o caixa de hoje fechado, não dá para vender, devolver, pagar conta nem lançar no Financeiro | Criado |
+| CX-09 | Backup automático ao fechar o caixa | Fica para o módulo 13 (exportar e importar os dados): na demonstração, um lembrete de exportar ao fechar | Para o M13 |
+| PDV-12 | Só vende com o caixa aberto e o responsável identificado; caixa de hoje fechado bloqueia | Igual: a API recusa. A Frente de caixa mostra a situação ("Caixa aberto às 08:10", "CAIXA DE HOJE NÃO ABERTO" ou "CAIXA DE HOJE FECHADO") e um aviso com o botão **"Abrir caixa"**. A venda guarda o caixa do dia; cancelar a venda inteira só com o caixa daquela venda aberto | Criado |
+| DEV-05 | Devolução em dinheiro exige caixa aberto e não passa do que há na gaveta | Igual: em dinheiro, só com o caixa de hoje aberto e até o esperado na gaveta. Nas outras formas, basta o dia não estar fechado | Adaptado |
+| ACE-16 | Cabeçalho com a situação do caixa | A situação aparece no cabeçalho da Visão geral (clicar nela leva para o Caixa do dia), na Frente de caixa e no topo da aba | Adaptado |
+| ACE-10 | Liberação do Dono com motivo | Pronta e usada nos dias fechados. O fiado acima do limite usa a mesma janela no módulo 6 | Em parte (M6) |
+
+### O caixa nas outras partes
+
+- **Compra à vista** com a data de hoje: o caixa de hoje não pode estar fechado. Pelo Caixa físico, com o caixa aberto, não passa do esperado na gaveta. O dinheiro sai **no dia da compra**, mesmo quando a compra tem a data de um dia anterior.
+- **Pagar conta a pagar**, **lançamento no Financeiro**, **saldo inicial** e **estorno de compra** que devolve dinheiro: o caixa de hoje não pode estar fechado. Pelo Caixa físico, com o caixa aberto, não passa do esperado na gaveta.
+- **Receber em dinheiro** (recebimento confirmado no Caixa físico): só com o caixa de hoje aberto.
+- **Entrada e ajuste de estoque** ganharam a data (hoje ou antes). Era o que tinha ficado do módulo 2.
+- **Permissões novas** (`packages/core/src/permissoes.ts`): fazer a retirada do dono, fechar com diferença acima da tolerância e desfazer o fechamento (Dono e Administrador); liberar lançamento em dia fechado (só o Dono).
+- **Histórico**: nos detalhes ficam só valores, dias e ids. A justificativa e os motivos ficam no próprio caixa, na compra ou no movimento (`docs/decisoes/0001-auditoria.md`).
+- **Demonstração**: nos dias das vendas de exemplo, o caixa abriu às 08:00 com R$ 100,00 de troco e fechou às 18:30 sem diferença. O Caixa físico começa com esses R$ 100,00 (saldo inicial da implantação). O caixa de hoje fica para a pessoa abrir.
+
+### O que ficou para outro módulo (e por quê)
+
+- **Lançamento financeiro com data de outro dia** (FIN-03): entra com a tela do Financeiro (módulo 9). A liberação do Dono já está pronta para ele.
+- **Receber o fiado em dinheiro pela conta do cliente**: módulo 6. A regra do caixa aberto já vale.
+- **Vale-troca** no resumo do fechamento: módulo 8.
+- **Backup ao fechar o caixa** (CX-09): módulo 13.
+- **Data antes do início do uso do sistema**: o DaniPets recusava. A loja do SaaS ainda não tem a data de implantação; por enquanto o sistema recusa só data inválida ou futura.
+
+### Servidor
+
+Sem tabela nova (decisão P3). A parte do caixa responde 501 no sistema real até o servidor ganhar essa parte. Lá, o fechamento automático vai ser uma tarefa agendada para a meia-noite de cada loja.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 325 (+27): abrir, gaveta, sangria, retirada e suprimento, fechar com tolerância, fechamento automático, desfazer, dia travado e liberação, cancelamento e devolução com o caixa, data no estoque;
+  - servidor 134;
+  - tela 278 (+20): 12 da API do caixa e 8 de telas (Caixa do dia, Frente de caixa sem caixa, Visão geral, compra e ajuste em dia fechado).
+  - Os testes que vendem sem tratar do caixa abrem o caixa sozinhos (`apps/web/src/testes/caixa.ts`).
+  - Três testes de tela dos módulos 2 e 4 às vezes falhavam com o computador ocupado: liam a tabela antes
+    de ela recarregar. Passaram a esperar o dado novo. A suíte inteira rodou 3 vezes seguidas sem falhas.
+- **Navegador**:
+  - Visão geral com "Caixa de hoje não aberto" (o clique leva ao Caixa do dia);
+  - histórico com os 2 dias dos exemplos;
+  - abertura com R$ 130,00 (a dica mostra o saldo do Caixa físico);
+  - na Frente de caixa, a pílula verde e uma venda de R$ 15,00 em dinheiro;
+  - sangria e suprimento, com o esperado certo;
+  - em outra aba, o Bruno faz a retirada com a senha da Ana e fecha com falta de R$ 15,00 autorizada pelo Caio;
+  - a Frente de caixa passa a mostrar "CAIXA DE HOJE FECHADO", e a aba da Ana atualiza sozinha;
+  - a Ana desfaz o fechamento;
+  - uma compra com a data de ontem é liberada pela Dona;
+  - o histórico mostra as ações novas;
+  - tema escuro;
+  - celular (390 px) sem rolagem para o lado;
+  - console sem erros nem avisos.

@@ -26,7 +26,7 @@ import {
   validarFornecedor,
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
-import { type ApiCompras, type ApiFornecedores, type ApiProdutos, ErroApi } from '../api';
+import { type ApiCompras, type ApiFornecedores, type ApiProdutos, type ApiVendas, ErroApi } from '../api';
 import { Modal } from './caixa/Modal';
 import { ModalCompra } from './compras/ModalCompra';
 import { ModalBaixaLote, ModalEstornoItem, ModalPagarConta } from './compras/ModaisCompra';
@@ -34,7 +34,7 @@ import { plural } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: ApiFornecedores & ApiCompras & Pick<ApiProdutos, 'listarProdutos'>;
+  api: ApiFornecedores & ApiCompras & Pick<ApiProdutos, 'listarProdutos'> & Pick<ApiVendas, 'listarAutorizadores' | 'autorizar'>;
   fuso?: string;
   agora?: () => Date;
   /** Para testes: as perguntas "mesmo assim?". */
@@ -255,6 +255,11 @@ export function TelaCompras({ api, fuso = FUSO_PADRAO, agora = () => new Date(),
                           <td data-rotulo="Compra">
                             nº {c.numero} • {dataBr(c.data)}
                             {c.notaFiscal && <small className="suave pe-detalhe">NF {c.notaFiscal}</small>}
+                            {c.liberacao && (
+                              <small className="suave pe-detalhe" title={`Motivo: ${c.liberacao.motivo}`}>
+                                dia já fechado • liberada por {c.liberacao.por.nome}: {c.liberacao.motivo}
+                              </small>
+                            )}
                             {valendo === 0 && <span className="tag-cancelada">estornada</span>}
                           </td>
                           <td data-rotulo="Fornecedor">{c.fornecedor?.nome ?? '—'}</td>

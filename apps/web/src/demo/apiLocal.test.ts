@@ -2,6 +2,7 @@
 // A venda da Frente de caixa alimenta o resto do sistema: estoque, clientes, financeiro.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ErroApi } from '../api';
+import { comCaixaAberto } from '../testes/caixa';
 import { darEstoque } from '../testes/estoque';
 import { apagarDadosDemo, criarApiLocal, instanteNoFuso } from './apiLocal';
 
@@ -25,8 +26,9 @@ async function erro(promessa: Promise<unknown>): Promise<ErroApi> {
 async function loja(lojaId = 'eco') {
   let relogio = AGORA;
   const opcoes = { lojaId, exemplos: false, atrasoMs: 0, agora: () => relogio };
-  const ana = criarApiLocal({ ...opcoes, operador: ANA });
-  const bruno = criarApiLocal({ ...opcoes, operador: BRUNO });
+  // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
+  const ana = comCaixaAberto(criarApiLocal({ ...opcoes, operador: ANA }));
+  const bruno = comCaixaAberto(criarApiLocal({ ...opcoes, operador: BRUNO }));
   const racao = await ana.criarProduto({ nome: 'Ração 3 kg', codigoBarras: null, precoCentavos: 5000 });
   const petisco = await ana.criarProduto({ nome: 'Petisco', codigoBarras: null, precoCentavos: 1000 });
   return {
@@ -189,7 +191,11 @@ describe('financeiro', () => {
     const v2 = await bruno.criarVenda({ itens: [{ produtoId: petisco.id, quantidade: 2 }], pagamentos: [{ forma: 'dinheiro', valorCentavos: 2000 }], recebidoDinheiroCentavos: 2000 });
     await ana.lancarNoFinanceiro({ tipo: 'despesa', conta: 'caixa', valorCentavos: 1500, descricao: 'Material de limpeza', categoria: null });
     const e = await erro(ana.devolverItens(v2.id, { itens: [{ linha: 0, quantidade: 1 }], motivo: 'troca' }));
-    expect([e.status, txt(e.message)]).toEqual([409, 'A devolução em dinheiro (R$ 10,00) é maior que o saldo do Caixa físico (R$ 5,00). Confira o caixa ou lance uma entrada no Financeiro antes.']);
+    // com o caixa aberto, o limite é o dinheiro esperado na gaveta (DaniPets DEV-05)
+    expect([e.status, txt(e.message)]).toEqual([
+      409,
+      'O valor (R$ 10,00) é maior que o dinheiro esperado na gaveta (R$ 5,00). Confira o valor digitado. Se entrou dinheiro sem registro, lance um suprimento antes.',
+    ]);
     expect((await ana.listarVendas()).find((x) => x.id === v2.id)?.devolucoes).toEqual([]);
     expect(await saldo(ana, petisco.id)).toBe(8);
 
@@ -224,17 +230,27 @@ describe('exemplos e lojas antigas', () => {
     expect(estoque.get('Coleira Ajustável M')).toMatchObject({ saldo: 3, minimo: 5, situacao: 'baixo' });
     expect((await ana.listarClientes()).map((c) => c.nome)).toEqual(['Fernanda Lima', 'João Pereira', 'Maria Oliveira']);
     expect((await ana.listarVendas()).filter((v) => v.cliente).length).toBe(3);
+    // o Caixa físico começa com os R$ 100,00 de troco da implantação (os exemplos abrem o caixa com eles)
     expect(await ana.resumoFinanceiro()).toMatchObject({
       contas: [
-        { id: 'caixa', saldoCentavos: 3000 },
+        { id: 'caixa', saldoCentavos: 13000 },
         { id: 'banco', saldoCentavos: 12130 },
       ],
-      totalCentavos: 15130,
+      totalCentavos: 25130,
       aReceber: { totalCentavos: 18420 + 15740, quantidade: 2 },
     });
+    // nos dias das vendas de exemplo o caixa abriu e fechou sem diferença; o de hoje fica para abrir
+    const caixa = await ana.lerCaixa();
+    expect(caixa.estado).toBe('nao_aberto');
+    expect(caixa.historico.map((c) => [c.dia, c.abertura.fundoCentavos, c.fechamento?.esperadoCentavos, c.fechamento?.diferencaCentavos])).toEqual([
+      ['2026-11-15', 10000, 13000, 0],
+      ['2026-11-14', 10000, 10000, 0],
+    ]);
+    expect(caixa.saldoCaixaFisicoCentavos).toBe(13000);
+    expect((await ana.listarVendas()).every((v) => v.caixaId === caixa.historico.find((c) => c.dia === v.criadaEm.slice(0, 10))?.id)).toBe(true);
     // abrir de novo não lança tudo outra vez
     const outra = criarApiLocal({ lojaId: 'nova', operador: ANA, atrasoMs: 0, agora: () => AGORA });
-    expect((await outra.resumoFinanceiro()).totalCentavos).toBe(15130);
+    expect((await outra.resumoFinanceiro()).totalCentavos).toBe(25130);
     expect((await outra.listarMovimentosEstoque()).length).toBe((await ana.listarMovimentosEstoque()).length);
   });
 

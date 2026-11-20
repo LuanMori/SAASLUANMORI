@@ -35,6 +35,8 @@ export interface MovimentoEstoque {
   quantidade: number;
   /** ISO 8601. */
   criadoEm: string;
+  /** Dia do movimento (AAAA-MM-DD) quando não é o dia de `criadoEm`: compra ou ajuste com data de um dia anterior. */
+  dia?: string | null;
   motivo: string | null;
   /** Observação do ajuste (DaniPets: "Outro" + observação). */
   observacao?: string | null;
@@ -46,6 +48,8 @@ export interface MovimentoEstoque {
   vendaId: string | null;
   vendaNumero: number | null;
   por: Operador;
+  /** Ajuste ou entrada com a data de um dia com o caixa já fechado: quem liberou (Dono), o motivo e quando. */
+  liberacao?: { por: Operador; motivo: string; em: string } | null;
 }
 
 export type NovoMovimentoEstoque = Omit<MovimentoEstoque, 'id'>;
@@ -114,14 +118,16 @@ export interface MovimentoManual {
   motivo: string;
   /** Opcional (DaniPets: observação do ajuste). */
   observacao?: string;
+  /** Dia do movimento (AAAA-MM-DD), hoje ou antes. Sem: hoje. Dia com o caixa já fechado pede a liberação de um Dono. */
+  dia?: string;
 }
 
 /** Entrada e ajuste lançados à mão (para a aba Produtos e estoque). Ajuste precisa de motivo. */
-export function validarMovimentoManual(entrada: unknown): Resultado<MovimentoManual> {
+export function validarMovimentoManual(entrada: unknown, ctx: { hoje?: string } = {}): Resultado<MovimentoManual> {
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com o movimento.' }] };
   const d = entrada;
   const erros: ErroCampo[] = [];
-  for (const k of Object.keys(d)) if (!['produtoId', 'tipo', 'quantidade', 'motivo', 'observacao'].includes(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
+  for (const k of Object.keys(d)) if (!['produtoId', 'tipo', 'quantidade', 'motivo', 'observacao', 'dia'].includes(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
   const produtoId = typeof d.produtoId === 'string' ? d.produtoId.trim() : '';
   if (!produtoId) erros.push({ campo: 'produtoId', mensagem: 'Escolha o produto.' });
   const tipo = d.tipo;
@@ -140,17 +146,33 @@ export function validarMovimentoManual(entrada: unknown): Resultado<MovimentoMan
   if (d.observacao !== undefined && typeof d.observacao !== 'string') erros.push({ campo: 'observacao', mensagem: 'A observação deve ser um texto.' });
   else if (observacao.length > LIMITES_ESTOQUE.observacaoMax) erros.push({ campo: 'observacao', mensagem: `A observação pode ter até ${LIMITES_ESTOQUE.observacaoMax} caracteres.` });
   else if (CONTROLE.test(observacao)) erros.push({ campo: 'observacao', mensagem: 'A observação contém caracteres inválidos.' });
+  const dia = d.dia;
+  if (dia !== undefined && dia !== null && !dataReal(dia)) erros.push({ campo: 'dia', mensagem: 'Data inválida.' });
+  else if (typeof dia === 'string' && ctx.hoje && dia > ctx.hoje) erros.push({ campo: 'dia', mensagem: 'Data no futuro não é permitida.' });
   if (erros.length) return { ok: false, erros };
-  return { ok: true, valor: { produtoId, tipo: tipo as 'entrada' | 'ajuste', quantidade: q as number, motivo, ...(observacao ? { observacao } : {}) } };
+  return {
+    ok: true,
+    valor: { produtoId, tipo: tipo as 'entrada' | 'ajuste', quantidade: q as number, motivo, ...(observacao ? { observacao } : {}), ...(typeof dia === 'string' ? { dia } : {}) },
+  };
+}
+
+/** AAAA-MM-DD que existe no calendário (sem 30/02 nem mês 13), a partir de 2000. */
+function dataReal(dia: unknown): dia is string {
+  if (typeof dia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia < '2000-01-01') return false;
+  const [a, m, d] = dia.split('-').map(Number);
+  const t = new Date(Date.UTC(a!, m! - 1, d!));
+  return t.getUTCFullYear() === a && t.getUTCMonth() === m! - 1 && t.getUTCDate() === d;
 }
 
 /** Entrada ou ajuste lançado à mão, já conferido por validarMovimentoManual. */
-export function movimentoManual(m: MovimentoManual, ctx: { em: string; por: Operador }): NovoMovimentoEstoque {
+export function movimentoManual(m: MovimentoManual, ctx: { em: string; por: Operador; hoje?: string }): NovoMovimentoEstoque {
   return {
     produtoId: m.produtoId,
     tipo: m.tipo,
     quantidade: m.quantidade,
     criadoEm: ctx.em,
+    // só grava o dia quando é um dia anterior (sem: o dia de criadoEm)
+    ...(m.dia && m.dia !== ctx.hoje ? { dia: m.dia } : {}),
     motivo: m.motivo || null,
     observacao: m.observacao || null,
     vendaId: null,

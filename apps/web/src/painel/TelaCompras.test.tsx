@@ -168,7 +168,8 @@ describe('Compras · registrar, estornar, pagar e dar baixa (módulo 4)', () => 
     });
     render(<TelaCompras api={a} agora={AGORA} confirmar={() => true} />);
     const contas = within(await screen.findByRole('region', { name: 'Contas a pagar' }));
-    expect(txt(contas.getByText('R$ 252,00').textContent)).toBe('R$ 252,00');
+    // a região aparece antes dos dados: espera o valor chegar
+    expect(txt((await contas.findByText('R$ 252,00')).textContent)).toBe('R$ 252,00');
 
     // estorna a ração: a conta a pagar cai para R$ 12,00
     await userEvent.click(screen.getByText('2 itens'));
@@ -191,7 +192,7 @@ describe('Compras · registrar, estornar, pagar e dar baixa (módulo 4)', () => 
     await a.registrarCompra({ data: '2026-11-01', itens: [{ produtoId: racao.id, quantidade: 4, custoCentavos: 12000, validade: '2026-11-25' }], pagamento: { tipo: 'avista', conta: 'banco' } });
     render(<TelaCompras api={a} agora={AGORA} confirmar={() => true} />);
     const lotes = within(await screen.findByRole('region', { name: 'Validade: lotes vencidos ou vencendo em 30 dias' }));
-    expect(txt(lotes.getByText('vence em 6 dias').textContent)).toBe('vence em 6 dias');
+    expect(txt((await lotes.findByText('vence em 6 dias')).textContent)).toBe('vence em 6 dias');
     await userEvent.click(lotes.getByRole('button', { name: 'Dar baixa no lote de Ração 15 kg' }));
     const qtd = within(janela()).getByLabelText('Vencidos que ainda estão na prateleira (unidades)');
     expect((qtd as HTMLInputElement).value).toBe('4');

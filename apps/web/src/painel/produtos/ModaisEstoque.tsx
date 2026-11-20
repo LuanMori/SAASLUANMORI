@@ -1,16 +1,19 @@
 // apps/web/src/painel/produtos/ModaisEstoque.tsx
 // Janelas do estoque (DaniPets PRD-08, 09 e 12), na unidade de cada produto (unidade ou kg):
 //   - Entrada (compra, reposição), Ajuste (motivos da loja + observação; nunca deixa o saldo negativo)
-//     e Estoque mínimo — só Dono e Administrador;
+//     e Estoque mínimo — só Dono e Administrador. Entrada e ajuste têm data (hoje ou antes); a data de um
+//     dia com o caixa já fechado pede a liberação de um Dono, com motivo (módulo 5);
 //   - "Como o saldo é calculado": inicial + entradas − vendas + cancelamentos + devoluções ± ajustes;
 //   - Regras do estoque (Dono e Administrador): como a loja vende (un e/ou kg) e os motivos de ajuste.
 import {
   type ComposicaoSaldo,
   composicaoDoSaldo,
+  dataBr,
   formatarQuantidade,
   LIMITES_ESTOQUE,
   LIMITES_LOJA,
   lerQuantidade,
+  type MovimentoManual,
   NOME_UNIDADE,
   quantidadeParaTexto,
   type RegrasDaLoja,
@@ -22,6 +25,7 @@ import {
 import { type FormEvent, useEffect, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto, type SaldoEstoque } from '../../api';
 import { Modal } from '../caixa/Modal';
+import { ModalSenha } from '../caixa/ModalSenha';
 
 export type AcaoEstoque = 'entrada' | 'ajuste' | 'minimo';
 
@@ -32,6 +36,7 @@ export function ModalEstoque({
   produto,
   atual,
   motivos,
+  hoje,
   api,
   aoConcluir,
   aoFechar,
@@ -41,7 +46,9 @@ export function ModalEstoque({
   atual: SaldoEstoque;
   /** Motivos de ajuste da loja (padrão do DaniPets). */
   motivos: readonly string[];
-  api: Pick<ApiPainel, 'lancarMovimentoEstoque' | 'definirEstoqueMinimo'>;
+  /** AAAA-MM-DD no fuso da loja (a data do movimento vai até hoje). */
+  hoje: string;
+  api: Pick<ApiPainel, 'lancarMovimentoEstoque' | 'definirEstoqueMinimo' | 'listarAutorizadores' | 'autorizar'>;
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
@@ -51,8 +58,11 @@ export function ModalEstoque({
   const [sentido, setSentido] = useState<'tirar' | 'por'>('tirar');
   const [motivo, setMotivo] = useState(acao === 'ajuste' ? '' : '');
   const [observacao, setObservacao] = useState('');
+  const [dia, setDia] = useState(hoje);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  /** Data de um dia com o caixa já fechado: espera a liberação do Dono. */
+  const [liberar, setLiberar] = useState<{ movimento: MovimentoManual; texto: string } | null>(null);
 
   const n = quantidade.trim() === '' ? null : lerQuantidade(quantidade, u);
   const variacao = n === null ? null : acao === 'ajuste' && sentido === 'tirar' ? -n : n;
@@ -71,16 +81,53 @@ export function ModalEstoque({
       }
       if (variacao === null || variacao === 0) return setErro(`Informe a quantidade ${dicaQuantidade}, maior que zero.`);
       if (acao === 'ajuste' && !motivo) return setErro('Escolha o motivo do ajuste.');
-      const local = validarMovimentoManual({ produtoId: produto.id, tipo: acao, quantidade: variacao, motivo: acao === 'ajuste' ? motivo : observacao, ...(acao === 'ajuste' && observacao.trim() ? { observacao } : {}) });
+      const local = validarMovimentoManual(
+        {
+          produtoId: produto.id,
+          tipo: acao,
+          quantidade: variacao,
+          motivo: acao === 'ajuste' ? motivo : observacao,
+          ...(acao === 'ajuste' && observacao.trim() ? { observacao } : {}),
+          ...(dia && dia !== hoje ? { dia } : {}),
+        },
+        { hoje },
+      );
       if (!local.ok) return setErro(local.erros[0]!.mensagem);
       setEnviando(true);
-      const novo = await api.lancarMovimentoEstoque(local.valor);
-      aoConcluir(`${acao === 'entrada' ? 'Entrada lançada' : 'Ajuste lançado'}: ${produto.nome} ${variacao > 0 ? '+' : ''}${q(variacao)}. Saldo agora: ${q(novo.saldo)}.`);
+      try {
+        await lancar(local.valor);
+      } catch (e) {
+        // dia com o caixa já fechado: pede a liberação do Dono e lança depois dela
+        if (e instanceof ErroApi && e.codigo === 'dia_fechado') return setLiberar({ movimento: local.valor, texto: e.message });
+        throw e;
+      }
     } catch (e) {
       setErro(mensagemDe(e));
     } finally {
       setEnviando(false);
     }
+  }
+
+  async function lancar(m: MovimentoManual, liberacao: { autorizacao: string; motivo: string } | null = null) {
+    const novo = await api.lancarMovimentoEstoque(m, liberacao ? { liberacao } : {});
+    const quando = m.dia && m.dia !== hoje ? ` (data ${dataBr(m.dia)})` : '';
+    aoConcluir(`${acao === 'entrada' ? 'Entrada lançada' : 'Ajuste lançado'}${quando}: ${produto.nome} ${m.quantidade > 0 ? '+' : ''}${q(m.quantidade)}. Saldo agora: ${q(novo.saldo)}.`);
+  }
+
+  if (liberar) {
+    return (
+      <ModalSenha
+        api={api}
+        liberacao
+        acao={{ tipo: 'dia_fechado', dia: liberar.movimento.dia ?? hoje }}
+        texto={liberar.texto}
+        aoAutorizar={(a) => lancar(liberar.movimento, { autorizacao: a.autorizacao, motivo: a.motivo })}
+        aoFechar={() => {
+          setLiberar(null);
+          setErro(`${acao === 'entrada' ? 'Entrada não lançada' : 'Ajuste não lançado'}: falta a liberação de um Dono.`);
+        }}
+      />
+    );
   }
 
   const titulo = acao === 'entrada' ? 'Entrada de estoque' : acao === 'ajuste' ? 'Ajuste de estoque' : 'Estoque mínimo';
@@ -123,6 +170,13 @@ export function ModalEstoque({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+        {acao !== 'minimo' && (
+          <div className="campo">
+            <label htmlFor="pe-dia">Data</label>
+            <input id="pe-dia" type="date" value={dia} max={hoje} onChange={(e) => setDia(e.target.value)} />
+            {dia && dia < hoje && <span className="modal-dica">Data de um dia anterior: se o caixa desse dia já foi fechado, um Dono precisa liberar.</span>}
           </div>
         )}
         {acao !== 'minimo' && (

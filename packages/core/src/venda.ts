@@ -195,6 +195,8 @@ export interface Venda {
   status: StatusVenda;
   cancelamento: Cancelamento | null;
   devolucoes: Devolucao[];
+  /** Caixa do dia em que a venda foi feita (sem: venda de antes do Caixa do dia). */
+  caixaId?: string | null;
 }
 
 /** Produto como o cadastro o tem na hora da venda. */
@@ -212,7 +214,13 @@ export interface ProdutoParaVenda {
 export type AcaoAutorizada =
   | { tipo: 'desconto'; produtoId: string; precoFinalCentavos: number }
   | { tipo: 'cancelamento'; vendaId: string }
-  | { tipo: 'devolucao'; vendaId: string };
+  | { tipo: 'devolucao'; vendaId: string }
+  /** Retirada do dono da gaveta feita pelo Vendedor (Caixa do dia). */
+  | { tipo: 'retirada'; valorCentavos: number }
+  /** Fechamento com diferença acima da tolerância feito pelo Vendedor. */
+  | { tipo: 'fechamento'; dia: string; contadoCentavos: number }
+  /** Lançamento num dia com o caixa já fechado: só com a liberação de um Dono. */
+  | { tipo: 'dia_fechado'; dia: string };
 
 /** Autorização guardada pelo servidor depois de conferir a senha de quem autoriza. */
 export interface Autorizacao {
@@ -623,9 +631,14 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
 }
 
 // ------------------------------------------------------------------ cancelamento e devolução
-/** Cancelar a venda inteira só no mesmo dia (no fuso da loja) e se ela não tiver devolução. */
-export function podeCancelarVenda(venda: Venda, agora: Date, fuso: string = FUSO_PADRAO): boolean {
-  return venda.status === 'finalizada' && venda.devolucoes.length === 0 && diaNoFuso(venda.criadaEm, fuso) === diaNoFuso(agora, fuso);
+/**
+ * Cancelar a venda inteira só no mesmo dia (no fuso da loja), se ela não tiver devolução e com o caixa
+ * daquela venda aberto (DaniPets canCancelSale). `caixaAberto`: o caixa de hoje, se estiver aberto
+ * (null = fechado ou não aberto); sem ele, a regra do caixa não é conferida.
+ */
+export function podeCancelarVenda(venda: Venda, agora: Date, fuso: string = FUSO_PADRAO, caixaAberto?: { id: string } | null): boolean {
+  const doCaixa = caixaAberto === undefined || (caixaAberto !== null && (!venda.caixaId || venda.caixaId === caixaAberto.id));
+  return venda.status === 'finalizada' && venda.devolucoes.length === 0 && diaNoFuso(venda.criadaEm, fuso) === diaNoFuso(agora, fuso) && doCaixa;
 }
 
 /** Quanto de cada item ainda pode ser devolvido. */
@@ -716,6 +729,8 @@ export interface ContextoEstorno {
   autorizacao?: Autorizacao | null;
   agora?: Date;
   fuso?: string;
+  /** O caixa de hoje, se estiver aberto (null = fechado ou não aberto). Sem: a regra do caixa não é conferida. */
+  caixaAberto?: { id: string } | null;
 }
 
 function conferirAutorizacaoEstorno(
@@ -746,6 +761,12 @@ export function calcularCancelamento(
     return {
       ok: false,
       erros: [{ campo: '_', mensagem: 'Cancelar a venda inteira só é possível no mesmo dia e sem devoluções. Use "Devolver itens".' }],
+    };
+  }
+  if (!podeCancelarVenda(venda, ctx.agora ?? new Date(), ctx.fuso, ctx.caixaAberto)) {
+    return {
+      ok: false,
+      erros: [{ campo: '_', mensagem: 'Cancelar a venda inteira só com o caixa daquela venda aberto. Use "Devolver itens".' }],
     };
   }
   const aut = conferirAutorizacaoEstorno(venda, 'cancelamento', ctx);

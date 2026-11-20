@@ -5,7 +5,8 @@
 //   - ao escolher o produto, sugere o último custo e o fornecedor principal (CMP-05);
 //   - custo diferente da última compra: mostra custo, preço e margem e oferece mudar o preço de venda na
 //     mesma gravação, com o preço que mantém a margem (CMP-04);
-//   - nota repetida do mesmo fornecedor: pergunta antes (CMP-03).
+//   - nota repetida do mesmo fornecedor: pergunta antes (CMP-03);
+//   - data de um dia com o caixa já fechado: pede a liberação de um Dono, com motivo (CX-08, módulo 5).
 // Bonificação (sem custo) não é compra: é entrada de estoque, em Produtos e estoque (CMP-07).
 import {
   type Compra,
@@ -17,6 +18,7 @@ import {
   margemPct,
   NOME_CONTA,
   type NovaCompra,
+  type PedidoLiberacao,
   precoSugerido,
   reaisParaCentavos,
   somarDias,
@@ -26,11 +28,13 @@ import {
   valorDaQuantidade,
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
-import { type ApiCompras, ErroApi, type Produto } from '../../api';
+import { type ApiCompras, type ApiVendas, ErroApi, type Produto } from '../../api';
 import { Modal } from '../caixa/Modal';
+import { ModalSenha } from '../caixa/ModalSenha';
 
 interface Props {
-  api: Pick<ApiCompras, 'registrarCompra'>;
+  /** listarAutorizadores e autorizar: a liberação do Dono para a data de um dia já fechado. */
+  api: Pick<ApiCompras, 'registrarCompra'> & Pick<ApiVendas, 'listarAutorizadores' | 'autorizar'>;
   /** Produtos ativos da loja. */
   produtos: readonly Produto[];
   /** Fornecedores ativos. */
@@ -50,6 +54,8 @@ interface Linha {
   custo: string;
   validade: string;
 }
+
+type Opcoes = { mesmoAssim?: boolean; liberacao?: PedidoLiberacao | null };
 
 const linhaVazia = (): Linha => ({ produtoId: '', quantidade: '', custo: '', validade: '' });
 const reais = (c: number) => (c / 100).toFixed(2).replace('.', ',');
@@ -74,6 +80,8 @@ export function ModalCompra({ api, produtos, fornecedores, compras, hoje, aoSalv
   const [enviando, setEnviando] = useState(false);
   const [mudancas, setMudancas] = useState<Mudanca[] | null>(null);
   const [precos, setPrecos] = useState<Record<string, { marcado: boolean; texto: string }>>({});
+  /** Data de um dia já fechado: a compra espera a liberação do Dono. */
+  const [liberar, setLiberar] = useState<{ pedido: NovaCompra; texto: string; opcoes: Opcoes } | null>(null);
 
   const porId = new Map(produtos.map((p) => [p.id, p]));
   const mudarLinha = (i: number, campo: keyof Linha, valor: string) => {
@@ -119,18 +127,24 @@ export function ModalCompra({ api, produtos, fornecedores, compras, hoje, aoSalv
     return v.valor;
   }
 
+  /** Grava; NF repetida pergunta "mesmo assim?"; dia já fechado pede a liberação do Dono (e grava depois dela). */
+  async function gravar(pedido: NovaCompra, opcoes: Opcoes = {}): Promise<void> {
+    try {
+      aoSalvar(await api.registrarCompra(pedido, opcoes));
+    } catch (e) {
+      if (e instanceof ErroApi && e.codigo === 'nf_repetida' && !opcoes.mesmoAssim) {
+        if (!confirmar(`${e.message} Registrar mesmo assim?`)) return;
+        return gravar(pedido, { ...opcoes, mesmoAssim: true });
+      }
+      if (e instanceof ErroApi && e.codigo === 'dia_fechado' && !opcoes.liberacao) return setLiberar({ pedido, texto: e.message, opcoes });
+      throw e;
+    }
+  }
+
   async function enviar(pedido: NovaCompra) {
     setEnviando(true);
     try {
-      let salva: Compra;
-      try {
-        salva = await api.registrarCompra(pedido);
-      } catch (e) {
-        if (!(e instanceof ErroApi && e.codigo === 'nf_repetida')) throw e;
-        if (!confirmar(`${e.message} Registrar mesmo assim?`)) return;
-        salva = await api.registrarCompra(pedido, { mesmoAssim: true });
-      }
-      aoSalvar(salva);
+      await gravar(pedido);
     } catch (e) {
       setErro(e instanceof ErroApi ? e.message : 'Não foi possível registrar a compra. Tente de novo.');
     } finally {
@@ -170,6 +184,24 @@ export function ModalCompra({ api, produtos, fornecedores, compras, hoje, aoSalv
       novos[m.produto.id] = v;
     }
     void enviar(Object.keys(novos).length ? { ...pedido, precos: novos } : pedido);
+  }
+
+  if (liberar) {
+    return (
+      <ModalSenha
+        api={api}
+        liberacao
+        acao={{ tipo: 'dia_fechado', dia: liberar.pedido.data }}
+        texto={liberar.texto}
+        aoAutorizar={async (a) => {
+          await gravar(liberar.pedido, { ...liberar.opcoes, liberacao: { autorizacao: a.autorizacao, motivo: a.motivo } });
+        }}
+        aoFechar={() => {
+          setLiberar(null);
+          setErro('Compra não registrada: falta a liberação de um Dono.');
+        }}
+      />
+    );
   }
 
   if (mudancas) {
