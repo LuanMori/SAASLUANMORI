@@ -26,6 +26,7 @@ import { formatarCentavos } from './dinheiro';
 import { type Recebivel, somarDias } from './financeiro';
 import { soDigitos } from './interno';
 import type { Resultado } from './resultado';
+import { extratoDosVales, type ValeTroca } from './vale';
 import { type FormaPagamento, formatarNumeroVenda, type Operador, type Pagamento, type Venda } from './venda';
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
@@ -582,6 +583,8 @@ export interface FidelidadeDoCliente {
   usos: readonly UsoCashback[];
   cupons: readonly CupomRetorno[];
   contatos: readonly ContatoCliente[];
+  /** Vales-troca da loja (módulo 8): entram os do cliente. */
+  vales?: readonly ValeTroca[];
 }
 
 /** Linhas de cashback, cupom e contatos do extrato (DaniPets cliExtrato). */
@@ -647,9 +650,9 @@ export function extratoDaFidelidade(clienteId: string, f: FidelidadeDoCliente, h
   return linhas;
 }
 
-/** O extrato inteiro do cliente: compras, devoluções, fiado, cashback, cupons e contatos, do mais novo para o mais antigo. */
+/** O extrato inteiro do cliente: compras, devoluções, fiado, cashback, vale-troca, cupons e contatos, do mais novo para o mais antigo. */
 export function extratoCompletoDoCliente(clienteId: string, vendas: readonly Venda[], recebiveis: readonly Recebivel[], fuso: string, f: FidelidadeDoCliente, hoje: string): LinhaExtrato[] {
-  return [...extratoDoCliente(clienteId, vendas, recebiveis, fuso), ...extratoDaFidelidade(clienteId, f, hoje)].sort(
+  return [...extratoDoCliente(clienteId, vendas, recebiveis, fuso), ...extratoDaFidelidade(clienteId, f, hoje), ...extratoDosVales(clienteId, f.vales ?? [])].sort(
     (a, b) => b.dia.localeCompare(a.dia) || b.ordem.localeCompare(a.ordem),
   );
 }

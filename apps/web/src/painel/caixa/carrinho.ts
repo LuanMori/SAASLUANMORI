@@ -51,6 +51,8 @@ export interface ClienteNaVenda {
   diasVencido?: number;
   /** Cashback para usar hoje e o próximo vencimento (módulo 7; só para mostrar: o servidor confere o saldo). */
   cashbackCentavos?: number;
+  /** Saldo dos vales-troca do cliente (módulo 8; só para mostrar). */
+  valeCentavos?: number;
   cashbackVencimento?: { venceEm: string; valorCentavos: number } | null;
   /** Cupom de retorno que vale hoje: o desconto entra sozinho nos itens sem desconto manual. */
   cupom?: CupomNaVenda | null;
@@ -62,6 +64,13 @@ export interface CupomNaVenda {
   id: string;
   pct: number;
   venceEm: string;
+}
+
+/** Vale-troca escolhido para pagar (módulo 8): o saldo é só para mostrar; o servidor confere. */
+export interface ValeNoPagamento {
+  id: string;
+  codigo: string;
+  saldoCentavos: number;
 }
 
 export interface ParteDividida {
@@ -78,9 +87,11 @@ export interface EstadoPagamento {
   recebidoTexto: string;
   /** "Usar cashback": o saldo do cliente abate do total (até o total) e a forma escolhida paga o resto. */
   usarCashback?: boolean;
+  /** "Usar vale-troca": os vales escolhidos, na ordem em que entraram (cada um abate o que cobre, depois do cashback). */
+  vales?: ValeNoPagamento[];
 }
 
-export const pagamentoInicial = (forma: FormaPagamento = 'pix'): EstadoPagamento => ({ dividido: false, forma, partes: [], recebidoTexto: '', usarCashback: false });
+export const pagamentoInicial = (forma: FormaPagamento = 'pix'): EstadoPagamento => ({ dividido: false, forma, partes: [], recebidoTexto: '', usarCashback: false, vales: [] });
 
 // ------------------------------------------------------------------ leitura do código
 /**
@@ -163,18 +174,34 @@ export interface ContaPagamento {
   recebidoCentavos: number | null;
   /** Cashback que abate do total (0 sem "Usar cashback"). */
   cashbackCentavos: number;
-  /** O que o cliente paga depois do cashback (as formas de pagamento valem para este valor). */
+  /** O que cada vale-troca abate (só os que abatem alguma coisa). */
+  valesAplicados: { id: string; codigo: string; valorCentavos: number }[];
+  /** Cashback + vales: o crédito do cliente que abate do total. */
+  creditosCentavos: number;
+  /** O que o cliente paga depois dos créditos (as formas de pagamento valem para este valor). */
   aPagarCentavos: number;
 }
 
 /**
- * As partes do pagamento (DaniPets syncPays, V9.3.1): o cashback abate do total pelo que cobre (até o saldo) e a
- * forma escolhida paga o resto; no pagamento dividido, as partes digitadas pagam o resto.
+ * As partes do pagamento (DaniPets syncPays, V9.3.1): os créditos do cliente abatem do total pelo que cobrem —
+ * primeiro o cashback (que vence), depois cada vale-troca, na ordem em que entraram — e a forma escolhida paga o
+ * resto; no pagamento dividido, as partes digitadas pagam o resto.
  */
 export function contaDoPagamento(estado: EstadoPagamento, totalCentavos: number, cashbackDisponivelCentavos = 0): ContaPagamento {
   const cashback = estado.usarCashback ? Math.max(0, Math.min(cashbackDisponivelCentavos, totalCentavos)) : 0;
-  const aPagar = totalCentavos - cashback;
-  const pagamentos: Pagamento[] = cashback > 0 ? [{ forma: 'cashback', valorCentavos: cashback }] : [];
+  let restante = totalCentavos - cashback;
+  const valesAplicados: ContaPagamento['valesAplicados'] = [];
+  for (const v of estado.vales ?? []) {
+    const usa = Math.max(0, Math.min(v.saldoCentavos, restante));
+    if (usa <= 0) continue;
+    valesAplicados.push({ id: v.id, codigo: v.codigo, valorCentavos: usa });
+    restante -= usa;
+  }
+  const aPagar = restante;
+  const pagamentos: Pagamento[] = [
+    ...(cashback > 0 ? [{ forma: 'cashback' as const, valorCentavos: cashback }] : []),
+    ...valesAplicados.map((v) => ({ forma: 'vale' as const, valorCentavos: v.valorCentavos, valeId: v.id })),
+  ];
   let invalido = false;
   let pagoNasFormas = 0;
   if (!estado.dividido) {
@@ -194,7 +221,17 @@ export function contaDoPagamento(estado: EstadoPagamento, totalCentavos: number,
   }
   const dinheiro = pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valorCentavos, 0);
   const recebido = estado.recebidoTexto.trim() === '' ? null : reaisParaCentavos(estado.recebidoTexto);
-  return { pagamentos, faltaCentavos: aPagar - pagoNasFormas, invalido, dinheiroCentavos: dinheiro, recebidoCentavos: recebido, cashbackCentavos: cashback, aPagarCentavos: aPagar };
+  return {
+    pagamentos,
+    faltaCentavos: aPagar - pagoNasFormas,
+    invalido,
+    dinheiroCentavos: dinheiro,
+    recebidoCentavos: recebido,
+    cashbackCentavos: cashback,
+    valesAplicados,
+    creditosCentavos: totalCentavos - aPagar,
+    aPagarCentavos: aPagar,
+  };
 }
 
 /**
@@ -252,7 +289,7 @@ export function semFiado(p: EstadoPagamento): EstadoPagamento {
   return partes.length <= 1 ? { ...p, dividido: false, forma: partes[0]?.forma ?? 'pix', partes: [] } : { ...p, partes };
 }
 
-/** Venda sem cliente: sem fiado e sem cashback (os dois são da conta do cliente). */
+/** Venda sem cliente: sem fiado e sem cashback (os dois são da conta do cliente). O vale-troca fica: vale para quem tem o código. */
 export const semCreditoDoCliente = (p: EstadoPagamento): EstadoPagamento => ({ ...semFiado(p), usarCashback: false });
 
 // ------------------------------------------------------------------ carrinho salvo (por pessoa)
@@ -295,14 +332,23 @@ export function lerCarrinhoSalvo(chave: string): { linhas: LinhaCarrinho[]; paga
             ...(venc && dia(venc.venceEm) && Number.isSafeInteger(venc.valorCentavos) ? { cashbackVencimento: { venceEm: venc.venceEm, valorCentavos: venc.valorCentavos } } : {}),
             ...(k && textoCurto(k.id, LIMITES_VENDA.autorizacaoMax) && typeof k.pct === 'number' && k.pct > 0 && k.pct <= 50 && dia(k.venceEm) ? { cupom: { id: k.id, pct: k.pct, venceEm: k.venceEm } } : {}),
             ...(typeof c.completo === 'boolean' ? { completo: c.completo } : {}),
+            ...(Number.isSafeInteger(c.valeCentavos) ? { valeCentavos: c.valeCentavos } : {}),
           }
         : null;
+    // vales-troca escolhidos: o código no formato VT-0001-ABC, cada um uma vez (o servidor confere o saldo)
+    const vales: ValeNoPagamento[] = [];
+    for (const x of Array.isArray(p?.vales) ? p.vales.slice(0, LIMITES_VENDA.pagamentosMax) : []) {
+      if (textoCurto(x?.id, LIMITES_VENDA.autorizacaoMax) && typeof x.codigo === 'string' && /^VT-\d{4,}-[A-Z0-9]{3}$/.test(x.codigo) && Number.isSafeInteger(x.saldoCentavos) && x.saldoCentavos > 0 && !vales.some((v) => v.id === x.id)) {
+        vales.push({ id: x.id, codigo: x.codigo, saldoCentavos: x.saldoCentavos });
+      }
+    }
     const pagamento: EstadoPagamento = {
       dividido: Boolean(p?.dividido) && partes.length > 1,
       forma,
       partes,
       recebidoTexto: String(p?.recebidoTexto ?? ''),
       usarCashback: p?.usarCashback === true,
+      vales,
     };
     // sem cliente, o fiado e o cashback guardados não valem
     return { linhas, pagamento: cliente ? pagamento : semCreditoDoCliente(pagamento), cliente };

@@ -65,7 +65,7 @@ describe('Clientes · lista e conta', () => {
     expect(screen.getByRole('button', { name: 'Excluir cliente' })).toBeTruthy(); // sem histórico
     await userEvent.click(screen.getByRole('button', { name: '← Voltar para a lista' }));
     const linha = (await screen.findByRole('button', { name: 'Abrir a conta de Maria Souza' })).closest('tr')!;
-    expect(txt(linha.textContent)).toBe('Maria Souza(41) 99999-8888WhatsApp • aceita mensagens***.982.247-**nunca comprou—em dia');
+    expect(txt(linha.textContent)).toBe('Maria Souza(41) 99999-8888WhatsApp • aceita mensagens***.982.247-**nunca comprou——em dia');
   });
 
   it('o Dono vê o fiado, o CPF completo (fica no histórico), recebe o fiado e a aba Fiado', async () => {

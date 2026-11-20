@@ -295,13 +295,18 @@ export function tirarNomeDoCliente<T extends { cliente?: { id: string; nome: str
 }
 
 // ------------------------------------------------------------------ conta do cliente (módulo 6)
-/** Cliente com compra ou fiado não pode ser excluído (só os dados, pela LGPD). DaniPets cliTemHistorico. */
-export function clienteTemHistorico(clienteId: string, vendas: readonly Pick<Venda, 'cliente'>[], recebiveis: readonly Pick<Recebivel, 'cliente'>[]): boolean {
-  return vendas.some((v) => v.cliente?.id === clienteId) || recebiveis.some((r) => r.cliente?.id === clienteId);
+/** Cliente com compra, fiado ou vale-troca não pode ser excluído (só os dados, pela LGPD). DaniPets cliTemHistorico. */
+export function clienteTemHistorico(
+  clienteId: string,
+  vendas: readonly Pick<Venda, 'cliente'>[],
+  recebiveis: readonly Pick<Recebivel, 'cliente'>[],
+  vales: readonly { cliente: { id: string } | null }[] = [],
+): boolean {
+  return vendas.some((v) => v.cliente?.id === clienteId) || recebiveis.some((r) => r.cliente?.id === clienteId) || vales.some((v) => v.cliente?.id === clienteId);
 }
 
-/** Compras e devoluções, fiado, cashback (módulo 7) e contatos (lembretes e cupons, módulo 7). */
-export type TipoExtrato = 'compras' | 'fiado' | 'cashback' | 'contatos';
+/** Compras e devoluções, fiado, cashback e contatos (lembretes e cupons, módulo 7) e vale-troca (módulo 8). */
+export type TipoExtrato = 'compras' | 'fiado' | 'cashback' | 'contatos' | 'vale';
 
 export interface LinhaExtrato {
   /** AAAA-MM-DD. */

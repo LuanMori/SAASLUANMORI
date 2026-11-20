@@ -97,7 +97,7 @@ describe('Frente de caixa · cashback (PDV-08, PDV-18)', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Usar cashback/ }));
     expect(total()).toBe('R$ 0,00');
     expect(txt(screen.getByText(/paga a compra toda/).closest('p')?.textContent)).toBe(
-      'O cashback do cliente paga a compra toda. Não precisa receber nada: é só finalizar. Fica de saldo para a próxima compra: R$ 3,69.',
+      'O crédito do cliente paga a compra toda. Não precisa receber nada: é só finalizar. Fica de saldo para a próxima compra: cashback R$ 3,69.',
     );
     expect(screen.queryByRole('group', { name: 'Forma de pagamento' })).toBeNull();
     // sem cliente, o cashback sai do pagamento

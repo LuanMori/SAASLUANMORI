@@ -2,8 +2,9 @@
 // O alto da aba Clientes (Fase 2, módulo 7), como no DaniPets V9.3.3 (cliResumoHtml e cliDetalheHtml):
 //   - CASHBACK EM ABERTO: quanto os clientes ainda podem usar; clicando, "de onde vem": gerado + devolvido −
 //     usado − retirado − vencido = em aberto, por cliente, e o que vence nos próximos dias;
-//   - clientes cadastrados, fiado a receber (Dono e Administrador) e "para lembrar hoje" (abre a aba Retorno).
-import { dataBr, diasEntre, emDias, formatarCentavos, pctTexto } from '@saas/core';
+//   - clientes cadastrados, vale-troca em aberto (módulo 8; clicando, a lista dos vales com saldo), fiado a
+//     receber (Dono e Administrador) e "para lembrar hoje" (abre a aba Retorno).
+import { dataBr, diasEntre, emDias, formatarCentavos, pctTexto, type ValeTroca, valesEmAberto } from '@saas/core';
 import { useState } from 'react';
 import type { PainelRetorno, ResumoCashback } from '../../api';
 import { plural } from '../formato';
@@ -14,26 +15,36 @@ type Aba = 'clientes' | 'retorno' | 'fiado' | 'regras';
 export function ResumoClientes({
   cashback,
   retorno,
+  vales,
   totalClientes,
   fiado,
   aoIrPara,
 }: {
   cashback: EstadoCarga<ResumoCashback>;
   retorno: EstadoCarga<PainelRetorno>;
+  /** Todos os vales-troca da loja (módulo 8). */
+  vales: EstadoCarga<ValeTroca[]>;
   totalClientes: number | null;
   /** null = quem não vê o fiado de todos (Vendedor). */
   fiado: { devendoCentavos: number; vencidoCentavos: number } | null;
   aoIrPara: (aba: Aba) => void;
 }) {
-  const [detalhe, setDetalhe] = useState(false);
+  const [aberto, setAberto] = useState<'cashback' | 'vale' | null>(null);
+  const detalhe = aberto === 'cashback';
+  const alternarCashback = () => setAberto((a) => (a === 'cashback' ? null : 'cashback'));
   const cb = cashback.tipo === 'pronto' ? cashback.dados : null;
   const r = retorno.tipo === 'pronto' ? retorno.dados : null;
   const lembrar = r ? r.retorno.length + r.cashback.length : null;
+  const todosVales = vales.tipo === 'pronto' ? vales.dados : null;
+  // do mais antigo para o mais novo, como a lista do DaniPets (vouchersCard)
+  const valesAbertos = todosVales ? [...valesEmAberto(todosVales)].reverse() : [];
+  const valeAberto = valesAbertos.reduce((t, v) => t + v.saldoCentavos, 0);
+  const valesUsados = todosVales ? todosVales.length - valesAbertos.length : 0;
 
   return (
     <>
       <div className="cli-resumo" aria-label="Resumo dos clientes">
-        <button type="button" className={`cli-visor${detalhe ? ' cli-visor-on' : ''}`} aria-expanded={detalhe} onClick={() => setDetalhe((d) => !d)} title="Ver de onde vem este número">
+        <button type="button" className={`cli-visor${detalhe ? ' cli-visor-on' : ''}`} aria-expanded={detalhe} onClick={alternarCashback} title="Ver de onde vem este número">
           <span className="cli-visor-rotulo">CASHBACK EM ABERTO</span>
           <span className="cli-visor-valor" data-testid="cli-cashback-aberto">
             {cb ? formatarCentavos(cb.abertoCentavos) : '—'}
@@ -47,6 +58,17 @@ export function ResumoClientes({
           <button type="button" className="cli-resumo-linha" onClick={() => aoIrPara('clientes')}>
             <span>Clientes cadastrados</span>
             <b>{totalClientes ?? '—'}</b>
+          </button>
+          <button
+            type="button"
+            className={`cli-resumo-linha${aberto === 'vale' ? ' cli-resumo-linha-on' : ''}`}
+            aria-expanded={aberto === 'vale'}
+            onClick={() => setAberto((a) => (a === 'vale' ? null : 'vale'))}
+            title="Ver os vales com saldo"
+          >
+            <span>Vale-troca em aberto</span>
+            <b>{todosVales ? formatarCentavos(valeAberto) : '—'}</b>
+            {todosVales && <small className="suave">{valesAbertos.length ? plural(valesAbertos.length, 'vale com saldo', 'vales com saldo') : 'Nenhum vale em aberto'}</small>}
           </button>
           {fiado && (
             <button type="button" className="cli-resumo-linha" onClick={() => aoIrPara('fiado')}>
@@ -67,11 +89,72 @@ export function ResumoClientes({
         </div>
       </div>
 
+      {aberto === 'vale' && todosVales && (
+        <section className="card card-plano cli-detalhe" aria-labelledby="cli-vales-titulo">
+          <div className="card-cabeca">
+            <h2 id="cli-vales-titulo">Vale-troca em aberto</h2>
+            <button type="button" className="botao" onClick={() => setAberto(null)}>
+              Fechar
+            </button>
+          </div>
+          <p className="suave">
+            Vales-troca emitidos em devoluções e trocas. O saldo é o valor do vale menos o que já foi usado como pagamento na Frente de caixa. O vale vale para quem estiver com o código, com ou sem
+            cliente identificado.
+          </p>
+          {valesAbertos.length === 0 ? (
+            <p className="vazio">Nenhum vale com saldo.</p>
+          ) : (
+            <div className="tabela-caixa">
+              <table className="tabela tabela-vendas">
+                <thead>
+                  <tr>
+                    <th>Vale</th>
+                    <th>Cliente</th>
+                    <th>Emitido em</th>
+                    <th>Origem</th>
+                    <th className="numero">Valor</th>
+                    <th className="numero">Usado</th>
+                    <th className="numero">Saldo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {valesAbertos.map((v) => (
+                    <tr key={v.id}>
+                      <td data-rotulo="Vale">
+                        <b>{v.codigo}</b>
+                      </td>
+                      <td data-rotulo="Cliente">{v.cliente?.nome ?? 'sem cliente'}</td>
+                      <td data-rotulo="Emitido em">{dataBr(v.dia)}</td>
+                      <td data-rotulo="Origem">
+                        Devolução nº {v.origem.devolucaoNumero} · compra #{String(v.origem.vendaNumero).padStart(5, '0')}
+                      </td>
+                      <td data-rotulo="Valor" className="numero">
+                        {formatarCentavos(v.valorCentavos)}
+                      </td>
+                      <td data-rotulo="Usado" className="numero">
+                        {v.valorCentavos - v.saldoCentavos > 0 ? formatarCentavos(v.valorCentavos - v.saldoCentavos) : '—'}
+                      </td>
+                      <td data-rotulo="Saldo" className="numero">
+                        <b className="caixa-sem-dif-texto">{formatarCentavos(v.saldoCentavos)}</b>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="card-rodape">
+            Total em vales: <b>{formatarCentavos(valeAberto)}</b> · crédito dos clientes na loja
+            {valesUsados > 0 && ` · ${plural(valesUsados, 'vale já foi usado por inteiro e não aparece', 'vales já foram usados por inteiro e não aparecem')} na lista`}
+          </p>
+        </section>
+      )}
+
       {detalhe && cb && (
         <section className="card card-plano cli-detalhe" aria-labelledby="cli-detalhe-titulo">
           <div className="card-cabeca">
             <h2 id="cli-detalhe-titulo">Cashback em aberto</h2>
-            <button type="button" className="botao" onClick={() => setDetalhe(false)}>
+            <button type="button" className="botao" onClick={() => setAberto(null)}>
               Fechar
             </button>
           </div>

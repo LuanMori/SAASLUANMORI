@@ -82,6 +82,8 @@ export const ACOES_AUDITORIA = {
   'cliente.lembrete_adiado': 'Lembrete adiado',
   'cliente.cupom_usado': 'Cupom de retorno usado',
   'cliente.cashback_nao_recuperado': 'Cashback não recuperado',
+  // vale-troca (módulo 8)
+  'vale.emitido': 'Vale-troca emitido',
   // financeiro
   'financeiro.entrada': 'Entrada lançada',
   'financeiro.despesa': 'Despesa lançada',
@@ -253,6 +255,13 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
         d.rotulo === 'cancelamento' ? 'Cancelamento' : d.rotulo === 'devolucao' ? 'Devolução' : null,
         numeroVenda(d.numero),
         dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} do cashback desta compra já tinham sido usados ou venceram`,
+      );
+      break;
+    case 'vale.emitido':
+      partes.push(
+        typeof d.codigo === 'string' && /^VT-\d{4,}-[A-Z0-9]{3}$/.test(d.codigo) ? d.codigo : null,
+        dinheiro(d.valorCentavos),
+        numeroVenda(d.numero) && `devolução da ${numeroVenda(d.numero)}`,
       );
       break;
     case 'venda.fiado_liberado':

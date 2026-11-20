@@ -1024,6 +1024,9 @@ h2 { font-size: 1.05rem; }
 .pdv-botoes-pagamento .botao { flex: 1 1 auto; }
 .pdv-usar-cashback { border-color: var(--primaria-texto); color: var(--primaria-texto-forte); background: var(--primaria-clara); font-weight: 700; }
 .pdv-cobre-tudo { margin: 0; }
+/* Vale-troca (módulo 8): o código em destaque para anotar (DaniPets recovery-code) */
+.vale-codigo { margin: 14px 0 8px; padding: 14px; border: 2px dashed var(--primaria-texto); border-radius: 12px; background: var(--primaria-clara); color: var(--primaria-texto-forte); font-size: 1.6rem; font-weight: 800; letter-spacing: 0.08em; text-align: center; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cli-resumo-linha-on { border-color: var(--primaria-texto); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primaria) 25%, transparent); }
 /* Clientes: resumo do alto (DaniPets cliResumoHtml) */
 .cli-resumo { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr); gap: 14px; align-items: stretch; }
 .cli-visor {

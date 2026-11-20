@@ -386,6 +386,7 @@ describe('proteções do servidor (o que a tela não decide)', () => {
         cashbackVencimento: null,
         cupom: null,
         completo: true,
+        valeCentavos: 0,
       },
     ]);
     expect(JSON.stringify(await bruno.buscarClientesParaVenda('982.247'))).not.toContain('52998224725');

@@ -75,7 +75,7 @@ function fechado(c: CaixaDoDia, automatico = false): CaixaDoDia {
       ajusteCentavos: 0,
       justificativa: null,
       autorizadoPor: null,
-      resumo: { vendas: { dinheiro: 0, pix: 0, debito: 0, credito: 0, cashback: 0, fiado: 0 }, entradasCentavos: 0, saidasCentavos: 0, sangriasCentavos: 0, retiradasCentavos: 0, suprimentosCentavos: 0, estornosCentavos: 0 },
+      resumo: { vendas: { dinheiro: 0, pix: 0, debito: 0, credito: 0, vale: 0, cashback: 0, fiado: 0 }, entradasCentavos: 0, saidasCentavos: 0, sangriasCentavos: 0, retiradasCentavos: 0, suprimentosCentavos: 0, estornosCentavos: 0 },
     },
   };
 }
@@ -175,7 +175,7 @@ describe('esperado na gaveta (CX-03)', () => {
       { criadaEm: `${HOJE}T18:00:00.000Z`, status: 'finalizada', pagamentos: [{ forma: 'fiado', valorCentavos: 2500 }] },
     ];
     expect(resumoDoCaixa(c, vendas, lancamentos, FUSO)).toEqual({
-      vendas: { dinheiro: 4550, pix: 1000, debito: 0, credito: 0, cashback: 0, fiado: 2500 },
+      vendas: { dinheiro: 4550, pix: 1000, debito: 0, credito: 0, vale: 0, cashback: 0, fiado: 2500 },
       entradasCentavos: 5550,
       saidasCentavos: 2550,
       sangriasCentavos: 2000,

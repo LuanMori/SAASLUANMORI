@@ -170,7 +170,7 @@ describe('validarNovaVenda', () => {
   });
 
   it('nomes das formas de pagamento iguais aos do DaniPets', () => {
-    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito', 'Cashback', 'Fiado']);
+    expect(Object.values(NOME_FORMA_PAGAMENTO)).toEqual(['Dinheiro', 'Pix', 'Cartão de débito', 'Cartão de crédito', 'Vale-troca', 'Cashback', 'Fiado']);
   });
 });
 

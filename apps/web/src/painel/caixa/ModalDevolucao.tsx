@@ -3,12 +3,14 @@
 //   1) escolhe a venda pelo número ou numa lista das vendas de hoje;
 //   2) devolve itens (quantidade de cada um) ou cancela a venda inteira (só no mesmo dia e sem
 //      devolução); informa o motivo; o Vendedor precisa da senha do Dono ou do Administrador;
-//   3) o valor volta pelas mesmas formas de pagamento da venda;
+//   3) o valor volta pelas mesmas formas de pagamento da venda ou como VALE-TROCA (módulo 8: "troca agora ou
+//      compra depois"; o fiado em aberto da venda é abatido antes; o vale fica com o cliente da venda, com outro
+//      escolhido ou sem cliente);
 //   4) cada item devolvido volta para o estoque (prateleira) ou não (avaria, vencido); no cancelamento,
 //      tudo volta para o estoque.
-// O vale-troca do DaniPets entra junto com a aba Clientes.
 import {
   type Devolucao,
+  type ValeTroca,
   descreverPagamentos,
   diaNoFuso,
   estornavelPorForma,
@@ -31,12 +33,20 @@ import { type ApiPainel, type Autorizador, ErroApi } from '../../api';
 import { dataNoFuso, horaNoFuso, pagamentosComValores } from '../formato';
 import { Modal } from './Modal';
 
+/** O vale emitido na devolução (para a tela mostrar o código e oferecer "Usar agora nesta venda"). */
+export interface ValeDaDevolucao {
+  vale: ValeTroca;
+  devolucaoNumero: number;
+  /** Quanto do fiado em aberto da venda foi abatido antes do vale. */
+  abatidoCentavos: number;
+}
+
 interface Props {
-  api: Pick<ApiPainel, 'listarVendas' | 'buscarVenda' | 'listarAutorizadores' | 'autorizar' | 'cancelarVenda' | 'devolverItens'>;
+  api: Pick<ApiPainel, 'listarVendas' | 'buscarVenda' | 'listarAutorizadores' | 'autorizar' | 'cancelarVenda' | 'devolverItens' | 'listarContasDeClientes'>;
   operador: { nome: string; papel: PapelDeLoja };
   fuso: string;
   agora: () => Date;
-  aoConcluir: (mensagem: string) => void;
+  aoConcluir: (mensagem: string, vale?: ValeDaDevolucao) => void;
   aoFechar: () => void;
 }
 
@@ -153,7 +163,7 @@ function PassoVenda({
   operador: Props['operador'];
   fuso: string;
   agora: () => Date;
-  aoConcluir: (mensagem: string) => void;
+  aoConcluir: Props['aoConcluir'];
   aoVoltar: () => void;
   aoFechar: () => void;
 }) {
@@ -164,6 +174,10 @@ function PassoVenda({
   // como no DaniPets: vem marcado ("volta"); desmarque para avaria ou vencido
   const [voltam, setVoltam] = useState<boolean[]>(venda.itens.map(() => true));
   const [motivo, setMotivo] = useState('');
+  // como o valor volta (DaniPets "Como o valor volta"): pelas mesmas formas ou como vale-troca
+  const [modo, setModo] = useState<'mesma' | 'vale'>('mesma');
+  const [clienteDoVale, setClienteDoVale] = useState('');
+  const [clientes, setClientes] = useState<{ id: string; nome: string }[] | null>(null);
   const [autorizadores, setAutorizadores] = useState<Autorizador[] | null>(null);
   const [quemId, setQuemId] = useState('');
   const [senha, setSenha] = useState('');
@@ -200,6 +214,15 @@ function PassoVenda({
     const u = unidadeDaLinha(x.linha);
     return valorDaQuantidade(item.precoCentavos, ja + x.quantidade, u) - valorDaQuantidade(item.precoCentavos, ja, u);
   };
+  // o vale pode ficar com outro cliente: a lista (sem o CPF) só é buscada quando a pessoa escolhe o vale
+  useEffect(() => {
+    if (modo !== 'vale' || clientes) return;
+    api
+      .listarContasDeClientes({})
+      .then((r) => setClientes(r.clientes.filter((c) => c.id !== venda.cliente?.id).map((c) => ({ id: c.id, nome: c.nome }))))
+      .catch(() => setClientes([]));
+  }, [modo]);
+
   const totalDevolver = acao === 'cancelar' ? venda.totalCentavos : itens.reduce((s, x) => s + valorDevolvido(x), 0);
   const previa = acao === 'cancelar' ? { ok: true as const, valor: venda.pagamentos } : repartirEstorno(venda, totalDevolver);
   const disponivel = estornavelPorForma(venda);
@@ -222,10 +245,27 @@ function PassoVenda({
         const v = await api.cancelarVenda(venda.id, { motivo: motivo.trim(), autorizacao });
         aoConcluir(`Venda ${formatarNumeroVenda(v.numero)} cancelada. Devolvido: ${comValores(v.cancelamento?.estornos ?? [])}.`);
       } else {
-        const { devolucao }: { devolucao: Devolucao } = await api.devolverItens(venda.id, { itens, motivo: motivo.trim(), autorizacao });
-        aoConcluir(
-          `Devolução registrada na venda ${formatarNumeroVenda(venda.numero)}: ${formatarCentavos(devolucao.totalCentavos)} (${comValores(devolucao.estornos)}).`,
-        );
+        const r: { devolucao: Devolucao; vale?: ValeTroca | null } = await api.devolverItens(venda.id, {
+          itens,
+          motivo: motivo.trim(),
+          autorizacao,
+          ...(modo === 'vale' ? { modo: 'vale' as const, clienteDoVale: clienteDoVale || null } : {}),
+        });
+        const abatido = r.devolucao.estornos.filter((e) => e.forma === 'fiado').reduce((t, e) => t + e.valorCentavos, 0);
+        if (r.vale) {
+          aoConcluir(
+            `Devolução nº ${r.devolucao.numero} registrada na venda ${formatarNumeroVenda(venda.numero)}: ${formatarCentavos(r.vale.valorCentavos)} em vale-troca ${r.vale.codigo}${
+              abatido > 0 ? ` (${formatarCentavos(abatido)} abatidos do fiado)` : ''
+            }.`,
+            { vale: r.vale, devolucaoNumero: r.devolucao.numero, abatidoCentavos: abatido },
+          );
+        } else if (modo === 'vale') {
+          aoConcluir(`Devolução nº ${r.devolucao.numero} registrada: ${formatarCentavos(abatido)} abatidos do fiado do cliente.`);
+        } else {
+          aoConcluir(
+            `Devolução registrada na venda ${formatarNumeroVenda(venda.numero)}: ${formatarCentavos(r.devolucao.totalCentavos)} (${comValores(r.devolucao.estornos)}).`,
+          );
+        }
       }
     } catch (e) {
       setErro(mensagemDe(e, 'Não foi possível concluir. Tente de novo.'));
@@ -317,8 +357,42 @@ function PassoVenda({
           </div>
         )}
 
+        {acao === 'devolver' && (
+          <div className="modal-grade">
+            <div className="campo">
+              <label htmlFor="dev-modo">Como o valor volta</label>
+              <select id="dev-modo" value={modo} onChange={(e) => setModo(e.target.value as 'mesma' | 'vale')}>
+                <option value="mesma">Mesma forma da venda ({disponivel.length ? comValores(disponivel) : 'nada mais a devolver'})</option>
+                <option value="vale">Vale-troca (troca agora ou compra depois)</option>
+              </select>
+            </div>
+            {modo === 'vale' && (
+              <div className="campo">
+                <label htmlFor="dev-cliente-vale">Cliente do vale (opcional)</label>
+                <select id="dev-cliente-vale" value={clienteDoVale} onChange={(e) => setClienteDoVale(e.target.value)}>
+                  <option value="">{venda.cliente ? `${venda.cliente.nome} (da venda)` : 'Não informado'}</option>
+                  {(clientes ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         <p className="dev-volta" role="status">
-          {acao === 'cancelar' ? (
+          {acao === 'devolver' && modo === 'vale' ? (
+            totalDevolver > 0 ? (
+              <>
+                Vira vale-troca: <b>{formatarCentavos(totalDevolver)}</b>. O vale não mexe no caixa nem no banco: é crédito do cliente na loja.
+                {venda.pagamentos.some((p) => p.forma === 'fiado') && ' Esta compra tem parte no fiado: a devolução abate primeiro o que o cliente ainda deve dela; só o resto vira vale-troca.'}
+              </>
+            ) : (
+              <>O valor volta como vale-troca, com um código para o cliente usar na próxima compra.</>
+            )
+          ) : acao === 'cancelar' ? (
             <>
               Volta tudo para o cliente: <b>{comValores(venda.pagamentos)}</b>. Todos os itens voltam ao estoque.
               {venda.pagamentos.some((p) => p.forma === 'fiado') && ' O fiado sai do que o cliente deve.'}

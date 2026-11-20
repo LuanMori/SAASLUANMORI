@@ -15,6 +15,9 @@
 // Cashback (módulo 7): "Usar cashback" abate o saldo do cliente do total e a forma escolhida paga o resto (DaniPets
 // V9.3.1); se o cashback cobre tudo, é só finalizar. O cupom de retorno do cliente entra sozinho nos itens sem
 // desconto manual. Ao finalizar, o aviso diz quanto de cashback o cliente ganhou.
+// Vale-troca (módulo 8): "Usar vale-troca" escolhe um vale com saldo (ou pelo código), com ou sem cliente; cada
+// vale abate o que cobre (depois do cashback) e a sobra fica no vale. A devolução pode virar vale e, aqui, ele pode
+// ser usado na hora ("troca").
 // Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
 // O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
@@ -43,6 +46,7 @@ import {
   NOME_FORMA_PAGAMENTO,
   type PapelDeLoja,
   semAcento,
+  type ValeTroca,
 } from '@saas/core';
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
@@ -71,7 +75,8 @@ import {
 } from './caixa/carrinho';
 import { ModalCliente } from './caixa/ModalCliente';
 import { ModalDesconto } from './caixa/ModalDesconto';
-import { ModalDevolucao } from './caixa/ModalDevolucao';
+import { ModalDevolucao, type ValeDaDevolucao } from './caixa/ModalDevolucao';
+import { ModalUsarVale, ModalValeEmitido } from './caixa/ModalVale';
 import { ModalSenha } from './caixa/ModalSenha';
 import { dataNoFuso, horaNoFuso } from './formato';
 import { usarCarga } from './usarCarga';
@@ -109,6 +114,9 @@ type Janela =
   | { tipo: 'cliente' }
   /** Fiado acima do limite ou com fiado vencido: a liberação de um Dono (módulo 6). */
   | { tipo: 'liberarFiado'; texto: string; valorCentavos: number }
+  /** Vale-troca (módulo 8): escolher um vale e o vale emitido numa devolução. */
+  | { tipo: 'vale' }
+  | { tipo: 'valeEmitido'; dados: ValeDaDevolucao }
   | null;
 
 export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa }: Props) {
@@ -118,6 +126,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   }, [api], ATUALIZAR_ESTOQUE_MS);
   // situação do caixa de hoje (DaniPets: "Caixa aberto às 08:10" / "CAIXA DE HOJE NÃO ABERTO")
   const { estado: cargaCaixa, recarregar: recarregarCaixa } = usarCarga(() => api.lerSituacaoDoCaixa(), [api], ATUALIZAR_ESTOQUE_MS);
+  // vales-troca com saldo (módulo 8): o botão "Usar vale-troca" só aparece se houver algum fora do pagamento
+  const { estado: cargaVales, recarregar: recarregarVales } = usarCarga(() => api.listarVales(), [api], ATUALIZAR_ESTOQUE_MS);
   const caixa = cargaCaixa.tipo === 'pronto' ? cargaCaixa.dados : null;
   const produtos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.produtos.filter((p) => p.ativo) : []), [carga]);
   const saldos = useMemo(() => (carga.tipo === 'pronto' ? carga.dados.saldos : new Map<string, number>()), [carga]);
@@ -149,8 +159,19 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   const cupom = cliente?.cupom ?? null;
   const totais = totaisDoCarrinho(linhas, porId, cupom);
   const conta = contaDoPagamento(pag, totais.totalCentavos, cliente ? (cliente.cashbackCentavos ?? 0) : 0);
-  // o cashback do cliente paga a compra toda: não precisa receber nada (DaniPets "O crédito do cliente paga a compra toda")
-  const cobreTudo = conta.cashbackCentavos > 0 && linhas.length > 0 && conta.aPagarCentavos === 0;
+  // o crédito do cliente (cashback e vales) paga a compra toda: não precisa receber nada (DaniPets V9.3.1)
+  const cobreTudo = conta.creditosCentavos > 0 && linhas.length > 0 && conta.aPagarCentavos === 0;
+  const valesDisponiveis = cargaVales.tipo === 'pronto' ? cargaVales.dados.filter((v) => !(pag.vales ?? []).some((x) => x.id === v.id)) : [];
+  /** O que o cliente pagaria com outro estado do pagamento (para os avisos de crédito). */
+  const aPagarCom = (estado: EstadoPagamento) => contaDoPagamento(estado, totais.totalCentavos, cliente ? (cliente.cashbackCentavos ?? 0) : 0).aPagarCentavos;
+  // o que sobra de crédito para a próxima compra (DaniPets: "Fica de saldo para a próxima compra")
+  const sobraDeCredito = [
+    ...(cliente && (cliente.cashbackCentavos ?? 0) - conta.cashbackCentavos > 0 && pag.usarCashback ? [`cashback ${formatarCentavos((cliente.cashbackCentavos ?? 0) - conta.cashbackCentavos)}`] : []),
+    ...(pag.vales ?? []).flatMap((v) => {
+      const usado = conta.valesAplicados.find((x) => x.id === v.id)?.valorCentavos ?? 0;
+      return v.saldoCentavos - usado > 0 ? [`vale ${v.codigo} ${formatarCentavos(v.saldoCentavos - usado)}`] : [];
+    }),
+  ];
   const temDinheiro = conta.dinheiroCentavos > 0;
   const troco = conta.recebidoCentavos === null ? null : conta.recebidoCentavos - conta.dinheiroCentavos;
   const ultimaLinha = linhas.find((l) => l.produtoId === ultimo) ?? linhas[linhas.length - 1];
@@ -294,16 +315,36 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     if (cliente.completo === false) return erro('Cadastro incompleto: complete o CPF para usar o cashback.');
     const saldo = cliente.cashbackCentavos ?? 0;
     if (saldo <= 0) return erro('O cliente não tem cashback disponível.');
-    setPag((p) => ({ ...p, usarCashback: true }));
+    const novo = { ...pag, usarCashback: true };
+    setPag(novo);
     const abate = Math.min(saldo, totais.totalCentavos);
     setAviso({
       tipo: 'ok',
-      texto: linhas.length ? `Cashback de ${formatarCentavos(abate)} abatido. O cliente paga ${formatarCentavos(totais.totalCentavos - abate)}.` : `Cashback no pagamento: abate até ${formatarCentavos(saldo)} da compra.`,
+      texto: linhas.length ? `Cashback de ${formatarCentavos(abate)} abatido. O cliente paga ${formatarCentavos(aPagarCom(novo))}.` : `Cashback no pagamento: abate até ${formatarCentavos(saldo)} da compra.`,
     });
   }
   function naoUsarCashback() {
-    setPag((p) => ({ ...p, usarCashback: false }));
-    setAviso({ tipo: 'ok', texto: `Cashback fora desta venda. O cliente paga ${formatarCentavos(totais.totalCentavos)}.` });
+    const novo = { ...pag, usarCashback: false };
+    setPag(novo);
+    setAviso({ tipo: 'ok', texto: `Cashback fora desta venda. O cliente paga ${formatarCentavos(aPagarCom(novo))}.` });
+  }
+
+  /** "Usar vale-troca": o vale abate o que cobre (depois do cashback); a forma escolhida paga o resto (DaniPets addVoucherPayment). */
+  function usarVale(v: ValeTroca) {
+    if (v.situacao !== 'aberto' || v.saldoCentavos <= 0) return erro('Vale-troca sem saldo.');
+    if ((pag.vales ?? []).some((x) => x.id === v.id)) return erro('Este vale já está no pagamento.');
+    const novo = { ...pag, vales: [...(pag.vales ?? []), { id: v.id, codigo: v.codigo, saldoCentavos: v.saldoCentavos }] };
+    setPag(novo);
+    const usado = contaDoPagamento(novo, totais.totalCentavos, cliente ? (cliente.cashbackCentavos ?? 0) : 0).valesAplicados.find((x) => x.id === v.id)?.valorCentavos ?? 0;
+    setAviso({
+      tipo: 'ok',
+      texto: linhas.length ? `Vale ${v.codigo}: ${formatarCentavos(usado)} abatido. O cliente paga ${formatarCentavos(aPagarCom(novo))}.` : `Vale ${v.codigo} no pagamento (saldo ${formatarCentavos(v.saldoCentavos)}).`,
+    });
+  }
+  function naoUsarVale(id: string) {
+    const novo = { ...pag, vales: (pag.vales ?? []).filter((x) => x.id !== id) };
+    setPag(novo);
+    setAviso({ tipo: 'ok', texto: `Vale-troca fora desta venda. O cliente paga ${formatarCentavos(aPagarCom(novo))}.` });
   }
 
   const removerParte = (i: number) =>
@@ -350,6 +391,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         }`,
       });
       void recarregar(); // estoque novo
+      void recarregarVales(); // o vale usado pode ter zerado
       focarCodigo();
     } catch (e) {
       // fiado acima do limite ou com fiado vencido: pede a liberação de um Dono e finaliza depois dela
@@ -530,6 +572,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     </span>
                   )
                 )}
+                {(cliente.valeCentavos ?? 0) > 0 && (
+                  <span className="pdv-chip pdv-chip-ok" title="Vale-troca do cliente: use em “Usar vale-troca”">
+                    Vale {formatarCentavos(cliente.valeCentavos!)}
+                  </span>
+                )}
                 {cupom && (
                   <span className="pdv-chip pdv-chip-ok" title={`Cupom de retorno válido até ${dataBr(cupom.venceEm)}: entra sozinho nos itens sem desconto manual`}>
                     Cupom {pctTexto(cupom.pct)} aplicado
@@ -708,22 +755,33 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             </div>
           </div>
 
-          <div className={conta.cashbackCentavos > 0 ? 'pdv-total pdv-total-credito' : 'pdv-total'}>
-            {conta.cashbackCentavos > 0 && (
-              // o visor mostra a conta (compra − cashback) e, grande, o que o cliente paga (DaniPets V9.3.1)
+          <div className={conta.creditosCentavos > 0 || (pag.vales ?? []).length > 0 ? 'pdv-total pdv-total-credito' : 'pdv-total'}>
+            {(conta.cashbackCentavos > 0 || (pag.vales ?? []).length > 0) && (
+              // o visor mostra a conta (compra − créditos) e, grande, o que o cliente paga (DaniPets V9.3.1)
               <div className="pdv-conta" aria-label="Conta do pagamento">
                 <div className="pdv-conta-linha">
                   <span>Compra</span>
                   <b>{formatarCentavos(totais.totalCentavos)}</b>
                   <i />
                 </div>
-                <div className="pdv-conta-linha pdv-conta-credito">
-                  <span>Cashback</span>
-                  <b>− {formatarCentavos(conta.cashbackCentavos)}</b>
-                  <button type="button" className="pdv-remover" onClick={naoUsarCashback} title="Não usar o cashback nesta venda" aria-label="Não usar o cashback nesta venda">
-                    ×
-                  </button>
-                </div>
+                {conta.cashbackCentavos > 0 && (
+                  <div className="pdv-conta-linha pdv-conta-credito">
+                    <span>Cashback</span>
+                    <b>− {formatarCentavos(conta.cashbackCentavos)}</b>
+                    <button type="button" className="pdv-remover" onClick={naoUsarCashback} title="Não usar o cashback nesta venda" aria-label="Não usar o cashback nesta venda">
+                      ×
+                    </button>
+                  </div>
+                )}
+                {(pag.vales ?? []).map((v) => (
+                  <div key={v.id} className="pdv-conta-linha pdv-conta-credito">
+                    <span>Vale-troca {v.codigo}</span>
+                    <b>− {formatarCentavos(conta.valesAplicados.find((x) => x.id === v.id)?.valorCentavos ?? 0)}</b>
+                    <button type="button" className="pdv-remover" onClick={() => naoUsarVale(v.id)} title={`Não usar o vale ${v.codigo} nesta venda`} aria-label={`Não usar o vale ${v.codigo} nesta venda`}>
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             <div className="pdv-rotulo">TOTAL A PAGAR</div>
@@ -735,10 +793,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           <div className="pdv-pagamento">
             {cobreTudo ? (
               <p className="alerta pdv-aviso-ok pdv-cobre-tudo" role="status">
-                <b>O cashback do cliente paga a compra toda.</b> Não precisa receber nada: é só finalizar.
-                {(cliente?.cashbackCentavos ?? 0) - conta.cashbackCentavos > 0 && (
-                  <> Fica de saldo para a próxima compra: {formatarCentavos((cliente?.cashbackCentavos ?? 0) - conta.cashbackCentavos)}.</>
-                )}
+                <b>O crédito do cliente paga a compra toda.</b> Não precisa receber nada: é só finalizar.
+                {sobraDeCredito.length > 0 && <> Fica de saldo para a próxima compra: {sobraDeCredito.join(' • ')}.</>}
               </p>
             ) : (
             <>
@@ -856,6 +912,11 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                   {pag.dividido ? '+ Outra forma' : 'Dividir pagamento'}
                 </button>
               )}
+              {valesDisponiveis.length > 0 && (
+                <button type="button" className="botao pdv-dividir" onClick={() => setJanela({ tipo: 'vale' })}>
+                  Usar vale-troca
+                </button>
+              )}
               {cliente && cliente.completo !== false && (cliente.cashbackCentavos ?? 0) > 0 && !pag.usarCashback && (
                 <button type="button" className="botao pdv-dividir pdv-usar-cashback" onClick={usarCashback}>
                   Usar cashback ({formatarCentavos(cliente.cashbackCentavos!)})
@@ -932,10 +993,37 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           operador={operador}
           fuso={fuso}
           agora={agora}
-          aoConcluir={(texto) => {
+          aoConcluir={(texto, vale) => {
             setAviso({ tipo: 'ok', texto });
             void recarregar(); // o que voltou para a prateleira já pode ser vendido
+            void recarregarVales(); // vale novo, ou o saldo que voltou para um vale
+            // devolução como vale-troca: mostra o código e oferece usar o vale nesta venda (a troca)
+            if (vale) setJanela({ tipo: 'valeEmitido', dados: vale });
+            else fecharJanela();
+          }}
+          aoFechar={fecharJanela}
+        />
+      )}
+      {janela?.tipo === 'vale' && (
+        <ModalUsarVale
+          api={api}
+          vales={valesDisponiveis}
+          aoEscolher={(v) => {
             fecharJanela();
+            usarVale(v);
+          }}
+          aoFechar={fecharJanela}
+        />
+      )}
+      {janela?.tipo === 'valeEmitido' && (
+        <ModalValeEmitido
+          vale={janela.dados.vale}
+          devolucaoNumero={janela.dados.devolucaoNumero}
+          abatidoDoFiadoCentavos={janela.dados.abatidoCentavos}
+          aoUsarAgora={() => {
+            const v = janela.dados.vale;
+            fecharJanela();
+            usarVale(v);
           }}
           aoFechar={fecharJanela}
         />
@@ -970,6 +1058,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
               ...(c.cashbackCentavos !== undefined ? { cashbackCentavos: c.cashbackCentavos, cashbackVencimento: c.cashbackVencimento ?? null } : {}),
               ...(c.cupom !== undefined ? { cupom: c.cupom } : {}),
               ...(c.completo !== undefined ? { completo: c.completo } : {}),
+              ...(c.valeCentavos !== undefined ? { valeCentavos: c.valeCentavos } : {}),
             });
             // trocar de cliente tira o cashback do outro do pagamento (DaniPets posSetCustomer)
             setPag((p) => ({ ...p, usarCashback: false }));

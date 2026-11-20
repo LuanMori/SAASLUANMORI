@@ -1,5 +1,5 @@
 // apps/web/src/painel/formato.ts — datas e horas sempre no fuso da loja.
-import { formatarCentavos, formatarQuantidade, NOME_FORMA_PAGAMENTO, type Pagamento, unidadeDe, type Venda } from '@saas/core';
+import { type Devolucao, formatarCentavos, formatarQuantidade, nomeDoPagamento, type Pagamento, unidadeDe, type Venda } from '@saas/core';
 
 export const horaNoFuso = (iso: string | Date, fuso: string) =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: fuso });
@@ -38,6 +38,9 @@ export const itensVendidos = (unidades: number, gramas: number) =>
 
 export const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-/** "Dinheiro R$ 6,00 + Pix R$ 12,00" (sempre com os valores). */
-export const pagamentosComValores = (pagamentos: readonly Pagamento[]) =>
-  pagamentos.map((p) => `${NOME_FORMA_PAGAMENTO[p.forma]} ${formatarCentavos(p.valorCentavos)}`).join(' + ');
+/** "Dinheiro R$ 6,00 + Pix R$ 12,00" (sempre com os valores; no vale-troca, com o código). */
+export const pagamentosComValores = (pagamentos: readonly Pagamento[]) => pagamentos.map((p) => `${nomeDoPagamento(p)} ${formatarCentavos(p.valorCentavos)}`).join(' + ');
+
+/** Como o valor da devolução voltou: pelas formas da venda e, se for o caso, o vale-troca emitido (módulo 8). */
+export const comoVoltou = (d: Pick<Devolucao, 'estornos' | 'vale'>) =>
+  [pagamentosComValores(d.estornos), d.vale ? `vale-troca ${d.vale.codigo} ${formatarCentavos(d.vale.valorCentavos)}` : ''].filter(Boolean).join(' + ') || '—';

@@ -28,7 +28,7 @@ import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState 
 import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
 import { CardPendencias } from './CardPendencias';
-import { dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, produtosVendidos, quantidadeDoItem, saudacao } from './formato';
+import { comoVoltou, dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, produtosVendidos, quantidadeDoItem, saudacao } from './formato';
 import type { IdSecao } from './menu';
 import type { Pendencia } from './pendencias';
 import { usarCarga } from './usarCarga';
@@ -363,7 +363,7 @@ function RelatorioVendasHoje({
                 `Devolução nº ${d.numero}`,
                 formatarNumeroVenda(d.vendaNumero),
                 formatarCentavos(d.totalCentavos),
-                pagamentosComValores(d.estornos),
+                comoVoltou(d),
                 d.motivo,
                 quemFez(d.feitaPor.nome, d.autorizadaPor?.nome),
               ]),

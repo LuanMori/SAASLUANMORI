@@ -10,7 +10,9 @@
 //   - cliente identificado (F6) opcional: vem do cadastro, nunca um nome digitado na tela;
 //   - fiado (F7): venda a prazo, SÓ para cliente identificado; sem cliente, a venda é recusada;
 //   - cashback (módulo 7): o saldo do cliente identificado abate do total e a forma escolhida paga o resto; o
-//     cupom de retorno do cliente dá o desconto sozinho nos itens sem desconto manual (fidelidade.ts).
+//     cupom de retorno do cliente dá o desconto sozinho nos itens sem desconto manual (fidelidade.ts);
+//   - vale-troca (módulo 8): cada vale abate do total pelo que cobre (depois do cashback), com ou sem cliente; a
+//     devolução pode voltar como vale-troca novo (vale.ts).
 //   Os efeitos no estoque, no financeiro e no histórico do cliente estão em estoque.ts, financeiro.ts e cliente.ts.
 //
 // Segurança (mesma ideia do cadastro de produto):
@@ -30,8 +32,8 @@ import type { PapelDeLoja } from './papeis';
 import { pode } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
-/** Na ordem do DaniPets (PAY_METHODS): as formas da tela, o crédito do cliente (cashback) e o fiado. */
-export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'cashback', 'fiado'] as const;
+/** Na ordem do DaniPets (PAY_METHODS): as formas da tela, os créditos do cliente (vale-troca e cashback) e o fiado. */
+export const FORMAS_PAGAMENTO = ['dinheiro', 'pix', 'debito', 'credito', 'vale', 'cashback', 'fiado'] as const;
 export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
 
 /** Nomes iguais aos do DaniPets. */
@@ -40,15 +42,19 @@ export const NOME_FORMA_PAGAMENTO: Record<FormaPagamento, string> = {
   pix: 'Pix',
   debito: 'Cartão de débito',
   credito: 'Cartão de crédito',
+  vale: 'Vale-troca',
   cashback: 'Cashback',
   fiado: 'Fiado',
 };
 
 /** Crédito do cliente: abate do total pelo que cobre, e a forma escolhida paga o resto (DaniPets CREDIT_METHODS). */
-export type FormaDeCredito = Extract<FormaPagamento, 'cashback'>;
-export const ehFormaDeCredito = (forma: FormaPagamento): forma is FormaDeCredito => forma === 'cashback';
+export type FormaDeCredito = Extract<FormaPagamento, 'cashback' | 'vale'>;
+export const ehFormaDeCredito = (forma: FormaPagamento): forma is FormaDeCredito => forma === 'cashback' || forma === 'vale';
 
-/** As formas que a pessoa escolhe nos botões da Frente de caixa (o cashback entra pelo botão "Usar cashback"). */
+/**
+ * As formas que a pessoa escolhe nos botões da Frente de caixa (o cashback e o vale-troca entram pelos botões
+ * "Usar cashback" e "Usar vale-troca").
+ */
 export const FORMAS_DA_TELA: readonly FormaPagamento[] = FORMAS_PAGAMENTO.filter((f) => !ehFormaDeCredito(f));
 
 /** Fiado (venda a prazo na conta do cliente) e cashback (saldo do cliente): só com cliente identificado (F6). */
@@ -117,6 +123,10 @@ export interface ItemPedido {
 export interface Pagamento {
   forma: FormaPagamento;
   valorCentavos: number;
+  /** No vale-troca: qual vale (cada vale é uma parte do pagamento). */
+  valeId?: string | null;
+  /** O código do vale (VT-0001-ABC), gravado pelo servidor para mostrar. */
+  valeCodigo?: string | null;
 }
 
 /** O que a Frente de caixa envia. */
@@ -193,7 +203,10 @@ export interface Devolucao {
   criadaEm: string;
   itens: ItemDevolvido[];
   totalCentavos: number;
+  /** O que voltou pelas mesmas formas da venda (no vale-troca, só o fiado em aberto que foi abatido). */
   estornos: Pagamento[];
+  /** Devolução como vale-troca (módulo 8): o vale emitido com o resto. */
+  vale?: { id: string; codigo: string; valorCentavos: number } | null;
   motivo: string;
   feitaPor: Operador;
   autorizadaPor: Operador | null;
@@ -282,11 +295,14 @@ export function formatarNumeroVenda(numero: number): string {
   return `#${String(numero).padStart(5, '0')}`;
 }
 
+/** "Vale-troca VT-0001-ABC" no vale; o nome da forma nas outras. */
+export const nomeDoPagamento = (p: Pick<Pagamento, 'forma' | 'valeCodigo'>): string => (p.forma === 'vale' && p.valeCodigo ? `Vale-troca ${p.valeCodigo}` : NOME_FORMA_PAGAMENTO[p.forma]);
+
 /** "Pix" numa forma só; "Dinheiro R$ 10,00 + Pix R$ 22,40" no pagamento dividido. */
 export function descreverPagamentos(pagamentos: readonly Pagamento[]): string {
   if (pagamentos.length === 0) return 'Sem pagamento (brinde)';
-  if (pagamentos.length === 1) return NOME_FORMA_PAGAMENTO[pagamentos[0]!.forma];
-  return pagamentos.map((p) => `${NOME_FORMA_PAGAMENTO[p.forma]} ${formatarCentavos(p.valorCentavos)}`).join(' + ');
+  if (pagamentos.length === 1) return nomeDoPagamento(pagamentos[0]!);
+  return pagamentos.map((p) => `${nomeDoPagamento(p)} ${formatarCentavos(p.valorCentavos)}`).join(' + ');
 }
 
 function lerMotivo(valor: unknown, campo: string, erros: ErroCampo[], obrigatorio = 'Informe o motivo.'): string {
@@ -359,7 +375,7 @@ function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza
 const CAMPOS_VENDA = new Set(['itens', 'pagamentos', 'recebidoDinheiroCentavos', 'clienteId', 'liberacaoFiado']);
 const CAMPOS_ITEM = new Set(['produtoId', 'quantidade', 'desconto', 'cupom']);
 const CAMPOS_DESCONTO = new Set(['precoFinalCentavos', 'motivo', 'autorizacao']);
-const CAMPOS_PAGAMENTO = new Set(['forma', 'valorCentavos']);
+const CAMPOS_PAGAMENTO = new Set(['forma', 'valorCentavos', 'valeId']);
 
 /**
  * Valida o pedido da Frente de caixa. O mesmo produto repetido sem desconto é somado numa linha só
@@ -448,8 +464,9 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
     erros.push({ campo: 'itens', mensagem: `Uma venda pode ter até ${LIMITES_VENDA.itensMax} produtos diferentes.` });
   }
 
-  // pagamentos
+  // pagamentos (cada vale-troca é uma parte; o mesmo vale duas vezes soma)
   const porForma = new Map<FormaPagamento, number>();
+  const porVale = new Map<string, number>();
   if (!Array.isArray(entrada.pagamentos)) {
     erros.push({ campo: 'pagamentos', mensagem: 'Informe a forma de pagamento.' });
   } else if (entrada.pagamentos.length > LIMITES_VENDA.pagamentosMax) {
@@ -469,6 +486,19 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
       const v = bruto.valorCentavos;
       if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
         erros.push({ campo: `${campo}.valorCentavos`, mensagem: 'O valor de cada parte deve ser maior que zero.' });
+        return;
+      }
+      if (bruto.forma === 'vale') {
+        const id = bruto.valeId;
+        if (typeof id !== 'string' || id.trim() === '' || id.length > LIMITES_VENDA.autorizacaoMax || CONTROLE.test(id)) {
+          erros.push({ campo: `${campo}.valeId`, mensagem: 'Escolha o vale-troca.' });
+          return;
+        }
+        porVale.set(id.trim(), (porVale.get(id.trim()) ?? 0) + v);
+        return;
+      }
+      if (bruto.valeId !== undefined && bruto.valeId !== null) {
+        erros.push({ campo: `${campo}.valeId`, mensagem: 'Só o vale-troca leva o vale.' });
         return;
       }
       porForma.set(bruto.forma, (porForma.get(bruto.forma) ?? 0) + v);
@@ -510,8 +540,11 @@ export function validarNovaVenda(entrada: unknown): Resultado<NovaVenda> {
       clienteId,
       ...(liberacaoFiado ? { liberacaoFiado } : {}),
       itens: [...porProduto.values()],
-      // na ordem de FORMAS_PAGAMENTO, para a venda ficar igual não importa a ordem em que foi digitada
-      pagamentos: FORMAS_PAGAMENTO.filter((f) => porForma.has(f)).map((forma) => ({ forma, valorCentavos: porForma.get(forma)! })),
+      // na ordem de FORMAS_PAGAMENTO, para a venda ficar igual não importa a ordem em que foi digitada (os vales,
+      // na ordem em que entraram)
+      pagamentos: FORMAS_PAGAMENTO.flatMap((forma): Pagamento[] =>
+        forma === 'vale' ? [...porVale].map(([valeId, valorCentavos]) => ({ forma, valorCentavos, valeId })) : porForma.has(forma) ? [{ forma, valorCentavos: porForma.get(forma)! }] : [],
+      ),
       recebidoDinheiroCentavos: recebido,
     },
   };
@@ -536,6 +569,8 @@ export interface ContextoVenda {
   cashbackDisponivelCentavos?: number;
   /** Cupom de retorno que vale hoje para o cliente identificado (fidelidade.ts cupomAtivo). */
   cupom?: { id: string; clienteId: string; pct: number } | null;
+  /** Vales-troca da loja (vale.ts): o vale do pagamento precisa estar em aberto e ter saldo. */
+  vales?: ReadonlyMap<string, { id: string; codigo: string; saldoCentavos: number; aberto: boolean }>;
 }
 
 export interface VendaCalculada {
@@ -673,6 +708,15 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
   if (cliente && cashback > disponivel) {
     return { ok: false, erros: [{ campo: 'pagamentos', mensagem: `O cashback disponível de ${cliente.nome} é ${formatarCentavos(disponivel)}.` }] };
   }
+  // vale-troca: vale para quem está com o código, com ou sem cliente; não passa do saldo do vale
+  const codigos = new Map<string, string>();
+  for (const p of pedido.pagamentos) {
+    if (p.forma !== 'vale') continue;
+    const v = p.valeId ? ctx.vales?.get(p.valeId) : undefined;
+    if (!v || !v.aberto) return { ok: false, erros: [{ campo: 'pagamentos', mensagem: 'Vale-troca inválido ou já usado. Remova o vale do pagamento.' }] };
+    if (p.valorCentavos > v.saldoCentavos) return { ok: false, erros: [{ campo: 'pagamentos', mensagem: `O vale ${v.codigo} tem saldo de ${formatarCentavos(v.saldoCentavos)}.` }] };
+    codigos.set(v.id, v.codigo);
+  }
 
   // pagamentos e troco
   const pago = pedido.pagamentos.reduce((s, p) => s + p.valorCentavos, 0);
@@ -706,7 +750,7 @@ export function calcularVenda(pedido: NovaVenda, catalogo: ReadonlyMap<string, P
       itens,
       totalCentavos: total,
       descontoCentavos: desconto,
-      pagamentos: pedido.pagamentos.map((p) => ({ ...p })),
+      pagamentos: pedido.pagamentos.map((p) => (p.forma === 'vale' && p.valeId ? { ...p, valeCodigo: codigos.get(p.valeId) ?? null } : { ...p })),
       recebidoDinheiroCentavos: recebido,
       trocoCentavos: troco,
       cliente,
@@ -768,11 +812,18 @@ export interface PedidoCancelamento {
   autorizacao?: string | null;
 }
 
+/** Como o valor da devolução volta: pelas mesmas formas da venda ou como vale-troca (DaniPets DEV-03). */
+export type ModoDevolucao = 'mesma' | 'vale';
+
 export interface PedidoDevolucao {
   /** voltaAoEstoque: padrão true (volta para a prateleira); false para avaria ou vencido. */
   itens: { linha: number; quantidade: number; voltaAoEstoque?: boolean }[];
   motivo: string;
   autorizacao?: string | null;
+  /** Sem: pelas mesmas formas da venda. */
+  modo?: ModoDevolucao;
+  /** No vale-troca: o cliente do vale (sem: o cliente da venda, se houver). */
+  clienteDoVale?: string | null;
 }
 
 export function validarPedidoCancelamento(entrada: unknown): Resultado<PedidoCancelamento> {
@@ -787,7 +838,7 @@ export function validarPedidoCancelamento(entrada: unknown): Resultado<PedidoCan
 export function validarPedidoDevolucao(entrada: unknown): Resultado<PedidoDevolucao> {
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os itens e o motivo.' }] };
   const erros: ErroCampo[] = [];
-  camposDesconhecidos(entrada, new Set(['itens', 'motivo', 'autorizacao']), '', erros);
+  camposDesconhecidos(entrada, new Set(['itens', 'motivo', 'autorizacao', 'modo', 'clienteDoVale']), '', erros);
   const itens: { linha: number; quantidade: number; voltaAoEstoque: boolean }[] = [];
   if (!Array.isArray(entrada.itens)) erros.push({ campo: 'itens', mensagem: 'Escolha o que vai ser devolvido.' });
   else
@@ -806,7 +857,18 @@ export function validarPedidoDevolucao(entrada: unknown): Resultado<PedidoDevolu
   if (erros.length === 0 && itens.length === 0) erros.push({ campo: 'itens', mensagem: 'Informe a quantidade de pelo menos um item.' });
   const motivo = lerMotivo(entrada.motivo, 'motivo', erros, 'Informe o motivo da devolução.');
   const autorizacao = lerAutorizacao(entrada.autorizacao, 'autorizacao', erros);
-  return erros.length ? { ok: false, erros } : { ok: true, valor: { itens, motivo, autorizacao } };
+  const modo = entrada.modo === undefined || entrada.modo === null ? 'mesma' : entrada.modo;
+  if (modo !== 'mesma' && modo !== 'vale') erros.push({ campo: 'modo', mensagem: 'Escolha como o valor volta para o cliente.' });
+  let clienteDoVale: string | null = null;
+  const cv = entrada.clienteDoVale;
+  if (cv !== undefined && cv !== null && cv !== '') {
+    if (typeof cv !== 'string' || cv.length > LIMITES_VENDA.clienteIdMax || CONTROLE.test(cv)) erros.push({ campo: 'clienteDoVale', mensagem: 'Cliente inválido.' });
+    else if (modo !== 'vale') erros.push({ campo: 'clienteDoVale', mensagem: 'O cliente do vale só vale na devolução como vale-troca.' });
+    else clienteDoVale = cv.trim();
+  }
+  return erros.length
+    ? { ok: false, erros }
+    : { ok: true, valor: { itens, motivo, autorizacao, ...(modo === 'vale' ? { modo: 'vale' as const, clienteDoVale } : {}) } };
 }
 
 export interface ContextoEstorno {
@@ -817,6 +879,8 @@ export interface ContextoEstorno {
   fuso?: string;
   /** O caixa de hoje, se estiver aberto (null = fechado ou não aberto). Sem: a regra do caixa não é conferida. */
   caixaAberto?: { id: string } | null;
+  /** Devolução como vale-troca: o fiado desta venda que o cliente ainda não pagou (é abatido antes). */
+  fiadoEmAbertoCentavos?: number;
 }
 
 function conferirAutorizacaoEstorno(
@@ -865,7 +929,7 @@ export function calcularDevolucao(
   venda: Venda,
   pedido: PedidoDevolucao,
   ctx: ContextoEstorno,
-): Resultado<{ itens: ItemDevolvido[]; totalCentavos: number; estornos: Pagamento[]; autorizadoPor: Operador | null; autorizacaoUsada: string | null }> {
+): Resultado<{ itens: ItemDevolvido[]; totalCentavos: number; estornos: Pagamento[]; valeCentavos: number; autorizadoPor: Operador | null; autorizacaoUsada: string | null }> {
   if (venda.status === 'cancelada') return { ok: false, erros: [{ campo: '_', mensagem: 'Esta venda foi cancelada.' }] };
   const restante = restanteParaDevolver(venda);
   const erros: ErroCampo[] = [];
@@ -896,9 +960,15 @@ export function calcularDevolucao(
   const total = itens.reduce((s, x) => s + x.valorCentavos, 0);
   const aut = conferirAutorizacaoEstorno(venda, 'devolucao', ctx);
   if (!aut.ok) return aut;
+  const comum = { itens, totalCentavos: total, autorizadoPor: aut.valor.autorizadoPor, autorizacaoUsada: aut.valor.usada };
+  if (pedido.modo === 'vale') {
+    // DaniPets planRefund: abate primeiro o fiado em aberto desta venda; só o resto vira vale-troca
+    const abate = Math.min(total, Math.max(0, ctx.fiadoEmAbertoCentavos ?? 0), estornavelPorForma(venda).find((p) => p.forma === 'fiado')?.valorCentavos ?? 0);
+    return { ok: true, valor: { ...comum, estornos: abate > 0 ? [{ forma: 'fiado', valorCentavos: abate }] : [], valeCentavos: total - abate } };
+  }
   const estornos = repartirEstorno(venda, total);
   if (!estornos.ok) return estornos;
-  return { ok: true, valor: { itens, totalCentavos: total, estornos: estornos.valor, autorizadoPor: aut.valor.autorizadoPor, autorizacaoUsada: aut.valor.usada } };
+  return { ok: true, valor: { ...comum, estornos: estornos.valor, valeCentavos: 0 } };
 }
 
 // ------------------------------------------------------------------ datas e resumos

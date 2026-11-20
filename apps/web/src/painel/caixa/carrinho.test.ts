@@ -180,7 +180,7 @@ describe('carrinho salvo', () => {
     expect(localStorage.getItem('k')).not.toContain('segredo');
     expect(lerCarrinhoSalvo('k')).toEqual({
       linhas: [{ produtoId: 'r', quantidade: 1, desconto: { precoFinalCentavos: 15000, motivo: 'x', responsavelNome: 'Ana', autorizacao: null } }],
-      pagamento: { dividido: false, forma: 'debito', partes: [], recebidoTexto: '', usarCashback: false },
+      pagamento: { dividido: false, forma: 'debito', partes: [], recebidoTexto: '', usarCashback: false, vales: [] },
       cliente: null,
     });
   });
@@ -261,3 +261,45 @@ describe('cashback e cupom de retorno no carrinho (PDV-04, PDV-08)', () => {
     expect(semCreditoDoCliente({ ...pagamentoInicial('fiado'), usarCashback: true })).toMatchObject({ forma: 'pix', usarCashback: false });
   });
 });
+
+// ------------------------------------------------------------------ vale-troca (módulo 8)
+describe('vale-troca no carrinho (PDV-09)', () => {
+  const A = { id: 'a', codigo: 'VT-0001-ABC', saldoCentavos: 3000 };
+  const B = { id: 'b', codigo: 'VT-0002-ABD', saldoCentavos: 2000 };
+
+  it('primeiro o cashback, depois cada vale na ordem em que entrou; a forma escolhida paga o resto', () => {
+    const p = { ...pagamentoInicial('pix'), usarCashback: true, vales: [A, B] };
+    expect(contaDoPagamento(p, 7000, 1000)).toMatchObject({
+      pagamentos: [
+        { forma: 'cashback', valorCentavos: 1000 },
+        { forma: 'vale', valorCentavos: 3000, valeId: 'a' },
+        { forma: 'vale', valorCentavos: 2000, valeId: 'b' },
+        { forma: 'pix', valorCentavos: 1000 },
+      ],
+      valesAplicados: [
+        { id: 'a', codigo: 'VT-0001-ABC', valorCentavos: 3000 },
+        { id: 'b', codigo: 'VT-0002-ABD', valorCentavos: 2000 },
+      ],
+      creditosCentavos: 6000,
+      aPagarCentavos: 1000,
+    });
+    // o crédito cobre tudo: o vale que sobra não entra (e a sobra fica nele)
+    const c = contaDoPagamento(p, 3500, 1000);
+    expect([c.pagamentos.map((x) => [x.forma, x.valorCentavos]), c.aPagarCentavos]).toEqual([
+      [
+        ['cashback', 1000],
+        ['vale', 2500],
+      ],
+      0,
+    ]);
+    // o pedido leva só o id do vale (o código o servidor sabe)
+    expect(montarPedido([], contaDoPagamento({ ...pagamentoInicial('pix'), vales: [A] }, 2000)).pagamentos).toEqual([{ forma: 'vale', valorCentavos: 2000, valeId: 'a' }]);
+  });
+
+  it('o carrinho guardado lembra os vales (código no formato certo, cada um uma vez); sem cliente, o vale fica', () => {
+    salvarCarrinho('k', [], { ...pagamentoInicial('pix'), vales: [A, A, { id: 'x', codigo: '<b>', saldoCentavos: 1 }, B] });
+    expect(lerCarrinhoSalvo('k')?.pagamento.vales).toEqual([A, B]);
+    expect(semCreditoDoCliente({ ...pagamentoInicial('pix'), usarCashback: true, vales: [A] }).vales).toEqual([A]);
+  });
+});
+

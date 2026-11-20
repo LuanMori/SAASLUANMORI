@@ -60,6 +60,7 @@ type Aba = 'clientes' | 'retorno' | 'fiado' | 'regras';
 const FILTROS: { valor: FiltroClientes; rotulo: string; permissao?: 'clientes.fiado' | 'clientes.desativar' }[] = [
   { valor: 'todos', rotulo: 'Todos os clientes' },
   { valor: 'cashback', rotulo: 'Com cashback' },
+  { valor: 'vale', rotulo: 'Com vale-troca' },
   { valor: 'fiado', rotulo: 'Com fiado em aberto', permissao: 'clientes.fiado' },
   { valor: 'vencido', rotulo: 'Com fiado vencido', permissao: 'clientes.fiado' },
   { valor: 'incompleto', rotulo: 'Cadastro incompleto' },
@@ -94,6 +95,8 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
   const { estado: estadoRetorno, recarregar: recarregarRetorno } = usarCarga(() => api.listarRetorno(), [api]);
   const { estado: estadoCashback, recarregar: recarregarCashback } = usarCarga(() => api.resumoDoCashback(), [api]);
   const { estado: estadoTotal, recarregar: recarregarTotal } = usarCarga(() => api.listarContasDeClientes({}), [api]);
+  // vale-troca (módulo 8): todos os vales, para o "Vale-troca em aberto" do resumo
+  const { estado: estadoVales, recarregar: recarregarVales } = usarCarga(() => api.listarVales({ situacao: 'todos' }), [api]);
   const regras = estadoConfig.tipo === 'pronto' ? estadoConfig.dados.regras : regrasPadrao();
   const nomeLoja = estadoConfig.tipo === 'pronto' ? estadoConfig.dados.dados.nome : '';
   const rotuloExtra = regras.clientes.campoExtra.ativo ? regras.clientes.campoExtra.rotulo : null;
@@ -107,6 +110,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
     void recarregarRetorno();
     void recarregarCashback();
     void recarregarTotal();
+    void recarregarVales();
   };
   const concluir = (texto: string) => {
     setErro(null);
@@ -205,6 +209,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
       <ResumoClientes
         cashback={estadoCashback}
         retorno={estadoRetorno}
+        vales={estadoVales}
         totalClientes={estadoTotal.tipo === 'pronto' ? estadoTotal.dados.total : null}
         fiado={
           veFiado && estadoFiado.tipo === 'pronto' && estadoFiado.dados
@@ -342,7 +347,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
           acao={{ tipo: 'excluir_dados_cliente', clienteId: janela.conta.cliente.id }}
           texto={`Excluir os dados de ${janela.conta.cliente.nome} (pedido do cliente, LGPD). O nome, o telefone, o CPF e os outros dados serão apagados; as vendas continuam no histórico da loja, sem identificar o cliente.${
             janela.conta.fidelidade.saldoCentavos > 0 ? ` O cliente perde ${formatarCentavos(janela.conta.fidelidade.saldoCentavos)} de cashback.` : ''
-          }`}
+          }${janela.conta.vale.saldoCentavos > 0 ? ` O vale-troca de ${formatarCentavos(janela.conta.vale.saldoCentavos)} continua valendo para quem tiver o código.` : ''}`}
           aoAutorizar={async (a) => {
             await api.excluirDadosDoCliente(janela.conta.cliente.id, { liberacao: { autorizacao: a.autorizacao, motivo: a.motivo } });
             setContaId(null);
@@ -420,6 +425,7 @@ function ListaClientes({
               <th>CPF</th>
               <th>Última compra</th>
               <th className="numero">Cashback</th>
+              <th className="numero">Vale-troca</th>
               {veFiado && <th className="numero">Fiado</th>}
               <th>Situação</th>
             </tr>
@@ -460,6 +466,9 @@ function ListaClientes({
                   </td>
                   <td data-rotulo="Cashback" className="numero">
                     {c.cashbackCentavos > 0 ? <b className="caixa-sem-dif-texto">{formatarCentavos(c.cashbackCentavos)}</b> : '—'}
+                  </td>
+                  <td data-rotulo="Vale-troca" className="numero">
+                    {c.valeCentavos > 0 ? <b className="caixa-sem-dif-texto">{formatarCentavos(c.valeCentavos)}</b> : '—'}
                   </td>
                   {veFiado && (
                     <td data-rotulo="Fiado" className="numero">
@@ -524,7 +533,7 @@ function Conta({
   aoFalhar: (e: unknown) => void;
 }) {
   const [cpf, setCpf] = useState<string | null>(null);
-  const [extrato, setExtrato] = useState<'tudo' | 'compras' | 'cashback' | 'fiado' | 'contatos'>('tudo');
+  const [extrato, setExtrato] = useState<'tudo' | 'compras' | 'cashback' | 'vale' | 'fiado' | 'contatos'>('tudo');
   const voltar = (
     <div>
       <button type="button" className="botao" onClick={aoVoltar}>
@@ -603,6 +612,11 @@ function Conta({
             <span className="caixa-metrica-rotulo">Cashback disponível</span>
             <b className={`caixa-metrica-valor${fid.saldoCentavos > 0 ? ' caixa-sem-dif-texto' : ''}`}>{formatarCentavos(fid.saldoCentavos)}</b>
             <span className="suave">{fid.proximoVencimento ? `${formatarCentavos(fid.proximoVencimento.valorCentavos)} vence em ${dataBr(fid.proximoVencimento.venceEm)}` : 'nada para vencer'}</span>
+          </div>
+          <div className="caixa-metrica">
+            <span className="caixa-metrica-rotulo">Vale-troca</span>
+            <b className={`caixa-metrica-valor${conta.vale.saldoCentavos > 0 ? ' caixa-sem-dif-texto' : ''}`}>{formatarCentavos(conta.vale.saldoCentavos)}</b>
+            <span className="suave">{conta.vale.abertos.length ? conta.vale.abertos.map((v) => v.codigo).join(', ') : 'nenhum vale em aberto'}</span>
           </div>
           <div className="caixa-metrica">
             <span className="caixa-metrica-rotulo">Fiado em aberto</span>
@@ -734,6 +748,7 @@ function Conta({
                 ['tudo', 'Tudo'],
                 ['compras', 'Compras'],
                 ['cashback', 'Cashback'],
+                ['vale', 'Vale-troca'],
                 ['fiado', 'Fiado'],
                 ['contatos', 'Contatos'],
               ] as const

@@ -101,7 +101,7 @@ describe('conta do cliente, CPF e exclusão (CLI-04, 05, 07)', () => {
     const { ana, bruno, fiado } = await loja();
     const maria = await ana.cadastrarCliente({ ...MARIA, limiteFiadoCentavos: 10000 });
     await fiado(bruno, maria.id, 1000);
-    expect((await erro(bruno.excluirCliente(maria.id, 'duplicado'))).message).toMatch(/^Cliente com compras ou fiado não pode ser excluído/);
+    expect((await erro(bruno.excluirCliente(maria.id, 'duplicado'))).message).toMatch(/^Cliente com compras, fiado ou vale-troca não pode ser excluído/);
     const joao = await bruno.cadastrarCliente({ nome: 'João Pereira', telefone: '4133334444', cpf: '11144477735' });
     expect((await erro(bruno.excluirCliente(joao.id, ' '))).message).toBe('Informe o motivo da exclusão.');
     await bruno.excluirCliente(joao.id, 'cadastro em duplicidade');

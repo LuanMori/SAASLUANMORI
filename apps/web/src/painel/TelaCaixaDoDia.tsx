@@ -198,6 +198,7 @@ function Metricas({ dados, caixa, fuso }: { dados: PainelCaixa; caixa: CaixaDoDi
           em dinheiro • Pix {formatarCentavos(v.pix)} • cartões {formatarCentavos(v.debito + v.credito)}
           {v.fiado > 0 && ` • fiado ${formatarCentavos(v.fiado)}`}
           {(v.cashback ?? 0) > 0 && ` • cashback ${formatarCentavos(v.cashback)}`}
+          {(v.vale ?? 0) > 0 && ` • vale-troca ${formatarCentavos(v.vale)}`}
         </span>
       </div>
     </div>

@@ -14,7 +14,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 5. Caixa do dia | **Concluído** (19/11/2026) |
 | 6. Clientes | **Concluído** (20/11/2026) |
 | 7. Fidelidade | **Concluído** (20/11/2026) |
-| 8. Vale-troca | a fazer |
+| 8. Vale-troca | **Concluído** (20/11/2026) |
 | 9. Financeiro | a fazer |
 | 10. Relatórios | a fazer |
 | 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer |
@@ -374,4 +374,56 @@ Sem tabela nova (decisão P3): os lotes de cashback, os usos, os cupons e os lem
   - celular (390 px) sem rolagem para o lado nas subabas Retorno e Regras do programa;
   - console sem erros nem avisos.
   - As conferências dos módulos 4, 5 e 6 rodaram de novo e passaram.
+
+---
+
+## Módulo 8 — Vale-troca
+
+### O que veio do DaniPets
+
+| ID | No DaniPets | No sistema novo | Como ficou |
+|---|---|---|---|
+| DEV-03 | Devolução com a opção **vale-troca** (código VT-0001-ABC) | Igual: na devolução, "Como o valor volta" → "Mesma forma da venda" ou "Vale-troca (troca agora ou compra depois)". O vale fica com o cliente da venda, com outro cliente escolhido ("Cliente do vale") ou sem cliente. O código tem o número do vale e 3 letras sorteadas, sem as que se confundem (0 e O, 1 e I). Depois de registrar, a janela mostra o código em destaque para anotar | Criado |
+| DEV-04 | (no vale-troca) abate primeiro o fiado em aberto da venda | Igual: na devolução como vale, o que o cliente ainda deve daquela compra no fiado é abatido antes; só o resto vira vale (se cobrir tudo, não emite vale) | Criado |
+| PDV-09 | Vale-troca como pagamento (escolhe o vale; a sobra fica no vale) | **"Usar vale-troca"**: escolhe um vale com saldo na lista ou digita o código (maiúsculas ou minúsculas). Vale para quem tem o código, com ou sem cliente identificado. Cada vale abate o que cobre, depois do cashback; a forma escolhida paga o resto; o visor mostra cada vale com o × para tirar; se o crédito cobre tudo, "O crédito do cliente paga a compra toda" e o que sobra fica no vale. Na devolução pela Frente de caixa, "Usar agora nesta venda (troca)" põe o vale novo no pagamento | Criado |
+| DEV-09 | (parte do vale) cancelamento e devolução de compra paga com vale | O valor volta para o mesmo vale, que reabre. Com dois vales na mesma compra, cada um recebe no máximo o que pagou nela (o DaniPets podia devolver demais no primeiro vale) | Adaptado |
+| DEV-10 | Lista de vales-troca em aberto | **"Vale-troca em aberto"** no alto da aba Clientes: o total e, clicando, a lista (código, cliente, emitido em, origem, valor, usado, saldo) e quantos já foram usados por inteiro | Criado |
+| FIN-09 | Vales-troca em aberto no Financeiro | A mesma lista entra no Financeiro quando a aba for montada (módulo 9); por enquanto fica na aba Clientes, como no resumo do DaniPets | Em parte (M9) |
+| CLI-03 | (parte que faltava) coluna e filtro "Com vale-troca" | Igual: coluna "Vale-troca" e filtro "Com vale-troca" na lista de clientes | Concluído |
+| CLI-04 | (parte que faltava) vale no extrato | Igual: na conta, o saldo e os códigos dos vales; no extrato, "Vale-troca" (emitido), "Vale-troca usado" e "Vale-troca devolvido" | Concluído |
+| CLI-08 | (parte que faltava) LGPD com vale | Igual: o vale continua valendo para quem tem o código; só o nome do cliente sai do vale. A liberação avisa | Concluído |
+| PDV-11 | (parte que faltava) F6 com o vale | A faixa do cliente mostra "Vale R$ X" | Concluído |
+
+### Outros pontos
+
+- **Forma de pagamento "Vale-troca"** (como no DaniPets): aparece nas vendas por forma (Relatórios, Visão geral e as vendas de hoje do Caixa do dia), com o código do vale ("Vale-troca VT-0001-ABC R$ 30,00"). Não entra em conta nenhuma do financeiro: o vale é crédito do cliente na loja; o dinheiro da compra devolvida fica com a loja.
+- **O vale não gera cashback** (como no DaniPets: só dinheiro, Pix e cartão geram).
+- **Cliente com vale** conta como "com histórico": o cadastro não pode ser excluído, só os dados (LGPD).
+- **Histórico**: "Vale-troca emitido" (código, valor e a venda); a devolução continua registrada como antes.
+- **Quem pode**: todos os papéis usam e veem os vales (a Frente de caixa precisa escolher o vale); a devolução continua pedindo a autorização do Dono ou do Administrador quando é o Vendedor.
+- **Demonstração**: para ver, abra o caixa, faça uma devolução na Frente de caixa escolhendo "Vale-troca" e use "Usar agora nesta venda (troca)".
+
+### O que ficou para outro módulo (e por quê)
+
+- **Vales-troca em aberto no Financeiro** (FIN-09): módulo 9, quando a aba Financeiro for montada.
+- **Vales na exportação CSV** (DaniPets planilha "Vales-troca"): módulo 13 (Dados e backup).
+
+### Servidor
+
+Sem tabela nova (decisão P3): os vales ficam na demonstração. No sistema real, essa parte responde 501 até o servidor ganhá-la.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 384 (+15): código e emissão, usar e devolver no vale, divisão entre os vales da venda, vales em aberto, vale na venda (sem cliente, saldo, código), financeiro sem o vale, devolução como vale com o fiado abatido antes, o vale emitido não diminui o que ainda pode voltar, extrato e histórico;
+  - servidor 134;
+  - tela 326 (+11): 6 da API (devolução como vale, fiado abatido, cliente do vale, uso na venda e saldo, volta no cancelamento e na devolução com dois vales, LGPD), 2 do carrinho e 3 de telas (devolução como vale e a troca na hora, "Usar vale-troca" pela lista e pelo código, vale no resumo, na lista, na conta e no extrato).
+- **Navegador** (14 passos):
+  - devolução da venda nº 1 como vale (com a Maria como cliente do vale); código em destaque; "Usar agora nesta venda (troca)";
+  - a troca paga só com o vale, com a sobra de R$ 30,10 no vale;
+  - "Usar vale-troca" pelo código em minúsculas, sem cliente; o × tira o vale;
+  - "Vale-troca em aberto" com a lista dos vales; extrato da Maria com o vale emitido e usado;
+  - celular (390 px) sem rolagem para o lado;
+  - console sem erros nem avisos.
+  - As conferências dos módulos 4, 5, 6 e 7 rodaram de novo e passaram.
 

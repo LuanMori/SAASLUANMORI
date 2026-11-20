@@ -29,6 +29,16 @@
 //
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  liquidoAReceber,
+  devolverNoVale,
+  emitirVale,
+  normalizarCodigoVale,
+  proximoNumeroDoVale,
+  repartirNosVales,
+  usarVale,
+  type ValeTroca,
+  valesDoCliente,
+  valesEmAberto,
   ACAO_DO_CONTATO,
   analisarRetorno,
   type CanalContato,
@@ -229,6 +239,8 @@ const CHAVES = {
   usosCashback: 'saas-demo:cashback-usos:v1',
   cupons: 'saas-demo:cupons-retorno:v1',
   contatos: 'saas-demo:contatos-clientes:v1',
+  /** Vales-troca de cada loja (módulo 8). */
+  vales: 'saas-demo:vales-troca:v1',
 } as const;
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
@@ -823,6 +835,36 @@ export function criarApiLocal({
   const cuponsDaLoja = () => lerDaLoja<CupomRetorno>(CHAVES.cupons, lojaId);
   const gravarCupons = (cupons: CupomRetorno[]) => gravarDaLoja(CHAVES.cupons, lojaId, cupons);
   const contatosDaLoja = () => lerDaLoja<ContatoCliente>(CHAVES.contatos, lojaId);
+  // ---------------------------------------------------------------- vale-troca (módulo 8)
+  const valesDaLoja = () => lerDaLoja<ValeTroca>(CHAVES.vales, lojaId);
+  const gravarVales = (vales: ValeTroca[]) => gravarDaLoja(CHAVES.vales, lojaId, vales);
+  /** Os 3 caracteres sorteados do código (VT-0001-ABC), como o DaniPets: crypto.getRandomValues. */
+  const sortearCodigo = () => crypto.getRandomValues(new Uint8Array(3));
+  /**
+   * O que volta pela forma "vale-troca" vai para os vales usados na venda (cada um até o que pagou nela). Devolve
+   * os estornos com o vale de cada parte e a função que grava os vales.
+   */
+  const prepararValesDoEstorno = (venda: Venda, estornos: readonly Pagamento[], rotulo: string, em: string, por: Operador) => {
+    const valorNoVale = estornos.filter((e) => e.forma === 'vale').reduce((t, e) => t + e.valorCentavos, 0);
+    if (valorNoVale === 0) return { estornos: [...estornos], gravar: () => undefined };
+    const vales = valesDaLoja();
+    const partes = exigirOk(repartirNosVales(vales, venda.pagamentos, venda.id, valorNoVale));
+    const porVale = new Map(partes.map((x) => [x.valeId, x.valorCentavos]));
+    return {
+      // a parte do vale, separada por vale (para mostrar o código e devolver no vale certo)
+      estornos: [
+        ...estornos.filter((e) => e.forma !== 'vale' && FORMAS_PAGAMENTO.indexOf(e.forma) < FORMAS_PAGAMENTO.indexOf('vale')),
+        ...partes.map((x) => ({ forma: 'vale' as const, valorCentavos: x.valorCentavos, valeId: x.valeId, valeCodigo: x.codigo })),
+        ...estornos.filter((e) => e.forma !== 'vale' && FORMAS_PAGAMENTO.indexOf(e.forma) > FORMAS_PAGAMENTO.indexOf('vale')),
+      ],
+      gravar: () =>
+        gravarVales(
+          vales.map((v) =>
+            porVale.has(v.id) ? devolverNoVale(v, porVale.get(v.id)!, { vendaId: venda.id, vendaNumero: venda.numero, dia: hojeNaLoja(), em, por, rotulo }) : v,
+          ),
+        ),
+    };
+  };
   /** Dia da última compra (não cancelada) de cada cliente. */
   const ultimasCompras = (vendas: readonly Venda[]) => {
     const m = new Map<string, string>();
@@ -1114,6 +1156,8 @@ export function criarApiLocal({
           custos: custosMedios(movimentosDaLoja()),
           cashbackDisponivelCentavos: clientePedido ? saldoCashback(lotes, clientePedido, hoje) : 0,
           cupom: cupom ? { id: cupom.id, clienteId: cupom.clienteId, pct: cupom.pct } : null,
+          // o vale-troca vale para quem está com o código, com ou sem cliente (módulo 8)
+          vales: new Map(valesDaLoja().map((v) => [v.id, { id: v.id, codigo: v.codigo, saldoCentavos: v.saldoCentavos, aberto: v.situacao === 'aberto' }])),
         });
         if (!calculo.ok) throw new ErroApi(409, calculo.erros[0]?.mensagem ?? 'Não foi possível registrar a venda.', calculo.erros);
         // fiado acima do limite ou com fiado vencido: só com a liberação de um Dono, com motivo (DaniPets PDV-10)
@@ -1173,10 +1217,21 @@ export function criarApiLocal({
           venda.cashbackGeradoCentavos = ganho.valorCentavos;
         }
         if (calculo.valor.cupomUsado) venda.cupomId = calculo.valor.cupomUsado;
+        // vale-troca: o saldo de cada vale usado diminui (zerado, o vale fica "usado")
+        let valesDepois: ValeTroca[] | null = null;
+        if (venda.pagamentos.some((p) => p.forma === 'vale')) {
+          valesDepois = valesDaLoja();
+          for (const p of venda.pagamentos) {
+            if (p.forma !== 'vale') continue;
+            const j = valesDepois.findIndex((v) => v.id === p.valeId);
+            valesDepois[j] = exigirOk(usarVale(valesDepois[j]!, p.valorCentavos, { vendaId: venda.id, vendaNumero: venda.numero, dia: hoje, em: venda.criadaEm, por: venda.vendedor }));
+          }
+        }
         const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
         gravarVendas([...daLoja, venda]);
         if (lotesDepois !== lotes) gravarLotes(lotesDepois);
         if (usoCashback) juntarUso(usoCashback);
+        if (valesDepois) gravarVales(valesDepois);
         if (cupom && calculo.valor.cupomUsado === cupom.id) {
           gravarCupons(cuponsDaLoja().map((k) => (k.id === cupom.id ? { ...k, uso: { dia: hoje, vendaId: venda.id, vendaNumero: venda.numero } } : k)));
           auditar('cliente.cupom_usado', { tipo: 'cliente', id: cupom.clienteId }, { pct: cupom.pct, numero: venda.numero });
@@ -1242,17 +1297,20 @@ export function criarApiLocal({
         const em = agora().toISOString();
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
         const fidelidade = prepararFidelidadeDoEstorno(venda, r.valor.estornos, { tipo: 'cancelamento' }, em, pessoa(quem));
+        // o que foi pago com vale-troca volta para o mesmo vale (módulo 8)
+        const valesDoEstorno = prepararValesDoEstorno(venda, r.valor.estornos, 'Cancelamento', em, pessoa(quem));
         if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
         const cancelada: Venda = {
           ...fidelidade.venda,
           status: 'cancelada',
-          cancelamento: { em, por: pessoa(quem), autorizadoPor: r.valor.autorizadoPor, motivo: validacao.valor.motivo, estornos: r.valor.estornos },
+          cancelamento: { em, por: pessoa(quem), autorizadoPor: r.valor.autorizadoPor, motivo: validacao.valor.motivo, estornos: valesDoEstorno.estornos },
         };
         vendas[i] = cancelada;
         gravarVendas(vendas);
         juntarMovimentos(movimentosDoCancelamento(cancelada, { motivo: validacao.valor.motivo, em, por: pessoa(quem) }));
         gravarFinanceiro();
         fidelidade.gravar();
+        valesDoEstorno.gravar();
         auditar('venda.cancelada', null, { numero: venda.numero, valorCentavos: venda.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
         return cancelada;
       });
@@ -1269,8 +1327,20 @@ export function criarApiLocal({
         const venda = vendas[i]!;
         const a = validacao.valor.autorizacao ? (autorizacoesDaLoja().get(validacao.valor.autorizacao) ?? null) : null;
         exigirHojeNaoFechado();
-        const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso });
+        // como vale-troca: o fiado desta venda que o cliente ainda não pagou é abatido antes (DaniPets planRefund)
+        const fiadoEmAbertoCentavos = recebiveisDaLoja()
+          .filter((x) => x.vendaId === venda.id && x.forma === 'fiado')
+          .reduce((t, x) => t + liquidoAReceber(x), 0);
+        const r = calcularDevolucao(venda, validacao.valor, { operador: quem, autorizacao: a, agora: agora(), fuso, fiadoEmAbertoCentavos });
         if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível registrar a devolução.', r.erros);
+        // de quem é o vale: o cliente escolhido ou o da venda (sem cliente, o vale vale para quem tiver o código)
+        let clienteDoVale: { id: string; nome: string } | null = null;
+        if (r.valor.valeCentavos > 0) {
+          const id = validacao.valor.clienteDoVale ?? venda.cliente?.id ?? null;
+          const c = id ? clientesDaLoja().find((x) => x.id === id && !x.dadosExcluidos && x.nome !== NOME_CLIENTE_REMOVIDO) : undefined;
+          if (validacao.valor.clienteDoVale && (!c || !c.ativo)) throw new ErroApi(404, 'Cliente do vale não encontrado. Escolha outro ou deixe o da venda.');
+          clienteDoVale = c ? { id: c.id, nome: c.nome } : null;
+        }
         // devolver em dinheiro: com o caixa de hoje aberto, e sem passar do que há na gaveta (DaniPets DEV-05)
         if (r.valor.estornos.some((e) => e.forma === 'dinheiro' && e.valorCentavos > 0)) exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Devolução em dinheiro'), 409, 'caixa');
         const numero = vendas.reduce((maior, v) => Math.max(maior, ...v.devolucoes.map((d) => d.numero)), 0) + 1;
@@ -1278,14 +1348,31 @@ export function criarApiLocal({
         const gravarFinanceiro = prepararEstornoFinanceiro(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
         const antes = venda.devolucoes.reduce((t, d) => t + d.totalCentavos, 0);
         const fidelidade = prepararFidelidadeDoEstorno(venda, r.valor.estornos, { tipo: 'devolucao', numero, antesCentavos: antes, agoraCentavos: r.valor.totalCentavos }, em, pessoa(quem));
+        // compra paga com vale-troca: a parte do vale volta para o mesmo vale (módulo 8)
+        const valesDoEstorno = prepararValesDoEstorno(venda, r.valor.estornos, `Devolução nº ${numero}`, em, pessoa(quem));
         if (r.valor.autorizacaoUsada) autorizacoes.delete(r.valor.autorizacaoUsada);
+        // devolução como vale-troca: o vale novo com o que sobrou depois do fiado em aberto (DaniPets issueVoucher)
+        const valeNovo =
+          r.valor.valeCentavos > 0
+            ? emitirVale(r.valor.valeCentavos, {
+                id: novoId(),
+                numero: proximoNumeroDoVale(valesDaLoja()),
+                sorteio: sortearCodigo(),
+                cliente: clienteDoVale,
+                origem: { vendaId: venda.id, vendaNumero: venda.numero, devolucaoNumero: numero },
+                dia: hojeNaLoja(),
+                em,
+                por: pessoa(quem),
+              })
+            : null;
         const devolucao: Devolucao = {
           id: novoId(),
           numero,
           criadaEm: em,
           itens: r.valor.itens,
           totalCentavos: r.valor.totalCentavos,
-          estornos: r.valor.estornos,
+          estornos: valesDoEstorno.estornos,
+          ...(valeNovo ? { vale: { id: valeNovo.id, codigo: valeNovo.codigo, valorCentavos: valeNovo.valorCentavos } } : {}),
           motivo: validacao.valor.motivo,
           feitaPor: pessoa(quem),
           autorizadaPor: r.valor.autorizadoPor,
@@ -1295,8 +1382,11 @@ export function criarApiLocal({
         juntarMovimentos(movimentosDaDevolucao(venda, devolucao));
         gravarFinanceiro();
         fidelidade.gravar();
+        valesDoEstorno.gravar();
+        if (valeNovo) gravarVales([...valesDaLoja(), valeNovo]);
         auditar('venda.devolucao', null, { numero: venda.numero, devolucao: numero, valorCentavos: devolucao.totalCentavos, autorizadoPor: r.valor.autorizadoPor?.id ?? null });
-        return { venda: vendas[i]!, devolucao };
+        if (valeNovo) auditar('vale.emitido', valeNovo.cliente ? { tipo: 'cliente', id: valeNovo.cliente.id } : null, { codigo: valeNovo.codigo, valorCentavos: valeNovo.valorCentavos, numero: venda.numero });
+        return { venda: vendas[i]!, devolucao, vale: valeNovo };
       });
     },
 
@@ -1391,6 +1481,7 @@ export function criarApiLocal({
       const hoje = hojeNaLoja();
       const lotes = lotesDaLoja();
       const cupons = cuponsDaLoja();
+      const vales = valesDaLoja();
       const r = regras();
       return buscarClientes(clientesDaLoja(), termo, LIMITES_CLIENTE.resultadosBusca).map((c) => {
         const f = fiadoDoCliente(recebiveis, c.id, hoje);
@@ -1408,6 +1499,8 @@ export function criarApiLocal({
           cashbackVencimento: proximoVencimento(lotes, c, hoje),
           cupom: cupomResumido(cupomAtivo(cupons, c, hoje, r.retorno)),
           completo: cadastroCompleto(c),
+          // vale-troca do cliente (módulo 8): a faixa mostra "Vale R$ X"
+          valeCentavos: valesDoCliente(vales, c.id).saldoCentavos,
         };
       });
     },
@@ -1539,6 +1632,7 @@ export function criarApiLocal({
       const recebiveis = recebiveisDaLoja();
       const vendas = vendasDaLoja();
       const lotes = lotesDaLoja();
+      const vales = valesDaLoja();
       const ultimas = ultimasCompras(vendas);
       const diasRetorno = regras().retorno.diasSemComprar;
       const linhas = clientesDaLoja()
@@ -1570,6 +1664,7 @@ export function criarApiLocal({
               compras: r.compras,
               ultimaCompraEm: r.ultimaCompraEm,
               cashbackCentavos: saldoCashback(lotes, c, hoje),
+              valeCentavos: valesDoCliente(vales, c.id).saldoCentavos,
               fiado: veFiado ? { devendoCentavos: f.devendoCentavos, vencidoCentavos: f.vencidoCentavos, diasVencido: f.diasVencido, limiteCentavos: c.limiteFiadoCentavos ?? 0 } : null,
             },
           };
@@ -1581,6 +1676,7 @@ export function criarApiLocal({
           if (filtro === 'nao_incomodar') return Boolean(c.naoIncomodar);
           // fidelidade (módulo 7): com cashback para usar; sem comprar há "dias sem comprar" ou mais
           if (filtro === 'cashback') return linha.cashbackCentavos > 0;
+          if (filtro === 'vale') return linha.valeCentavos > 0;
           if (filtro === 'sumidos') {
             const u = ultimas.get(c.id);
             return u !== undefined && Math.round((Date.parse(`${hoje}T12:00:00Z`) - Date.parse(`${u}T12:00:00Z`)) / 86_400_000) >= diasRetorno;
@@ -1609,7 +1705,7 @@ export function criarApiLocal({
         cliente: { ...semCpf, cpfMascarado: mascararCpf(cpf) },
         resumo: resumirCliente(vendas, id),
         // compras, fiado, cashback, cupons e lembretes (módulo 7), do mais novo para o mais antigo
-        extrato: extratoCompletoDoCliente(id, vendas, recebiveis, fuso, { lotes, usos: usosDaLoja(), cupons: cuponsDaLoja(), contatos: contatosDaLoja() }, hoje),
+        extrato: extratoCompletoDoCliente(id, vendas, recebiveis, fuso, { lotes, usos: usosDaLoja(), cupons: cuponsDaLoja(), contatos: contatosDaLoja(), vales: valesDaLoja() }, hoje),
         fidelidade: {
           saldoCentavos: saldoCashback(lotes, c, hoje),
           vencendoCentavos: cashbackVencendo(lotes, c, hoje, r.cashback.avisoDias),
@@ -1625,7 +1721,12 @@ export function criarApiLocal({
           abertos: f.abertos.map((r) => ({ vendaNumero: r.vendaNumero, criadoEm: r.criadoEm, venceEm: r.venceEm, abertoCentavos: r.brutoCentavos - r.estornadoBrutoCentavos })),
         },
         limiteFiadoCentavos: c.limiteFiadoCentavos ?? 0,
-        temHistorico: clienteTemHistorico(id, vendas, recebiveis),
+        temHistorico: clienteTemHistorico(id, vendas, recebiveis, valesDaLoja()),
+        // vale-troca do cliente (módulo 8): o saldo e os códigos dos vales com saldo
+        vale: (() => {
+          const v = valesDoCliente(valesDaLoja(), id);
+          return { saldoCentavos: v.saldoCentavos, abertos: v.abertos.map((x) => ({ codigo: x.codigo, saldoCentavos: x.saldoCentavos })) };
+        })(),
       };
     },
 
@@ -1650,8 +1751,8 @@ export function criarApiLocal({
         const daLoja = clientesDaLoja();
         const c = daLoja.find((x) => x.id === id);
         if (!c) throw new ErroApi(404, 'Cliente não encontrado.');
-        if (clienteTemHistorico(id, vendasDaLoja(), recebiveisDaLoja())) {
-          throw new ErroApi(409, 'Cliente com compras ou fiado não pode ser excluído. Um Dono pode excluir os dados (LGPD) na conta do cliente.');
+        if (clienteTemHistorico(id, vendasDaLoja(), recebiveisDaLoja(), valesDaLoja())) {
+          throw new ErroApi(409, 'Cliente com compras, fiado ou vale-troca não pode ser excluído. Um Dono pode excluir os dados (LGPD) na conta do cliente.');
         }
         gravarDaLoja(CHAVES.clientes, lojaId, daLoja.filter((x) => x.id !== id));
         auditar('cliente.excluido', { tipo: 'cliente', id });
@@ -1756,8 +1857,10 @@ export function criarApiLocal({
           gravarLotes(zerado.lotes);
           juntarUso({ clienteId: id, tipo: 'retirada', dia: hojeNaLoja(), valorCentavos: zerado.valorCentavos, vendaId: null, vendaNumero: null, lotes: zerado.usados, rotulo: 'Exclusão dos dados', criadoEm: agora().toISOString(), por: pessoa(quem) });
         }
-        // o nome sai também das vendas, dos recebimentos de fiado e da descrição dos lançamentos
+        // o nome sai também das vendas, dos recebimentos de fiado, dos vales-troca (que continuam valendo para quem
+        // tem o código) e da descrição dos lançamentos
         gravarVendas(tirarNomeDoCliente(vendasDaLoja(), id));
+        gravarVales(tirarNomeDoCliente(valesDaLoja(), id));
         const doCliente = new Set(recebiveis.filter((r) => r.cliente?.id === id).map((r) => r.id));
         gravarDaLoja(CHAVES.recebiveis, lojaId, tirarNomeDoCliente(recebiveis, id));
         gravarDaLoja(
@@ -1772,6 +1875,24 @@ export function criarApiLocal({
         auditar('cliente.dados_excluidos', { tipo: 'cliente', id }, { autorizadoPor: a.autorizador.id });
         return anonimo;
       });
+    },
+
+    // ---------------------------------------------------------------- vale-troca (módulo 8)
+    async listarVales(filtro = {}) {
+      await preparar();
+      exigirOperador();
+      const vales = valesDaLoja();
+      // todos: do mais novo para o mais antigo; em aberto (padrão): só os com saldo
+      return filtro.situacao === 'todos' ? [...vales].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm)) : valesEmAberto(vales);
+    },
+
+    async buscarValePorCodigo(codigo) {
+      await preparar();
+      exigirOperador();
+      const c = normalizarCodigoVale(String(codigo ?? ''));
+      const v = c ? valesDaLoja().find((x) => x.codigo === c) : undefined;
+      if (!v) throw new ErroApi(404, 'Vale não encontrado. Confira o código.');
+      return v;
     },
 
     // ---------------------------------------------------------------- fidelidade (módulo 7)

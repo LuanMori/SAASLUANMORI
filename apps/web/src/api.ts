@@ -11,6 +11,7 @@ import type {
   CupomRetorno,
   SituacaoLembrete,
   TipoContato,
+  ValeTroca,
   FormaReceberFiado,
   LinhaExtrato,
   EstadoCaixa,
@@ -147,7 +148,8 @@ export interface ApiVendas {
   /** Confere a senha de quem autoriza e devolve o identificador da autorização. 5 senhas erradas seguidas bloqueiam o autorizador por 5 minutos (429), como no login. */
   autorizar(pedido: PedidoAutorizacao): Promise<{ autorizacao: string; autorizador: Autorizador }>;
   cancelarVenda(vendaId: string, pedido: PedidoCancelamento): Promise<Venda>;
-  devolverItens(vendaId: string, pedido: PedidoDevolucao): Promise<{ venda: Venda; devolucao: Devolucao }>;
+  /** Com `modo: 'vale'`, o valor volta como vale-troca (depois de abater o fiado em aberto da venda): o vale vem em `vale`. */
+  devolverItens(vendaId: string, pedido: PedidoDevolucao): Promise<{ venda: Venda; devolucao: Devolucao; vale?: ValeTroca | null }>;
   /** Devoluções feitas no período (pela data da devolução, não da venda). Para o Vendedor, só as de hoje. */
   listarDevolucoes(filtro?: FiltroVendas): Promise<DevolucaoComVenda[]>;
 }
@@ -218,12 +220,14 @@ export interface ClienteDaBusca {
   cupom?: { id: string; pct: number; venceEm: string } | null;
   /** Nome, telefone e CPF válidos: sem isso, sem cashback, cupom e fiado. */
   completo?: boolean;
+  /** Saldo dos vales-troca do cliente (módulo 8). */
+  valeCentavos?: number;
 }
 
 /** Cliente sem o CPF inteiro (LGPD): o que as telas recebem. O CPF completo só por `verCpfDoCliente`. */
 export type ClienteSemCpf = Omit<Cliente, 'cpf'> & { cpfMascarado: string };
 
-export type FiltroClientes = 'todos' | 'cashback' | 'fiado' | 'vencido' | 'incompleto' | 'sumidos' | 'nao_incomodar' | 'desativados';
+export type FiltroClientes = 'todos' | 'cashback' | 'vale' | 'fiado' | 'vencido' | 'incompleto' | 'sumidos' | 'nao_incomodar' | 'desativados';
 
 /** Uma linha da lista da aba Clientes. */
 export interface LinhaCliente {
@@ -242,6 +246,8 @@ export interface LinhaCliente {
   ultimaCompraEm: string | null;
   /** Cashback para usar hoje (módulo 7). */
   cashbackCentavos: number;
+  /** Saldo dos vales-troca do cliente (módulo 8). */
+  valeCentavos: number;
   /** Só para quem vê o fiado de todos (Dono e Administrador). */
   fiado: { devendoCentavos: number; vencidoCentavos: number; diasVencido: number; limiteCentavos: number } | null;
 }
@@ -266,6 +272,8 @@ export interface ContaDoCliente {
   temHistorico: boolean;
   /** Cashback e cupom de hoje (módulo 7). */
   fidelidade: FidelidadeDaConta;
+  /** Vales-troca do cliente com saldo (módulo 8). */
+  vale: { saldoCentavos: number; abertos: { codigo: string; saldoCentavos: number }[] };
 }
 
 /** Cashback e cupom do cliente hoje (conta do cliente). */
@@ -521,6 +529,13 @@ export interface ResumoCashback {
   vencendo: { clienteId: string; nome: string; dia: string; origem: string; valorCentavos: number; venceEm: string }[];
 }
 
+export interface ApiVales {
+  /** Vales-troca da loja (todos os logados: a Frente de caixa escolhe o vale). Padrão: os com saldo, do mais novo. */
+  listarVales(filtro?: { situacao?: 'aberto' | 'todos' }): Promise<ValeTroca[]>;
+  /** O vale pelo código (VT-0001-ABC; maiúsculas ou minúsculas). 404 se não existir. */
+  buscarValePorCodigo(codigo: string): Promise<ValeTroca>;
+}
+
 export interface ApiFidelidade {
   /** Aba Retorno (todos os logados): quem lembrar hoje, quem ficou de fora e o resultado dos lembretes. */
   listarRetorno(): Promise<PainelRetorno>;
@@ -555,7 +570,7 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa & ApiFidelidade;
+export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa & ApiFidelidade & ApiVales;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 
