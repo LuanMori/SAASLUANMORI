@@ -20,6 +20,9 @@
   cartão a receber, as sugestões **6** (estoque baixo), **7** (estoque negativo) e **10** (cartão vencido sem
   confirmar) já estão escritas e testadas em `apps/web/src/painel/regrasPendencias.ts`, com os textos do
   DaniPets. Em 17/11/2026 entrou a **11** (fiado vencido), junto com o fiado na Frente de caixa. Nada aparece no card até o Luan decidir: ligar é só passar o resultado para `pendencias`.
+- **20/11/2026 (módulo 7, Fidelidade):** a **12** (clientes para lembrar hoje: sem comprar e cashback vencendo)
+  também ficou pronta e desligada, com o texto do DaniPets ("2 clientes para lembrar hoje (1 sem comprar, 1
+  cashback vencendo)"). Ela usa a mesma lista da aba Clientes → Retorno.
 - **18/11/2026 (login próprio e aba Usuários):** a sugestão 13 mudou — ninguém mais "espera o Dono liberar"
   (o Dono cadastra direto); no lugar, avisar de quem recebeu senha provisória e ainda não entrou. A 14
   (usuário bloqueado) já pode ser feita: o bloqueio por senhas erradas existe no servidor e na demonstração.
@@ -45,7 +48,7 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada** (falta a tela do Financeiro para confirmar) |
 | **Clientes** | | | | | |
 | 11 | Fiado vencido | média | gestor | Clientes | **pronta, desligada** (o fiado já existe na Frente de caixa) |
-| 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes | histórico e cashback |
+| 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes (aba Retorno) | **pronta, desligada** (a lista de retorno e o cashback já existem: módulo 7) |
 | **Usuários e acesso (próprio do SaaS)** | | | | | |
 | 13 | Usuário com senha provisória que ainda não entrou (há mais de 3 dias): a senha provisória pode ter se perdido | média | gestor | Usuários ("Nova senha") | nada: dá para fazer com o que já existe (desde 18/11/2026) |
 | 14 | Usuário bloqueado por muitas senhas erradas (pode ser alguém tentando adivinhar a senha) | média | gestor | Usuários | nada: o bloqueio já existe no login próprio (18/11/2026) |

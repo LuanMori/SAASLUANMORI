@@ -352,7 +352,7 @@ Sem tabela nova (decisão P3). A parte nova de clientes responde 501 no sistema 
 
 - **Vale-troca** (crédito do cliente na Frente de caixa, na conta, no extrato e no filtro da lista): módulo 8.
 - **Lucro estimado descontando o cashback usado**: módulo 10 (Relatórios).
-- **Avisos na Visão geral** ("clientes para lembrar hoje"): dependem das pendências (decisão P6, a definir).
+- **Avisos na Visão geral** ("clientes para lembrar hoje"): dependem das pendências (decisão P6, a definir). A regra (sugestão 12 de `docs/PENDENCIAS.md`) já ficou pronta e desligada, como as 6, 7, 10 e 11.
 
 ### Servidor
 
@@ -363,7 +363,7 @@ Sem tabela nova (decisão P3): os lotes de cashback, os usos, os cupons e os lem
 - **Testes automáticos**:
   - núcleo 369 (+30): gerar (só dinheiro, Pix e cartão; arredondamento sem float), saldo e lotes, usar o que vence antes, devolver como lote novo, retirar na devolução e no cancelamento, LGPD, cupom (ativo, dado pela mensagem, preço pela regra), venda com cashback e cupom, financeiro sem o cashback, lista de retorno, resultado dos lembretes, mensagens, link do WhatsApp, regulamento, extrato e histórico;
   - servidor 134;
-  - tela 314 (+22): 10 da API (cashback na venda, devolução, cancelamento e "não recuperado", cupom, lembretes, adiar e não incomodar, cashback vencendo, LGPD, exemplos), 4 do carrinho e 8 de telas (usar cashback, cashback que cobre tudo, cupom na Frente de caixa, Retorno com WhatsApp, "Já falei", adiar e não incomodar, regras do Vendedor e do Dono, resumo do cashback).
+  - tela 315 (+23): 1 da regra de pendência 12 (pronta e desligada), 10 da API (cashback na venda, devolução, cancelamento e "não recuperado", cupom, lembretes, adiar e não incomodar, cashback vencendo, LGPD, exemplos), 4 do carrinho e 8 de telas (usar cashback, cashback que cobre tudo, cupom na Frente de caixa, Retorno com WhatsApp, "Já falei", adiar e não incomodar, regras do Vendedor e do Dono, resumo do cashback).
 - **Navegador** (19 passos):
   - cashback em aberto da loja de exemplo e "de onde vem";
   - F6 com o cashback; "Usar cashback" (R$ 15,00 − R$ 8,82 = R$ 6,18); aviso final com o cashback ganho;

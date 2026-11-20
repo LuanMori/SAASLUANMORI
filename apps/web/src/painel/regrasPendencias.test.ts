@@ -3,7 +3,7 @@
 import type { Recebivel } from '@saas/core';
 import { describe, expect, it } from 'vitest';
 import type { Produto, SaldoEstoque } from '../api';
-import { pendenciasDeCartao, pendenciasDeEstoque, pendenciasDeFiado } from './regrasPendencias';
+import { pendenciasDeCartao, pendenciasDeEstoque, pendenciasDeFiado, pendenciasDeRetorno } from './regrasPendencias';
 
 const produto = (id: string, nome: string, ativo = true): Produto => ({
   id,
@@ -86,3 +86,24 @@ describe('pendência de fiado (#11)', () => {
     expect(pendenciasDeCartao(lista, '2026-11-16')).toEqual([]);
   });
 });
+
+describe('pendência de clientes para lembrar (#12)', () => {
+  const cliente = { clienteId: 'm', nome: 'Maria', telefone: '41999998888', bloqueio: null };
+  it('soma os sumidos e o cashback vencendo; lista vazia não vira pendência', () => {
+    expect(pendenciasDeRetorno({ hoje: '2026-11-20', retorno: [], cashback: [] })).toEqual([]);
+    const lista = pendenciasDeRetorno({
+      hoje: '2026-11-20',
+      retorno: [{ ...cliente, diasSemComprar: 41, ultimaCompraDia: '2026-10-10', ultimaCompraItens: 'Ração', cashbackCentavos: 0 }],
+      cashback: [{ ...cliente, venceEm: '2026-11-25', valorCentavos: 350 }],
+    });
+    expect(lista).toEqual([
+      {
+        id: 'clientes-lembrar:2026-11-20',
+        gravidade: 'media',
+        texto: '2 clientes para lembrar hoje (1 sem comprar, 1 cashback vencendo).',
+        acao: { rotulo: 'Ver lista', secao: 'clientes' },
+      },
+    ]);
+  });
+});
+

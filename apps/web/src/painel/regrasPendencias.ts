@@ -10,8 +10,9 @@
 //   - #7 estoque negativo ............................ alta  · gestor · "Ajustar" (Produtos e estoque)
 //   - #10 recebimento de cartão vencido sem confirmar  média · gestor · "Confirmar" (Financeiro)
 //   - #11 fiado vencido (passou do prazo de 30 dias) ... média · gestor · "Ver clientes" (Clientes)
+//   - #12 clientes para lembrar hoje (módulo 7) ........ média · todos  · "Ver lista" (Clientes → Retorno)
 import { formatarCentavos, liquidoAReceber, type Recebivel, recebiveisDeCartao, recebiveisDeFiado, recebiveisVencidos } from '@saas/core';
-import type { Produto, SaldoEstoque } from '../api';
+import type { PainelRetorno, Produto, SaldoEstoque } from '../api';
 import { plural } from './formato';
 import type { Pendencia } from './pendencias';
 
@@ -72,6 +73,23 @@ export function pendenciasDeFiado(recebiveis: readonly Recebivel[], hoje: string
       texto: `${plural(clientes.size, 'cliente', 'clientes')} com fiado vencido (${formatarCentavos(total)}).`,
       acao: { rotulo: 'Ver clientes', secao: 'clientes' },
       soGestor: true,
+    },
+  ];
+}
+
+/**
+ * #12: clientes para lembrar hoje (DaniPets cliAlertas): sem comprar há N dias e cashback vencendo, da lista
+ * de retorno (api.listarRetorno). Quem já foi lembrado no ciclo, foi adiado ou pediu "não incomodar" não entra.
+ */
+export function pendenciasDeRetorno(painel: Pick<PainelRetorno, 'hoje' | 'retorno' | 'cashback'>): Pendencia[] {
+  const n = painel.retorno.length + painel.cashback.length;
+  if (n === 0) return [];
+  return [
+    {
+      id: `clientes-lembrar:${painel.hoje}`,
+      gravidade: 'media',
+      texto: `${plural(n, 'cliente para lembrar hoje', 'clientes para lembrar hoje')} (${painel.retorno.length} sem comprar, ${plural(painel.cashback.length, 'cashback vencendo', 'cashbacks vencendo')}).`,
+      acao: { rotulo: 'Ver lista', secao: 'clientes' },
     },
   ];
 }
