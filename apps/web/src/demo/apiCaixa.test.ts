@@ -44,7 +44,7 @@ async function loja() {
 describe('abrir o caixa e vender', () => {
   it('sem caixa aberto não vende; o Vendedor abre (é o responsável) e a venda fica ligada ao caixa', async () => {
     const { ana, bruno, vender, historico } = await loja();
-    expect(await bruno.lerSituacaoDoCaixa()).toEqual({ hoje: HOJE, estado: 'nao_aberto', abertoEm: null, fechadoEm: null, responsavel: null, atrasado: null });
+    expect(await bruno.lerSituacaoDoCaixa()).toEqual({ hoje: HOJE, estado: 'nao_aberto', abertoEm: null, fechadoEm: null, responsavel: null, atrasado: null, aVerificar: null });
     const semCaixa = await erro(vender(bruno));
     expect([semCaixa.status, semCaixa.codigo, semCaixa.message]).toEqual([409, 'caixa', 'Abra o caixa de hoje (Caixa do dia) antes de vender.']);
 
@@ -200,6 +200,59 @@ describe('fechar e desfazer', () => {
     expect((await erro(ana.desfazerFechamento(p.historico[0]!.id, { motivo: 'conferir', explicacao: 'faltou contar' }))).message).toBe(
       'Há caixa aberto depois deste dia. Não é possível desfazer.',
     );
+  });
+
+  it('o fechamento automático fica "a verificar" para o Dono e o Administrador até alguém conferir (pedido do Luan)', async () => {
+    const { ana, caio, bruno, vender, mudar, historico } = await loja();
+    await bruno.abrirCaixa({ fundoCentavos: 2000 });
+    await vender(bruno);
+    mudar('2026-11-20T03:00:30Z'); // 00:00:30 do dia seguinte (Brasília)
+    const fechou = await ana.lerSituacaoDoCaixa();
+    const caixaId = (await ana.lerCaixa()).historico[0]!.id;
+    expect(fechou).toMatchObject({ hoje: '2026-11-20', estado: 'nao_aberto', atrasado: null, aVerificar: [{ caixaId, dia: HOJE, esperadoCentavos: 3000 }] });
+    expect((await caio.lerSituacaoDoCaixa()).aVerificar).toEqual([{ caixaId, dia: HOJE, esperadoCentavos: 3000 }]);
+    expect((await bruno.lerSituacaoDoCaixa()).aVerificar).toBeNull(); // o Vendedor não confere o caixa
+    expect((await erro(bruno.verificarFechamentoAutomatico(caixaId))).status).toBe(403);
+    expect((await erro(ana.verificarFechamentoAutomatico(caixaId, { observacao: 'x'.repeat(301) }))).message).toBe('A observação pode ter até 300 caracteres.');
+    expect((await erro(ana.verificarFechamentoAutomatico('nenhum'))).status).toBe(404);
+
+    mudar('2026-11-20T11:15:00Z'); // 08:15
+    const verificado = await caio.verificarFechamentoAutomatico(caixaId, { observacao: 'contei a gaveta: R$ 30,00, bateu' });
+    expect(verificado.fechamento).toMatchObject({
+      automatico: true,
+      ajusteCentavos: 0,
+      verificacao: { em: '2026-11-20T11:15:00.000Z', por: { id: 'caio', nome: 'Caio' }, observacao: 'contei a gaveta: R$ 30,00, bateu' },
+    });
+    expect((await ana.lerSituacaoDoCaixa()).aVerificar).toEqual([]);
+    expect((await erro(ana.verificarFechamentoAutomatico(caixaId))).message).toBe('Este fechamento já foi verificado por Caio.');
+    expect((await historico()).map((h) => [h.texto, h.quem, txt(h.resumo ?? '')]).slice(0, 2)).toEqual([
+      ['Fechamento automático verificado', 'Caio', '19/11/2026 • esperado R$ 30,00 • com observação'],
+      ['Fechamento automático', null, '19/11/2026 • sem contagem e sem ajuste'],
+    ]);
+    // o fechamento manual não se verifica
+    await ana.abrirCaixa({ fundoCentavos: 3000 });
+    const manual = await ana.fecharCaixa({ dia: '2026-11-20', contadoCentavos: 3000 });
+    expect((await erro(ana.verificarFechamentoAutomatico(manual.id))).message).toBe('Só o fechamento automático precisa ser verificado.');
+  });
+
+  it('desfeito o automático para contar a gaveta, o dia fica aberto (não fecha sozinho de novo) e fecha com a contagem', async () => {
+    const { ana, bruno, vender, mudar } = await loja();
+    await bruno.abrirCaixa({ fundoCentavos: 2000 });
+    await vender(bruno);
+    mudar('2026-11-20T11:30:00Z'); // dia seguinte, 08:30
+    const caixaId = (await ana.lerCaixa()).historico[0]!.id;
+    const reaberto = await ana.desfazerFechamento(caixaId, { motivo: 'conferir a gaveta', explicacao: 'ninguém contou ontem' });
+    expect(reaberto.fechamento).toBeNull();
+    // ler de novo (a tela recarrega) não fecha sozinho: o dia espera a contagem
+    const p = await ana.lerCaixa();
+    expect(p).toMatchObject({ estado: 'nao_aberto', atrasado: { id: caixaId }, aFechar: { caixa: { id: caixaId }, gaveta: { esperadoCentavos: 3000 } } });
+    expect((await ana.lerSituacaoDoCaixa()).aVerificar).toEqual([]);
+    expect((await erro(bruno.abrirCaixa({ fundoCentavos: 0 }))).message).toMatch(/^Feche o caixa de 19\/11\/2026/);
+    // contou R$ 25,00: falta de R$ 5,00 vira ajuste e o de hoje já pode abrir
+    const fechado = await ana.fecharCaixa({ dia: HOJE, contadoCentavos: 2500, justificativa: 'troco errado' });
+    expect(fechado.fechamento).toMatchObject({ automatico: false, diferencaCentavos: -500, ajusteCentavos: -500 });
+    await bruno.abrirCaixa({ fundoCentavos: 2500 });
+    expect((await bruno.lerSituacaoDoCaixa()).estado).toBe('aberto');
   });
 });
 

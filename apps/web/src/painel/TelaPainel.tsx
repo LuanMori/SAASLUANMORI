@@ -9,12 +9,15 @@
 // A Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets);
 // o botão "← Painel" volta para a Visão geral.
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
-import { type ConfiguracaoDaLoja, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
+// À meia-noite com o sistema aberto (usarViradaDoDia), o caixa que ficou aberto fecha sozinho, as telas
+// recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
+import { type ConfiguracaoDaLoja, dataBr, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
 import { useCallback, useEffect, useState } from 'react';
 import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
-import { aoMudaremOsDados } from '../sincronizacao';
+import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
 import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
+import { AvisoComIcone } from './AvisoComIcone';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
 import type { Pendencia } from './pendencias';
 import { TelaCaixaDoDia } from './TelaCaixaDoDia';
@@ -27,6 +30,7 @@ import { TelaRelatorios } from './TelaRelatorios';
 import { TelaUsuarios } from './TelaUsuarios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
 import { ModalTrocarSenha } from './TrocarSenha';
+import { usarViradaDoDia } from './usarViradaDoDia';
 
 interface Props extends DadosBarra {
   api: ApiSistema;
@@ -74,7 +78,24 @@ export function TelaPainel({
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [config, setConfig] = useState<ConfiguracaoDaLoja | null>(null);
+  /** Dia cujo caixa fechou sozinho na virada da meia-noite (com o sistema aberto). */
+  const [fechouSozinho, setFechouSozinho] = useState<string | null>(null);
   usarInatividade(inatividadeMin, aoInatividade ?? aoSair);
+
+  // Meia-noite: ler o caixa já fecha o do dia anterior que ficou aberto (sem contagem). Avisa se foi o caso e
+  // faz todas as telas lerem de novo (a Frente de caixa passa a mostrar "caixa de hoje não aberto").
+  usarViradaDoDia(fuso, agora ?? (() => new Date()), (anterior) => {
+    void Promise.resolve()
+      .then(() => api.lerCaixa())
+      .then(
+        (p) => {
+          if (p.historico.some((c) => c.dia === anterior && c.fechamento?.automatico)) setFechouSozinho(anterior);
+        },
+        () => undefined, // sem essa parte no servidor ou sem rede: as telas mostram o que conseguirem
+      )
+      .finally(avisarQueOsDadosMudaram);
+  });
+  const avisoDaVirada = fechouSozinho ? `Novo dia: o caixa de ${dataBr(fechouSozinho)} fechou sozinho à meia-noite, sem contagem da gaveta.` : null;
 
   // dados e regras da loja: na abertura, quando outra aba ou computador muda algo, e depois de salvar
   const carregarConfig = useCallback(() => {
@@ -119,6 +140,7 @@ export function TelaPainel({
             chaveCarrinho={chaveCarrinho}
             aoSair={() => setSecao('visao-geral')}
             aoAbrirCaixa={pode('caixa-do-dia') ? () => setSecao('caixa-do-dia') : undefined}
+            avisoDaVirada={avisoDaVirada}
           />
         </main>
       </div>
@@ -134,6 +156,27 @@ export function TelaPainel({
           <p className="alerta painel-aviso" role="status">
             {aviso}
           </p>
+        )}
+        {avisoDaVirada && (
+          <AvisoComIcone
+            tipo="atencao"
+            papel="status"
+            className="painel-aviso"
+            acao={
+              <span className="cx-aviso-acoes">
+                {pode('caixa-do-dia') && secao !== 'caixa-do-dia' && (
+                  <button type="button" className="botao" onClick={() => escolher('caixa-do-dia')}>
+                    Ir para Caixa do dia
+                  </button>
+                )}
+                <button type="button" className="botao" onClick={() => setFechouSozinho(null)}>
+                  Entendi
+                </button>
+              </span>
+            }
+          >
+            {avisoDaVirada} Abra o caixa de hoje para voltar a vender.
+          </AvisoComIcone>
         )}
         {permitido && !disponivel(secao) && (
           <div className="rel">

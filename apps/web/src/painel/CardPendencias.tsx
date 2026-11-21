@@ -3,7 +3,7 @@
 // título com a contagem, cada item com ícone pela gravidade, texto e (opcional)
 // um botão que leva para a aba onde se resolve. Urgentes primeiro.
 //   pendencias === null → ainda não definimos quais avisos entram (docs/PENDENCIAS.md)
-//   pendencias === []   → nada pendente
+//   pendencias === []   → nada pendente (com a `nota`, se houver: o que já está ligado e o que falta escolher)
 import type { ReactNode } from 'react';
 import type { IdSecao } from './menu';
 import { ordenarPendencias, type Pendencia } from './pendencias';
@@ -11,9 +11,13 @@ import { ordenarPendencias, type Pendencia } from './pendencias';
 interface Props {
   pendencias: readonly Pendencia[] | null;
   aoIrPara?: (secao: IdSecao) => void;
+  /** Texto pequeno embaixo de "Nada pendente." */
+  nota?: string | null;
+  /** Ainda lendo os dados das regras (ex.: a situação do caixa): não diz "nada definido" nem "nada pendente" antes da hora. */
+  carregando?: boolean;
 }
 
-export function CardPendencias({ pendencias, aoIrPara }: Props) {
+export function CardPendencias({ pendencias, aoIrPara, nota = null, carregando = false }: Props) {
   const lista = pendencias ? ordenarPendencias(pendencias) : [];
 
   return (
@@ -29,7 +33,9 @@ export function CardPendencias({ pendencias, aoIrPara }: Props) {
         </h2>
       </div>
 
-      {pendencias === null ? (
+      {carregando && lista.length === 0 ? (
+        <p className="pend-vazio">Carregando…</p>
+      ) : pendencias === null ? (
         <p className="pend-vazio">
           <IconeInfo />
           <span>
@@ -40,7 +46,10 @@ export function CardPendencias({ pendencias, aoIrPara }: Props) {
       ) : lista.length === 0 ? (
         <p className="pend-vazio pend-ok">
           <IconeOk />
-          <span>Nada pendente. Tudo em ordem.</span>
+          <span>
+            Nada pendente. Tudo em ordem.
+            {nota && <small className="pend-nota">{nota}</small>}
+          </span>
         </p>
       ) : (
         <ul className="pend-lista">

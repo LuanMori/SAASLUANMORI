@@ -37,21 +37,40 @@ async function venderEmDinheiro(centavos: number) {
   await dono.criarVenda({ itens: [{ produtoId: p.id, quantidade: 1 }], pagamentos: [{ forma: 'dinheiro', valorCentavos: centavos }], recebidoDinheiroCentavos: centavos });
 }
 
+/** Caixa aberto ontem (20/11) por Bruno com R$ 20,00 de fundo e uma venda de R$ 10,00 em dinheiro. Agora: 21/11, 08:00. */
+async function ontemFechouSozinho() {
+  let relogio = new Date('2026-11-20T12:00:00Z');
+  const comRelogio = (o: OperadorComPapel) => criarApiLocal({ lojaId: 'cx', operador: o, exemplos: false, atrasoMs: 0, agora: () => relogio });
+  const dono = comRelogio(ANA);
+  const p = await dono.criarProduto({ nome: 'Petisco', codigoBarras: null, precoCentavos: 1000 });
+  await darEstoque('cx', 10);
+  await comRelogio(BRUNO).abrirCaixa({ fundoCentavos: 2000 });
+  await dono.criarVenda({ itens: [{ produtoId: p.id, quantidade: 1 }], pagamentos: [{ forma: 'dinheiro', valorCentavos: 1000 }], recebidoDinheiroCentavos: 1000 });
+  relogio = new Date('2026-11-21T11:00:00Z');
+  return { comRelogio, agora: () => relogio };
+}
+
 describe('Caixa do dia · abrir, operar e fechar', () => {
-  it('o Vendedor abre o caixa (é o responsável) e vê o fundo, o esperado e as vendas de hoje', async () => {
+  it('o Vendedor abre o caixa (é o operador) e vê o fundo, o esperado e as vendas de hoje', async () => {
     await abrirTela(BRUNO);
     expect((await screen.findByText(/ainda não foi aberto/)).textContent).toMatch(/Sem caixa aberto não há vendas\./);
+    // formato do DaniPets: subtítulo, situação do caixa e a data por extenso no cabeçalho
+    expect(screen.getByText('Abertura, sangria, suprimento e fechamento.')).toBeTruthy();
     expect(screen.getByText('Caixa de hoje não aberto')).toBeTruthy();
-    expect((screen.getByLabelText('Responsável') as HTMLInputElement).value).toBe('Bruno');
+    expect(screen.getByText(/^[A-ZÀ-Ú][a-zà-ú]+(-feira)?, \d{1,2} de [a-zà-ú]+ de \d{4}$/)).toBeTruthy();
+    // tabelas vazias com o cabeçalho e "Nenhum registro."
+    expect(within(screen.getByRole('region', { name: 'Histórico de caixa' })).getByText('Nenhum registro.')).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Movimentos em dinheiro de hoje' })).getByText('Nenhum registro.')).toBeTruthy();
+    expect((screen.getByLabelText('Operador') as HTMLInputElement).value).toBe('Bruno');
     // o Vendedor não vê o saldo do Caixa físico (é do Financeiro)
     expect(screen.queryByText(/No sistema, o Caixa físico tem/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Abrir caixa' }));
     expect(screen.getByRole('alert').textContent).toMatch(/Informe o fundo de troco/);
     await userEvent.type(screen.getByLabelText('Fundo de troco na gaveta (R$)'), '150,00');
     await userEvent.click(screen.getByRole('button', { name: 'Abrir caixa' }));
-    expect(txt((await screen.findByText(/Caixa aberto com/)).textContent)).toBe('Caixa aberto com R$ 150,00 de fundo de troco. Responsável: Bruno.');
+    expect(txt((await screen.findByText(/Caixa aberto com/)).textContent)).toBe('Caixa aberto com R$ 150,00 de fundo de troco. Operador: Bruno.');
     expect(await pilulaAberto()).toBeTruthy();
-    expect(screen.getByText('Responsável: Bruno')).toBeTruthy();
+    expect(screen.getByText('Operador: Bruno')).toBeTruthy();
     expect(txt(screen.getByTestId('caixa-esperado').textContent)).toBe('R$ 150,00');
     expect(screen.getByRole('heading', { name: /^Fechar caixa de \d\d\/\d\d\/\d{4}$/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Regras do caixa' })).toBeNull();
@@ -146,7 +165,94 @@ describe('Caixa do dia · abrir, operar e fechar', () => {
   });
 });
 
+describe('Caixa do dia · fechamento automático à meia-noite (pedido do Luan, 21/11/2026)', () => {
+  it('o Dono vê "Deseja verificar?", confere os números do dia e marca como verificado', async () => {
+    const { comRelogio } = await ontemFechouSozinho();
+    render(<TelaCaixaDoDia api={comRelogio(ANA)} pessoa={{ nome: 'Ana', papel: 'dono' }} fuso={FUSO} />);
+    const aviso = await screen.findByText(/fechou sozinho à meia-noite/);
+    expect(txt(aviso.textContent)).toBe('O caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 30,00). Deseja verificar?');
+    expect(screen.getByText('Caixa de hoje não aberto')).toBeTruthy();
+    expect(screen.getByText('Sábado, 21 de novembro de 2026')).toBeTruthy();
+    // no histórico: automático, a verificar, quem fechou foi o Sistema
+    const linha = within(screen.getByRole('region', { name: 'Histórico de caixa' })).getAllByRole('row')[1]!;
+    expect(txt(linha.textContent)).toBe('20/11/2026R$ 20,00R$ 30,00—automático • sem contagema verificarabriu: Bruno às 09:00fechou: Sistema (meia-noite)Desfazer fechamento');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Verificar o fechamento de 20/11/2026' }));
+    expect(within(janela()).getByRole('heading', { name: 'Verificar o fechamento de 20/11/2026' })).toBeTruthy();
+    expect(txt(within(janela()).getByLabelText('Números do dia').textContent)).toBe(
+      'Fundo de trocoR$ 20,00Entradas em dinheiroR$ 10,00Saídas em dinheiroR$ 0,00Esperado na gavetaR$ 30,00Vendas do diaR$ 10,00 em dinheiro • Pix R$ 0,00 • cartões R$ 0,00',
+    );
+    await userEvent.type(within(janela()).getByLabelText('Observação (opcional)'), 'contei R$ 30,00, bateu');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Marcar como verificado' }));
+    expect(txt((await screen.findByText(/verificado\. A pendência/)).textContent)).toBe('Fechamento de 20/11/2026 verificado. A pendência saiu da Visão geral.');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByText(/fechou sozinho à meia-noite/)).toBeNull());
+    expect(txt((await screen.findByText(/^verificado: Ana/)).textContent)).toBe('verificado: Ana em 21/11/2026 às 08:00 • contei R$ 30,00, bateu');
+  });
+
+  it('o Vendedor não confere: sem o aviso, só "a verificar" no histórico', async () => {
+    const { comRelogio } = await ontemFechouSozinho();
+    render(<TelaCaixaDoDia api={comRelogio(BRUNO)} pessoa={{ nome: 'Bruno', papel: 'vendedor' }} fuso={FUSO} />);
+    expect(await screen.findByText('a verificar')).toBeTruthy();
+    expect(screen.queryByText(/Deseja verificar/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Verificar/ })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Abrir caixa de hoje' })).toBeTruthy();
+  });
+
+  it('não bateu: "Desfazer para contar" reabre o dia (não fecha sozinho de novo) e ele fecha com a contagem', async () => {
+    const { comRelogio } = await ontemFechouSozinho();
+    render(<TelaCaixaDoDia api={comRelogio(ANA)} pessoa={{ nome: 'Ana', papel: 'dono' }} fuso={FUSO} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Verificar o fechamento de 20/11/2026' }));
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Desfazer para contar' }));
+    expect(within(janela()).getByRole('heading', { name: 'Desfazer o fechamento de 20/11/2026' })).toBeTruthy();
+    await userEvent.type(within(janela()).getByLabelText('Motivo do ajuste do fechamento automático'), 'conferir a gaveta');
+    await userEvent.type(within(janela()).getByLabelText('Explique por que o fechamento automático precisa ser ajustado'), 'faltou dinheiro na gaveta');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Desfazer fechamento' }));
+    expect(txt((await screen.findByText(/desfeito\. Conte a gaveta/)).textContent)).toBe(
+      'Fechamento de 20/11/2026 desfeito. Conte a gaveta e feche o dia com a contagem (o dia não fecha sozinho de novo até a próxima meia-noite).',
+    );
+    // a tela leu de novo e o dia continua aberto, esperando a contagem
+    expect(await screen.findByRole('heading', { name: 'Fechar caixa de 20/11/2026' })).toBeTruthy();
+    expect(screen.getByText('O caixa de 20/11/2026 ainda está aberto. Feche esse dia antes de abrir o caixa de hoje.')).toBeTruthy();
+    await userEvent.type(screen.getByLabelText('Dinheiro contado na gaveta (R$)'), '25');
+    await userEvent.type(screen.getByLabelText('Observação (obrigatória se houver diferença)'), 'troco errado');
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar caixa' }));
+    expect(txt((await screen.findByText(/fechado\. Falta/)).textContent)).toBe('Caixa de 20/11/2026 fechado. Falta de R$ 5,00 lançada como ajuste no saldo do Caixa físico.');
+    expect(await screen.findByRole('heading', { name: 'Abrir caixa de hoje' })).toBeTruthy();
+  });
+});
+
 describe('Caixa do dia · nas outras telas', () => {
+  it('Visão geral: o fechamento automático vira a pendência "Deseja verificar?" do Dono; o Vendedor não vê', async () => {
+    const { comRelogio, agora } = await ontemFechouSozinho();
+    const aoIrPara = vi.fn();
+    const visao = (o: OperadorComPapel) => (
+      <TelaVisaoGeral api={comRelogio(o)} nome={o.nome} fuso={FUSO} agora={agora} aoVerCaixa={vi.fn()} aoIrPara={aoIrPara} intervaloMs={60_000} />
+    );
+    render(visao(ANA));
+    const item = await screen.findByText(/fechou sozinho à meia-noite/);
+    expect(txt(item.textContent)).toBe('Atenção: O caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 30,00). Deseja verificar?');
+    expect(screen.getByTestId('pend-contagem').textContent).toBe('1');
+    await userEvent.click(screen.getByRole('button', { name: 'Verificar' }));
+    expect(aoIrPara).toHaveBeenCalledWith('caixa-do-dia');
+    cleanup();
+
+    // verificado: a pendência some e o card diz o que já está ligado
+    const dono = comRelogio(ANA);
+    await dono.verificarFechamentoAutomatico((await dono.lerCaixa()).historico[0]!.id);
+    render(visao(ANA));
+    expect(txt((await screen.findByText(/^Nada pendente/)).textContent)).toBe(
+      'Nada pendente. Tudo em ordem.Por enquanto, só o aviso do caixa fechado sozinho à meia-noite está ligado. Os outros (estoque, validade, contas…) ainda vamos escolher.',
+    );
+    cleanup();
+
+    // o Vendedor não confere o caixa: para ele, as pendências continuam "a definir"
+    render(visao(BRUNO));
+    await screen.findByRole('button', { name: 'Caixa de hoje não aberto' });
+    expect(screen.getByText(/Ainda não definimos quais avisos entram aqui/)).toBeTruthy();
+    expect(screen.queryByText(/fechou sozinho/)).toBeNull();
+  });
+
   it('Frente de caixa sem caixa aberto: pílula vermelha, aviso com "Abrir caixa" e a venda é recusada', async () => {
     const a = api(BRUNO);
     const p = await a.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });

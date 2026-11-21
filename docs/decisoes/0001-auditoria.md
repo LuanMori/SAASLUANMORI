@@ -44,6 +44,8 @@ autorizou), fechamento automático (feito pelo "Sistema", sem pessoa), fechament
 retroativo liberado (o que foi lançado, o dia e quem liberou). Os textos livres (justificativa do
 fechamento, motivo de desfazer, motivo da liberação) ficam no próprio caixa, na compra ou no movimento de
 estoque, e não nos detalhes do histórico.
+Em 21/11/2026 (pedido do Luan): **fechamento automático verificado** (o dia, o esperado na gaveta e se houve
+observação; a observação em si fica no próprio caixa).
 
 Módulo 6 (Clientes e fiado, 20/11/2026): limite de fiado alterado (de → para), autorização de mensagens
 (autorizou ou cancelou), não incomodar, CPF completo visto, fiado recebido (valor e forma), fiado liberado

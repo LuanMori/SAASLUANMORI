@@ -6,13 +6,16 @@
 // (docs/PENDENCIAS.md). Nada aqui é passado para o card até o Luan escolher o que entra.
 // Para ligar: chamar estas funções com os dados da loja e passar o resultado para
 // `TelaPainel` em `pendencias`.
+// ✔ LIGADA (definida pelo Luan em 21/11/2026): a #16, caixa fechado sozinho à meia-noite (pendenciasDoCaixa),
+// que a Visão geral calcula com a situação do caixa.
 //   - #6 estoque baixo (no mínimo ou abaixo) ........ média · todos · "Fazer pedido" (Compras)
 //   - #7 estoque negativo ............................ alta  · gestor · "Ajustar" (Produtos e estoque)
 //   - #10 recebimento de cartão vencido sem confirmar  média · gestor · "Confirmar" (Financeiro)
 //   - #11 fiado vencido (passou do prazo de 30 dias) ... média · gestor · "Ver clientes" (Clientes)
 //   - #12 clientes para lembrar hoje (módulo 7) ........ média · todos  · "Ver lista" (Clientes → Retorno)
-import { formatarCentavos, liquidoAReceber, type Recebivel, recebiveisDeCartao, recebiveisDeFiado, recebiveisVencidos } from '@saas/core';
-import type { PainelRetorno, Produto, SaldoEstoque } from '../api';
+//   - #16 caixa fechado sozinho, a verificar (LIGADA) .. média · gestor · "Verificar" (Caixa do dia)
+import { dataBr, formatarCentavos, liquidoAReceber, type Recebivel, recebiveisDeCartao, recebiveisDeFiado, recebiveisVencidos } from '@saas/core';
+import type { FechamentoAVerificar, PainelRetorno, Produto, SaldoEstoque } from '../api';
 import { plural } from './formato';
 import type { Pendencia } from './pendencias';
 
@@ -92,4 +95,18 @@ export function pendenciasDeRetorno(painel: Pick<PainelRetorno, 'hoje' | 'retorn
       acao: { rotulo: 'Ver lista', secao: 'clientes' },
     },
   ];
+}
+
+/**
+ * #16 (definida pelo Luan em 21/11/2026, LIGADA): o caixa que ninguém fechou fechou sozinho à meia-noite, sem
+ * contagem da gaveta. Fica até o Dono ou o Administrador verificar no Caixa do dia (a lista só vem para eles).
+ */
+export function pendenciasDoCaixa(aVerificar: readonly FechamentoAVerificar[]): Pendencia[] {
+  return aVerificar.map((f) => ({
+    id: `caixa-automatico:${f.dia}`,
+    gravidade: 'media',
+    texto: `O caixa de ${dataBr(f.dia)} fechou sozinho à meia-noite, sem contagem da gaveta (esperado ${formatarCentavos(f.esperadoCentavos)}). Deseja verificar?`,
+    acao: { rotulo: 'Verificar', secao: 'caixa-do-dia' },
+    soGestor: true,
+  }));
 }

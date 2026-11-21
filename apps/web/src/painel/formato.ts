@@ -11,6 +11,12 @@ export const dataNoFuso = (iso: string | Date, fuso: string) =>
 export const dataPorExtenso = (quando: Date, fuso: string) =>
   quando.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: fuso });
 
+/** "Sábado, 21 de novembro de 2026": o dia AAAA-MM-DD da loja, por extenso (cabeçalho do Caixa do dia). */
+export function diaPorExtenso(dia: string): string {
+  const t = new Date(`${dia}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export function saudacao(quando: Date, fuso: string): string {
   const hora = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hourCycle: 'h23', timeZone: fuso }).format(quando));
   return hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';

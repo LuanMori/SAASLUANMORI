@@ -96,6 +96,8 @@ interface Props {
   limiteDescontoPct?: number;
   /** "Abrir caixa": vai para a aba Caixa do dia (sem caixa aberto não há vendas). */
   aoAbrirCaixa?: () => void;
+  /** Aviso do painel quando o caixa fechou sozinho na virada da meia-noite (aparece com o caixa não aberto). */
+  avisoDaVirada?: string | null;
 }
 
 /** De quanto em quanto tempo o saldo de estoque é buscado de novo (outra pessoa pode ter vendido). */
@@ -119,7 +121,7 @@ type Janela =
   | { tipo: 'valeEmitido'; dados: ValeDaDevolucao }
   | null;
 
-export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa }: Props) {
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa, avisoDaVirada = null }: Props) {
   const { estado: carga, recarregar } = usarCarga(async () => {
     const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
     return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
@@ -358,6 +360,14 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   async function finalizar(liberacaoFiado?: { autorizacao: string; motivo: string }) {
     if (usaFiado(pag) && !cliente) return erro(mensagemFormaSemCliente('fiado'));
     if (enviando || linhas.length === 0) return;
+    // sem o caixa de hoje aberto não há venda (a API também recusa; aqui o aviso vem na hora, sem gravar nada)
+    if (caixa && caixa.estado !== 'aberto') {
+      return erro(
+        caixa.estado === 'fechado'
+          ? 'O caixa de hoje já foi fechado. Para vender hoje, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia.'
+          : 'Abra o caixa de hoje (Caixa do dia) antes de vender.',
+      );
+    }
     if (pag.dividido && conta.invalido) return erro('Há um valor inválido no pagamento dividido (ex.: 12,50).');
     if (conta.faltaCentavos !== 0 && conta.aPagarCentavos > 0) {
       const pago = conta.aPagarCentavos - conta.faltaCentavos;
@@ -494,6 +504,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       {caixa && caixa.estado !== 'aberto' && (
         <div className="alerta alerta-erro pdv-caixa-aviso" role="status">
           <span>
+            {avisoDaVirada && caixa.estado === 'nao_aberto' && <b className="pdv-virada">{avisoDaVirada} </b>}
             {caixa.estado === 'fechado'
               ? 'O caixa de hoje já foi fechado. Para vender hoje, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia.'
               : 'O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.'}

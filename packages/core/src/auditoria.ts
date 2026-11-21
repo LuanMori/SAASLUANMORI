@@ -54,6 +54,7 @@ export const ACOES_AUDITORIA = {
   'caixa.suprimento': 'Suprimento',
   'caixa.fechado': 'Fechamento de caixa',
   'caixa.fechamento_automatico': 'Fechamento automático',
+  'caixa.fechamento_verificado': 'Fechamento automático verificado',
   'caixa.fechamento_desfeito': 'Fechamento desfeito',
   'dia_fechado.liberado': 'Lançamento retroativo liberado',
   // fornecedores
@@ -292,6 +293,9 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     }
     case 'caixa.fechamento_automatico':
       partes.push(diaBr(d.dia), 'sem contagem e sem ajuste');
+      break;
+    case 'caixa.fechamento_verificado':
+      partes.push(diaBr(d.dia), dinheiro(d.esperadoCentavos) && `esperado ${dinheiro(d.esperadoCentavos)}`, d.comObservacao === true ? 'com observação' : null);
       break;
     case 'caixa.fechamento_desfeito':
       partes.push(diaBr(d.dia), d.automatico === true ? 'era automático' : null);

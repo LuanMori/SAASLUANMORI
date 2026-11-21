@@ -434,6 +434,7 @@ h2 { font-size: 1.05rem; }
 .pend-vazio .pend-icone { color: var(--suave); }
 .pend-ok { color: var(--texto); }
 .pend-ok .pend-icone { color: var(--primaria-texto); }
+.pend-nota { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--suave); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* Relatório aberto pelo card */
@@ -933,7 +934,9 @@ h2 { font-size: 1.05rem; }
 }
 
 /* Caixa do dia (Fase 2, módulo 5; DaniPets pageCash) */
-.caixa-situacao { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; background: var(--fundo); color: var(--texto); border: 1px solid var(--borda); white-space: nowrap; }
+/* situação do caixa de hoje (DaniPets .caixa-status): bolinha da cor do texto, verde aberto, vermelho não aberto */
+.caixa-situacao { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; background: var(--superficie); color: var(--suave); border: 1px solid var(--borda); white-space: nowrap; }
+.caixa-situacao::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .caixa-aberto { background: var(--primaria-clara); color: var(--primaria-texto-forte); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
 .caixa-nao-aberto { background: var(--erro-fundo); color: var(--erro); border-color: color-mix(in srgb, var(--erro) 30%, var(--superficie)); }
 .caixa-metricas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
@@ -944,11 +947,42 @@ h2 { font-size: 1.05rem; }
 .caixa-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .caixa-form { display: grid; gap: 12px; padding: 0 20px 16px; }
 .caixa-form .campo { margin: 0; }
+/* formulário numa linha (DaniPets .small-form): os campos lado a lado e o botão no fim; quebra quando falta espaço */
+.caixa-form-linha { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); align-items: end; }
+.caixa-form-linha > p { grid-column: 1 / -1; }
+.caixa-form-botao .botao { width: 100%; }
+.caixa-dica { margin: 0; padding: 0 20px 16px; font-size: 0.8rem; color: var(--suave); }
+/* cabeçalho do Caixa do dia (DaniPets .top): título e subtítulo à esquerda; situação, data e regras à direita */
+.cx-topo { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
+.cx-topo-titulo { flex: 1 1 320px; min-width: 0; }
+.cx-topo-titulo h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
+.cx-topo-titulo p { margin: 6px 0 0; }
+.cx-topo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.cx-data { color: var(--suave); white-space: nowrap; }
+.cx-regras { padding: 6px 12px; font-size: 0.85rem; }
+/* avisos com ícone (DaniPets .alert): amarelo = atenção, vermelho = erro, verde = ok */
+.cx-aviso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--aviso) 35%, var(--superficie)); border-radius: 8px; background: var(--aviso-fundo); color: var(--texto); font-size: 0.92rem; line-height: 1.45; }
+.cx-aviso-icone { flex: none; width: 18px; height: 18px; color: var(--aviso); align-self: flex-start; margin-top: 1px; }
+.cx-aviso-texto { flex: 1 1 240px; min-width: 0; margin: 0; }
+.cx-aviso .botao { flex: none; padding: 6px 14px; }
+.cx-aviso-acoes { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.cx-aviso-erro { background: var(--erro-fundo); border-color: color-mix(in srgb, var(--erro) 30%, var(--superficie)); }
+.cx-aviso-erro .cx-aviso-icone { color: var(--erro); }
+.cx-aviso-ok { background: var(--primaria-clara); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
+.cx-aviso-ok .cx-aviso-icone { color: var(--primaria-texto); }
+.cx-a-verificar { color: var(--aviso); font-weight: 600; }
+.cx-conferir { margin: 0 0 12px; }
+.cx-conferir-dica { margin-bottom: 12px; }
+.tabela-vazia td { padding: 18px 20px; text-align: center; color: var(--suave); white-space: normal; }
+.tabela-vendas tbody tr.tabela-vazia:hover { background: none; }
 .caixa-previa { margin: 0; font-size: 0.9rem; color: var(--suave); }
 .caixa-ok { color: var(--primaria-texto); }
 .caixa-dif { color: var(--erro); }
 .caixa-sem-dif { background: var(--primaria-clara); color: var(--primaria-texto-forte); }
 .caixa-historico .pe-situacao { margin-left: 0; }
+/* a justificativa e a verificação (com observação) quebram a linha em vez de empurrar a coluna Quem */
+.caixa-historico td[data-rotulo='Diferença'] { white-space: normal; min-width: 200px; max-width: 280px; }
+.caixa-historico .pe-situacao { white-space: nowrap; }
 .pdv-caixa-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 16px 0; }
 .pdv-pilula.pdv-caixa-ok { background: #0b5f40; color: #fff; }
 .pdv-chip.pdv-chip-ruim { background: var(--erro-fundo); color: var(--erro); }
@@ -957,6 +991,8 @@ h2 { font-size: 1.05rem; }
 @media (max-width: 760px) {
   .caixa-grade { grid-template-columns: minmax(0, 1fr); }
   .caixa-form { padding: 0 14px 14px; }
+  .caixa-dica { padding: 0 14px 14px; }
+  .caixa-historico tr.tabela-vazia { display: block; }
   /* histórico de caixa em cartões: o dia em cima, os valores com rótulo, quem e a ação embaixo */
   .caixa-historico tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; }
   .caixa-historico td { min-width: 0; }
@@ -966,6 +1002,7 @@ h2 { font-size: 1.05rem; }
   .caixa-historico td[data-rotulo='Dia']::before, .caixa-historico td[data-rotulo='Ação']::before { content: none; }
   .caixa-historico td[data-rotulo='Diferença'], .caixa-historico td[data-rotulo='Quem'], .caixa-historico td[data-rotulo='Ação'] { grid-column: 1 / -1; }
   .caixa-historico td[data-rotulo='Ação'] > .suave { display: none; }
+  .caixa-historico td[data-rotulo='Diferença'] { min-width: 0; max-width: none; }
 }
 
 /* Clientes (Fase 2, módulo 6; DaniPets pageCustomers) */

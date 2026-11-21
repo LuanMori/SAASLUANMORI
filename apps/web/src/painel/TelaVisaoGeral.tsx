@@ -2,7 +2,8 @@
 // Visão geral no formato do DaniPets V9.3.3, só com o essencial:
 //   [ VENDAS DE HOJE (card grande) ] [ Produtos ativos  ]
 //                                    [ Saldo das contas ]
-// Embaixo, o card Pendências (o que entra nele AINDA NÃO FOI DEFINIDO: docs/PENDENCIAS.md).
+// Embaixo, o card Pendências (o que entra nele ainda está A DEFINIR: docs/PENDENCIAS.md). Já ligada: a #16,
+// caixa fechado sozinho à meia-noite ("Deseja verificar?"), para o Dono e o Administrador.
 // Nada mais aparece na tela. Mais informação só ao clicar:
 //   - card grande: abre logo abaixo o relatório das vendas de hoje (de onde vem
 //     o número, por forma de pagamento, por quem vendeu e venda por venda);
@@ -30,7 +31,8 @@ import { usarIntervalo } from '../usarIntervalo';
 import { CardPendencias } from './CardPendencias';
 import { comoVoltou, dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, produtosVendidos, quantidadeDoItem, saudacao } from './formato';
 import type { IdSecao } from './menu';
-import type { Pendencia } from './pendencias';
+import { NOTA_PENDENCIAS_A_DEFINIR, type Pendencia } from './pendencias';
+import { pendenciasDoCaixa } from './regrasPendencias';
 import { usarCarga } from './usarCarga';
 
 interface Props {
@@ -104,6 +106,11 @@ export function TelaVisaoGeral({
         ? 'Caixa de hoje fechado'
         : 'Caixa de hoje não aberto';
   const classeCaixa = `caixa-situacao vg-caixa${caixa?.estado === 'aberto' ? ' caixa-aberto' : caixa?.estado === 'nao_aberto' ? ' caixa-nao-aberto' : ''}`;
+  // #16: fechamento automático a verificar. A lista só vem para quem confere o caixa (Dono e Administrador);
+  // sem ela (Vendedor, ou servidor sem o caixa), ficam só as pendências recebidas (null = nada definido).
+  const doCaixa = caixa?.aVerificar ? pendenciasDoCaixa(caixa.aVerificar).map((p) => (aoVerCaixa ? p : { ...p, acao: undefined })) : null;
+  const todasPendencias = doCaixa === null ? pendencias : [...doCaixa, ...(pendencias ?? [])];
+  const lendoCaixa = Boolean(api.lerSituacaoDoCaixa) && estadoCaixa.tipo === 'carregando';
 
   const produtos = estadoProdutos.tipo === 'pronto' ? estadoProdutos.dados : null;
   const ativos = produtos ? produtos.filter((p) => p.ativo).length : 0;
@@ -223,7 +230,7 @@ export function TelaVisaoGeral({
             />
           )}
 
-          <CardPendencias pendencias={pendencias} aoIrPara={aoIrPara} />
+          <CardPendencias pendencias={todasPendencias} aoIrPara={aoIrPara} nota={doCaixa !== null ? NOTA_PENDENCIAS_A_DEFINIR : null} carregando={lendoCaixa} />
         </>
       )}
     </div>

@@ -1,6 +1,6 @@
 // apps/web/src/painel/TelaPainel.test.tsx
 import type { PapelDeLoja } from '@saas/core';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApiLocal } from '../demo/apiLocal';
@@ -263,5 +263,41 @@ describe('TelaPainel · dados da loja e tema (Fase 2, módulo 1)', () => {
     await userEvent.click(within(barra).getByRole('button', { name: 'Usar o tema claro' }));
     expect(document.documentElement.dataset.tema).toBe('claro');
     expect(localStorage.getItem('saas:tema')).toBe('claro');
+  });
+});
+
+describe('TelaPainel · virada do dia com o sistema aberto (pedido do Luan, 21/11/2026)', () => {
+  it('à meia-noite o caixa que ficou aberto fecha sozinho: aviso de novo dia, pendência do Dono e Frente de caixa sem vender', async () => {
+    let relogio = new Date('2026-11-20T23:00:00Z'); // 20:00 de 20/11 (Brasília)
+    const api = criarApiLocal({ lojaId: 'virada', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0, agora: () => relogio });
+    await api.abrirCaixa({ fundoCentavos: 5000 });
+    render(<TelaPainel loja={{ nome: 'Loja A' }} pessoa={{ nome: 'Ana', papel: 'dono' }} aoSair={vi.fn()} api={api} agora={() => relogio} intervaloMs={60_000} />);
+    expect(await screen.findByRole('button', { name: /^Caixa aberto às/ })).toBeTruthy();
+
+    relogio = new Date('2026-11-21T03:00:20Z'); // 00:00:20 de 21/11
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(txt((await screen.findByText(/^Novo dia:/)).textContent)).toBe(
+      'Novo dia: o caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta. Abra o caixa de hoje para voltar a vender.',
+    );
+    // a Visão geral leu de novo: caixa de hoje não aberto e a pendência para conferir
+    expect(await screen.findByRole('button', { name: 'Caixa de hoje não aberto' })).toBeTruthy();
+    expect(txt((await screen.findByText(/^O caixa de 20\/11\/2026 fechou sozinho/)).textContent)).toBe(
+      'Atenção: O caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 50,00). Deseja verificar?',
+    );
+    // a Frente de caixa mostra o aviso junto com "sem caixa aberto não há vendas"
+    await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
+    expect(await screen.findByText('CAIXA DE HOJE NÃO ABERTO')).toBeTruthy();
+    expect(txt(screen.getByText(/^Novo dia:/).closest('span')?.textContent)).toBe(
+      'Novo dia: o caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta. O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.',
+    );
+    // de volta ao painel: "Ir para Caixa do dia" e "Entendi"
+    await userEvent.click(screen.getByRole('button', { name: '← Painel' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Ir para Caixa do dia' }));
+    expect(await screen.findByRole('heading', { name: 'Abrir caixa de hoje' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Ir para Caixa do dia' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Entendi' }));
+    expect(screen.queryByText(/^Novo dia:/)).toBeNull();
   });
 });

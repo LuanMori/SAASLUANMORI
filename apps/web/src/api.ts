@@ -449,6 +449,19 @@ export interface SituacaoDoCaixaHoje {
   responsavel: string | null;
   /** Caixa de um dia anterior ainda aberto (fecha sozinho à meia-noite; aparece só se não fechou). */
   atrasado: string | null;
+  /**
+   * Fechamentos automáticos (à meia-noite, sem contagem) que ninguém conferiu: a pendência "Deseja verificar?".
+   * Só para quem confere o caixa (Dono e Administrador); null para o Vendedor. Ausente = servidor sem essa parte.
+   */
+  aVerificar?: FechamentoAVerificar[] | null;
+}
+
+/** Um fechamento automático que o Dono ou o Administrador ainda não conferiu. */
+export interface FechamentoAVerificar {
+  caixaId: string;
+  /** AAAA-MM-DD. */
+  dia: string;
+  esperadoCentavos: number;
 }
 
 export interface ApiCaixa {
@@ -466,6 +479,11 @@ export interface ApiCaixa {
    * precisa da autorização (403 com codigo "precisa_autorizacao").
    */
   fecharCaixa(dados: Omit<PedidoFechamento, 'justificativa' | 'autorizacao'> & { justificativa?: string | null; autorizacao?: string | null }): Promise<CaixaDoDia>;
+  /**
+   * O Dono ou o Administrador conferiu o fechamento automático (contou a gaveta): a pendência some. A observação
+   * (opcional) guarda o que achou. Não mexe em saldo: se a gaveta não bateu, o caminho é desfazer e fechar contando.
+   */
+  verificarFechamentoAutomatico(caixaId: string, dados?: { observacao?: string | null }): Promise<CaixaDoDia>;
   /** Só o último fechamento, pelo Dono ou pelo Administrador. */
   desfazerFechamento(caixaId: string, dados: Omit<PedidoDesfazer, 'explicacao'> & { explicacao?: string | null }): Promise<CaixaDoDia>;
 }

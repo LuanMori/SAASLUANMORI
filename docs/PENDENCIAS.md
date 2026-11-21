@@ -1,8 +1,11 @@
 # Pendências da Visão geral
 
 > **Status: A DEFINIR.** O card já existe (pedido do Luan em 13/11/2026), mas ainda não escolhemos
-> quais avisos entram nele. Enquanto este status for "A DEFINIR", o card mostra
-> "Ainda não definimos quais avisos entram aqui." e nada é inventado.
+> quais avisos entram nele. **Exceção:** a pendência **16** (caixa fechado sozinho à meia-noite, "Deseja
+> verificar?") foi definida pelo Luan em 21/11/2026 e já aparece no card para o Dono e o Administrador.
+> As outras continuam a definir: sem nenhuma pendência, o card diz "Nada pendente. Tudo em ordem." e
+> explica que só o aviso do caixa está ligado (para o Vendedor, que não vê a 16, continua
+> "Ainda não definimos quais avisos entram aqui."). Nada é inventado.
 
 ## O que já está pronto
 
@@ -23,6 +26,12 @@
 - **20/11/2026 (módulo 7, Fidelidade):** a **12** (clientes para lembrar hoje: sem comprar e cashback vencendo)
   também ficou pronta e desligada, com o texto do DaniPets ("2 clientes para lembrar hoje (1 sem comprar, 1
   cashback vencendo)"). Ela usa a mesma lista da aba Clientes → Retorno.
+- **21/11/2026 (pedido do Luan): a 16 foi DEFINIDA e LIGADA.** Quando ninguém fecha o caixa, ele fecha
+  sozinho à meia-noite (inclusive com o sistema aberto) e fica a pendência "O caixa de 21/11/2026 fechou
+  sozinho à meia-noite, sem contagem da gaveta (esperado R$ 100,00). Deseja verificar?", com o botão
+  **Verificar** (leva ao Caixa do dia). Lá, o Dono ou o Administrador confere os números do dia e marca como
+  verificado (com observação), ou desfaz o fechamento para fechar contando. Verificado, a pendência some.
+  Código: `pendenciasDoCaixa` em `apps/web/src/painel/regrasPendencias.ts`, calculada na Visão geral.
 - **18/11/2026 (login próprio e aba Usuários):** a sugestão 13 mudou — ninguém mais "espera o Dono liberar"
   (o Dono cadastra direto); no lugar, avisar de quem recebeu senha provisória e ainda não entrou. A 14
   (usuário bloqueado) já pode ser feita: o bloqueio por senhas erradas existe no servidor e na demonstração.
@@ -37,6 +46,7 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | 1 | O caixa de hoje não foi aberto: vendas ficam bloqueadas | média | todos | Caixa do dia ("Abrir caixa") | abertura e fechamento de caixa |
 | 2 | Dia anterior com caixa aberto e sem fechamento | média | todos | Caixa do dia | abertura e fechamento de caixa |
 | 3 | Fechamento com diferença acima do tolerado, aguardando o Dono | alta | gestor | Caixa do dia | fechamento de caixa |
+| **16** | **Caixa fechado sozinho à meia-noite, sem contagem: "Deseja verificar?"** | média | gestor | Caixa do dia ("Verificar") | **DEFINIDA pelo Luan em 21/11/2026 e LIGADA** |
 | **Produtos e estoque / Compras** | | | | | |
 | 4 | Lote com validade **vencida** ainda no estoque | alta | todos (baixa só gestor) | Produtos e estoque | lote e validade na entrada de compras |
 | 5 | Lote vencendo em até 30 dias | média | todos | Produtos e estoque | lote e validade |
@@ -65,5 +75,5 @@ automático do banco: a loja não precisa fazer nada. Sugestão: não incluir es
 ## Como decidir
 
 Para cada pendência: entra ou não? Gravidade? Quem vê? Para qual aba o botão leva?
-Sugestão de ordem: começar pelas que já estão prontas (6, 7 e 10) e pelas que dependem das próximas
-telas (Caixa do dia e Produtos e estoque): 1, 2, 4 e 5.
+Sugestão de ordem: começar pelas que já estão prontas (6, 7, 10, 11 e 12) e pelas que dependem das próximas
+telas (Caixa do dia e Produtos e estoque): 1, 2, 4 e 5. A 16 já está ligada (21/11/2026).

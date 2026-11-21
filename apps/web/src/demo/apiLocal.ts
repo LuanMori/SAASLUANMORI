@@ -82,6 +82,7 @@ import {
   conferirCaixaAberto,
   conferirCaixaParaVender,
   conferirDesfazer,
+  conferirVerificacao,
   conferirFechamento,
   conferirHojeNaoFechado,
   conferirLiberacao,
@@ -89,6 +90,7 @@ import {
   diaDoLancamento,
   fecharCaixa,
   fecharDiasPassados,
+  fechamentosAVerificar,
   FORMAS_PAGAMENTO,
   type FormaPagamento,
   formatarCentavos,
@@ -102,6 +104,9 @@ import {
   validarLiberacao,
   validarOperacaoCaixa,
   validarPedidoDesfazer,
+  validarPedidoVerificacao,
+  verificarFechamento,
+  precisaFecharSozinho,
   validarPedidoFechamento,
   type AcaoAuditoria,
   type AcaoAutorizada,
@@ -783,9 +788,10 @@ export function criarApiLocal({
     const s = situacaoCaixa();
     return s.estado === 'aberto' && s.caixa ? gavetaDoCaixa(s.caixa, lancamentosDaLoja(), fuso) : null;
   };
+  /** Caixa de um dia anterior que fecha sozinho (o dia reaberto hoje para contar a gaveta não conta). */
   const temCaixaPassadoAberto = () => {
     const hoje = hojeNaLoja();
-    return caixasDaLoja().some((c) => !c.fechamento && c.dia < hoje);
+    return caixasDaLoja().some((c) => precisaFecharSozinho(c, hoje, fuso));
   };
   /** Caixas de dias anteriores que ficaram abertos fecham sozinhos (sem contagem e sem ajuste). */
   function fecharCaixasPassados() {
@@ -2211,7 +2217,7 @@ export function criarApiLocal({
 
     async lerSituacaoDoCaixa() {
       await preparar();
-      exigirOperador();
+      const quem = exigirOperador();
       if (temCaixaPassadoAberto()) await gravarOperacao(() => undefined);
       const s = situacaoCaixa();
       return {
@@ -2221,6 +2227,10 @@ export function criarApiLocal({
         fechadoEm: s.caixa?.fechamento?.em ?? null,
         responsavel: s.caixa?.abertura.por.nome ?? null,
         atrasado: s.atrasado?.dia ?? null,
+        // a pendência "Deseja verificar?" é de quem confere o caixa (Dono e Administrador)
+        aVerificar: pode(quem.papel, 'caixa.desfazer')
+          ? fechamentosAVerificar(caixasDaLoja()).map((c) => ({ caixaId: c.id, dia: c.dia, esperadoCentavos: c.fechamento!.esperadoCentavos }))
+          : null,
       };
     },
 
@@ -2312,6 +2322,21 @@ export function criarApiLocal({
           autorizadoPor: autorizadoPor?.id ?? null,
         });
         return r.caixa;
+      });
+    },
+
+    async verificarFechamentoAutomatico(caixaId, dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa.desfazer');
+        const pedido = exigirOk(validarPedidoVerificacao(dados), 400);
+        const caixas = caixasDaLoja();
+        const c = conferirVerificacao(caixas, caixaId);
+        if (!c.ok) throw new ErroApi(c.erros[0]!.mensagem === 'Caixa não encontrado.' ? 404 : 409, c.erros[0]!.mensagem, c.erros);
+        const caixa = verificarFechamento(c.valor, { em: agora().toISOString(), por: pessoa(quem), observacao: pedido.observacao });
+        gravarCaixas(caixas.map((x) => (x.id === caixa.id ? caixa : x)));
+        auditar('caixa.fechamento_verificado', null, { dia: caixa.dia, esperadoCentavos: caixa.fechamento!.esperadoCentavos, comObservacao: pedido.observacao !== null });
+        return caixa;
       });
     },
 

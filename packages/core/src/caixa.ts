@@ -13,7 +13,9 @@
 //     Administrador. Fecha sempre o dia mais antigo em aberto;
 //   - DESFAZER: só o último fechamento, pelo Dono ou pelo Administrador, com motivo. O ajuste é estornado
 //     com um lançamento contrário (nada é apagado; o fechamento desfeito fica guardado no caixa);
-//   - FECHAMENTO AUTOMÁTICO: o caixa que passou da meia-noite aberto fecha sozinho, sem contagem e sem ajuste;
+//   - FECHAMENTO AUTOMÁTICO: o caixa que passou da meia-noite aberto fecha sozinho, sem contagem e sem ajuste.
+//     Fica como pendência até o Dono ou o Administrador VERIFICAR (conferiu a gaveta, com observação opcional).
+//     O dia reaberto hoje com "Desfazer fechamento" não fecha sozinho de novo até a próxima meia-noite;
 //   - DIA TRAVADO: dia anterior a hoje e até o último caixa fechado. Lançar nele (compra, ajuste de estoque,
 //     lançamento financeiro com data) só com a liberação de um Dono, com motivo.
 // Valores em centavos. As datas são AAAA-MM-DD no fuso da loja; os instantes, ISO 8601.
@@ -81,6 +83,19 @@ export interface FechamentoCaixa {
   /** Quem autorizou com senha a diferença acima da tolerância. */
   autorizadoPor: Operador | null;
   resumo: ResumoDoCaixa;
+  /**
+   * Só no fechamento automático: quem conferiu (Dono ou Administrador) e quando. Ausente ou null = ninguém
+   * conferiu ainda (vira a pendência "Deseja verificar?" na Visão geral).
+   */
+  verificacao?: VerificacaoFechamento | null;
+}
+
+/** O Dono ou o Administrador conferiu o fechamento automático (a gaveta bateu, ou anotou o que achou). */
+export interface VerificacaoFechamento {
+  /** ISO 8601. */
+  em: string;
+  por: Operador;
+  observacao: string | null;
 }
 
 export interface FechamentoDesfeito extends FechamentoCaixa {
@@ -428,6 +443,15 @@ export function fecharCaixa(
   return { caixa: { ...c.caixa, fechamento }, ajuste };
 }
 
+/**
+ * O caixa de um dia anterior ainda aberto fecha sozinho. A exceção é o dia que alguém reabriu HOJE com
+ * "Desfazer fechamento" (para contar a gaveta e fechar com a contagem): esse fica aberto até a próxima
+ * meia-noite, senão fecharia sozinho de novo na hora.
+ */
+export function precisaFecharSozinho(c: CaixaDoDia, hoje: string, fuso: string): boolean {
+  return !c.fechamento && c.dia < hoje && !c.desfeitos.some((d) => diaNoFuso(d.desfeitoEm, fuso) >= hoje);
+}
+
 /** Caixas de dias anteriores ainda abertos fecham sozinhos, sem contagem e sem ajuste (DaniPets CX-06). */
 export function fecharDiasPassados(
   caixas: readonly CaixaDoDia[],
@@ -435,7 +459,7 @@ export function fecharDiasPassados(
 ): { caixas: CaixaDoDia[]; fechados: CaixaDoDia[] } {
   const fechados: CaixaDoDia[] = [];
   const todos = caixas.map((c) => {
-    if (c.fechamento || c.dia >= ctx.hoje) return c;
+    if (!precisaFecharSozinho(c, ctx.hoje, ctx.fuso)) return c;
     const g = gavetaDoCaixa(c, ctx.lancamentos, ctx.fuso);
     const fechado: CaixaDoDia = {
       ...c,
@@ -457,6 +481,37 @@ export function fecharDiasPassados(
     return fechado;
   });
   return { caixas: todos, fechados };
+}
+
+// ------------------------------------------------------------------ verificar o fechamento automático
+/** Fechamentos automáticos que ninguém conferiu ainda (pendência do Dono e do Administrador), do mais antigo. */
+export function fechamentosAVerificar(caixas: readonly CaixaDoDia[]): CaixaDoDia[] {
+  return caixas.filter((c) => c.fechamento?.automatico === true && !c.fechamento.verificacao).sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
+export function validarPedidoVerificacao(entrada: unknown): Resultado<{ observacao: string | null }> {
+  if (entrada === undefined || entrada === null) return ok({ observacao: null });
+  if (!ehObjeto(entrada)) return erro('Envie um objeto com a observação.');
+  const erros: ErroCampo[] = [];
+  camposPermitidos(entrada, ['observacao'], erros);
+  const observacao = textoOpcional(entrada.observacao, 'observacao', LIMITES_CAIXA.justificativaMax, 'A observação', erros);
+  if (erros.length) return { ok: false, erros };
+  return ok({ observacao });
+}
+
+/** Só o fechamento automático, e uma vez só. */
+export function conferirVerificacao(caixas: readonly CaixaDoDia[], caixaId: string): Resultado<CaixaDoDia> {
+  const c = caixas.find((x) => x.id === caixaId);
+  if (!c) return erro('Caixa não encontrado.');
+  if (!c.fechamento) return erro('Este caixa não está fechado.');
+  if (!c.fechamento.automatico) return erro('Só o fechamento automático precisa ser verificado.');
+  if (c.fechamento.verificacao) return erro(`Este fechamento já foi verificado por ${c.fechamento.verificacao.por.nome}.`);
+  return ok(c);
+}
+
+/** Marca o fechamento automático como conferido: a pendência some. Nada mais muda (sem ajuste no saldo). */
+export function verificarFechamento(c: CaixaDoDia, ctx: { em: string; por: Operador; observacao: string | null }): CaixaDoDia {
+  return { ...c, fechamento: { ...c.fechamento!, verificacao: { em: ctx.em, por: ctx.por, observacao: ctx.observacao } } };
 }
 
 // ------------------------------------------------------------------ desfazer o fechamento

@@ -11,7 +11,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 2. Produtos e estoque | **Concluído** (19/11/2026) |
 | 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
-| 5. Caixa do dia | **Concluído** (19/11/2026) |
+| 5. Caixa do dia | **Concluído** (19/11/2026; ajuste pedido pelo Luan em 21/11/2026) |
 | 6. Clientes | **Concluído** (20/11/2026) |
 | 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | **Concluído** (20/11/2026) |
@@ -194,7 +194,7 @@ servidor ganhar essa parte.
 | CX-03 | Esperado na gaveta = fundo + dinheiro movimentado depois da abertura; resumo | Igual (o saldo inicial e o ajuste do fechamento não entram). No alto da aba: aberto às e responsável, fundo de troco, esperado na gaveta e as vendas de hoje por forma | Criado |
 | CX-04 | Fechar: contado, diferença, justificativa; acima de R$ 10 → senha do Dono/Admin; ajuste no Caixa físico; totais por forma | Igual, com a **tolerância da loja** ("Regras do caixa" na própria aba, decisão P5; padrão R$ 10,00). Sempre fecha o dia mais antigo em aberto. O fechamento guarda os números do dia: vendas por forma, sangrias, retiradas, suprimentos e devoluções em dinheiro | Adaptado (tolerância configurável) |
 | CX-05 | Desfazer só o último fechamento (motivo + senha), estornando o ajuste | Só o último fechamento e sem caixa aberto depois dele; só o Dono e o Administrador; motivo obrigatório (no fechamento automático, também a explicação). O ajuste é estornado com um lançamento contrário, e o fechamento desfeito continua guardado no caixa ("fechamento desfeito 1 vez") | Criado |
-| CX-06 | Fechamento automático à meia-noite, sem contagem | Igual: o caixa de um dia anterior que ficou aberto fecha sozinho, sem contagem e sem ajuste. Na demonstração isso acontece no primeiro uso do dia seguinte; no servidor, vai ser uma tarefa agendada. No histórico aparece como "Fechamento automático", feito pelo Sistema | Criado |
+| CX-06 | Fechamento automático à meia-noite, sem contagem | Igual: o caixa de um dia anterior que ficou aberto fecha sozinho, sem contagem e sem ajuste. Na demonstração isso acontece à meia-noite com o sistema aberto (desde 21/11/2026) ou no primeiro uso do dia seguinte; no servidor, vai ser uma tarefa agendada. No histórico aparece como "Fechamento automático", feito pelo Sistema | Criado |
 | CX-07 | Histórico (dia, fundo, esperado, contado, diferença, quem) e movimentos do dia | **Histórico de caixa**: dia, fundo, esperado, contado, diferença com a justificativa, quem abriu, fechou e autorizou, e quantas vezes o fechamento foi desfeito. **Movimentos em dinheiro desde a abertura**: hora, descrição, tipo, quem fez e quem autorizou. No celular, o histórico vira cartões com rótulo | Criado |
 | CX-08 | Dia já fechado fica travado; lançar nele só com a liberação do Dono | Igual: os dias anteriores até o último caixa fechado ficam travados. **Compra** e **entrada ou ajuste de estoque** com a data de um dia travado pedem a **"Liberação do Dono"** (senha e motivo; o Administrador não libera). A liberação vale uma vez e fica registrada na compra ou no movimento e no histórico ("Lançamento retroativo liberado"). Com o caixa de hoje fechado, não dá para vender, devolver, pagar conta nem lançar no Financeiro | Criado |
 | CX-09 | Backup automático ao fechar o caixa | Fica para o módulo 13 (exportar e importar os dados): na demonstração, um lembrete de exportar ao fechar | Para o M13 |
@@ -248,6 +248,59 @@ Sem tabela nova (decisão P3). A parte do caixa responde 501 no sistema real at�
   - tema escuro;
   - celular (390 px) sem rolagem para o lado;
   - console sem erros nem avisos.
+
+### Ajuste de 21/11/2026 (pedido do Luan): formato do DaniPets, meia-noite e "Deseja verificar?"
+
+O pedido: *"quero adicionar este formato na aba caixa, quando o caixa estiver fechado impossível realizar
+vendas. caso não ocorra o fechamento manual caixa fechar sozinho a 00:00 e deixar uma pendência avisando e
+se deseja verificar."*
+
+- **Formato da aba (igual à imagem do DaniPets):**
+  - cabeçalho com "Abertura, sangria, suprimento e fechamento." e, à direita, a situação do caixa de hoje
+    (com a bolinha colorida) e a data por extenso ("Sábado, 21 de novembro de 2026");
+  - avisos com ícone: amarelo (caixa de hoje não aberto, "Deseja verificar?"), vermelho (dia anterior aberto,
+    erro) e verde (caixa fechado, ação feita);
+  - "Abrir caixa de hoje" numa linha: Fundo de troco | **Operador** (quem está logado; antes se chamava
+    "Responsável") | Observação | Abrir caixa, com a dica embaixo. A sangria e o fechamento usam a mesma
+    linha;
+  - Histórico de caixa e Movimentos em dinheiro sempre com o cabeçalho; vazios, "Nenhum registro.".
+- **Sem caixa aberto não há venda:** a API já recusava. Agora a Frente de caixa recusa na hora (no botão e no
+  F2), sem nem tentar gravar.
+- **Fechamento sozinho à 00:00 com o sistema aberto:**
+  - o painel confere a virada do dia a cada 10 segundos e quando a tela volta a ficar visível
+    (`apps/web/src/painel/usarViradaDoDia.ts`; o DaniPets conferia a cada minuto);
+  - à meia-noite, o caixa que ficou aberto fecha sozinho, todas as telas leem de novo e aparece o aviso
+    "Novo dia: o caixa de 21/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta." (também na Frente
+    de caixa, que passa a mostrar "CAIXA DE HOJE NÃO ABERTO");
+  - sem o sistema aberto, continua fechando no primeiro uso depois da meia-noite.
+- **Pendência "Deseja verificar?"** (a nº 16 de `docs/PENDENCIAS.md`, a primeira definida e ligada):
+  - para o Dono e o Administrador, na Visão geral: "O caixa de 21/11/2026 fechou sozinho à meia-noite, sem
+    contagem da gaveta (esperado R$ 100,00). Deseja verificar?", com o botão **Verificar**;
+  - no Caixa do dia, o mesmo aviso abre a janela **"Verificar o fechamento"**: fundo, entradas e saídas em
+    dinheiro, esperado na gaveta e vendas do dia. Bateu: **Marcar como verificado** (observação opcional;
+    quem e quando ficam no caixa e no histórico, "Fechamento automático verificado"). Não bateu:
+    **Desfazer para contar** e fechar o dia com a contagem (a diferença vira ajuste, com justificativa);
+  - o Vendedor não confere: vê "a verificar" no histórico;
+  - o card de Pendências, quando não há nada, diz "Nada pendente. Tudo em ordem." e explica que, por enquanto,
+    só este aviso está ligado.
+- **Defeito corrigido:** desfazer um fechamento automático não adiantava, porque a próxima leitura fechava o
+  dia sozinho de novo. Agora o dia reaberto hoje fica aberto até a próxima meia-noite, esperando a contagem
+  (`precisaFecharSozinho` em `packages/core/src/caixa.ts`).
+- **Testes:**
+  - núcleo 387 (+3): dia reaberto, verificação e pedido (e o texto novo do histórico);
+  - servidor 134;
+  - tela 334 (+8): API (verificar e quem vê; dia reaberto), aba (verificar, Vendedor, desfazer para contar),
+    Visão geral, painel (virada da meia-noite, inclusive na Frente de caixa) e o relógio.
+- **Navegador** (com o relógio controlado):
+  - às 23:58 a Ana abre o caixa;
+  - às 00:01 aparece o aviso de novo dia e a Visão geral mostra a pendência;
+  - **Verificar** → janela → marcado como verificado, e a pendência some;
+  - na Frente de caixa às 23:59, com um item no carrinho, a virada bloqueia a venda (F2 recusado e nenhuma
+    venda gravada);
+  - o Vendedor vê só "a verificar";
+  - tema escuro;
+  - celular sem rolagem para o lado;
+  - console sem erros.
 
 ---
 

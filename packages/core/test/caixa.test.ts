@@ -13,12 +13,14 @@ import {
   conferirHojeNaoFechado,
   conferirLiberacao,
   conferirSaida,
+  conferirVerificacao,
   desfazerFechamento,
   diaTravado,
   efeitosDaCompra,
   efeitosFinanceirosDoEstorno,
   fecharCaixa,
   fecharDiasPassados,
+  fechamentosAVerificar,
   gavetaDoCaixa,
   type Lancamento,
   lancamentosDaOperacao,
@@ -28,6 +30,7 @@ import {
   type Operador,
   pagarConta,
   podeCancelarVenda,
+  precisaFecharSozinho,
   resumirAuditoria,
   resumoDoCaixa,
   saldosDasContas,
@@ -39,6 +42,8 @@ import {
   validarOperacaoCaixa,
   validarPedidoDesfazer,
   validarPedidoFechamento,
+  validarPedidoVerificacao,
+  verificarFechamento,
   type Venda,
 } from '../src';
 
@@ -304,6 +309,57 @@ describe('fechamento automático (CX-06)', () => {
     expect(r.caixas.find((c) => c.dia === HOJE)!.fechamento).toBeNull();
     expect(fecharDiasPassados([caixa(HOJE)], { hoje: HOJE, em: 'x', vendas: [], lancamentos: [], fuso: FUSO }).fechados).toEqual([]);
   });
+
+  it('o dia reaberto hoje com "Desfazer fechamento" não fecha sozinho de novo até a próxima meia-noite', () => {
+    const ctx = (hoje: string) => ({ hoje, em: `${hoje}T12:00:00.000Z`, vendas: [], lancamentos: [], fuso: FUSO });
+    const auto = fecharDiasPassados([caixa(ONTEM, 5000)], ctx(HOJE)).caixas[0]!;
+    expect(auto.fechamento?.automatico).toBe(true);
+    // o Dono desfaz hoje às 08:10 para contar a gaveta e fechar com a contagem
+    const reaberto = desfazerFechamento(auto, { em: `${HOJE}T11:10:00.000Z`, por: ANA, motivo: 'conferir', explicacao: 'faltou contar' }).caixa;
+    expect(precisaFecharSozinho(reaberto, HOJE, FUSO)).toBe(false);
+    expect(fecharDiasPassados([reaberto], ctx(HOJE)).fechados).toEqual([]);
+    // esquecido aberto: na meia-noite seguinte fecha sozinho de novo
+    expect(precisaFecharSozinho(reaberto, '2026-11-20', FUSO)).toBe(true);
+    expect(fecharDiasPassados([reaberto], ctx('2026-11-20')).fechados.map((c) => c.dia)).toEqual([ONTEM]);
+    // fechado à mão às 23:00 e desfeito às 23:50 do mesmo dia (02:50 UTC): à meia-noite fecha sozinho
+    const desfeitoNoDia = desfazerFechamento(fechado(caixa(ONTEM)), { em: `${HOJE}T02:50:00.000Z`, por: ANA, motivo: 'x', explicacao: null }).caixa;
+    expect(precisaFecharSozinho(desfeitoNoDia, HOJE, FUSO)).toBe(true);
+    expect(precisaFecharSozinho(caixa(HOJE), HOJE, FUSO)).toBe(false);
+    expect(precisaFecharSozinho(fechado(caixa(ONTEM)), HOJE, FUSO)).toBe(false);
+  });
+});
+
+describe('verificar o fechamento automático (pedido do Luan, 21/11/2026)', () => {
+  it('o automático fica "a verificar" até o Dono ou o Administrador conferir; o manual não entra', () => {
+    const auto1 = fechado(caixa('2026-11-17'), true);
+    const auto2 = fechado(caixa(ONTEM), true);
+    const manual = fechado(caixa('2026-11-16'));
+    expect(fechamentosAVerificar([auto2, manual, auto1, caixa(HOJE)]).map((c) => c.dia)).toEqual(['2026-11-17', ONTEM]);
+    expect(mensagem(conferirVerificacao([manual], manual.id))).toBe('Só o fechamento automático precisa ser verificado.');
+    expect(mensagem(conferirVerificacao([caixa(HOJE)], `cx-${HOJE}`))).toBe('Este caixa não está fechado.');
+    expect(mensagem(conferirVerificacao([auto2], 'nenhum'))).toBe('Caixa não encontrado.');
+    const r = conferirVerificacao([auto1, auto2], auto2.id);
+    if (!r.ok) throw new Error('devia aceitar');
+    const v = verificarFechamento(r.valor, { em: `${HOJE}T11:15:00.000Z`, por: ANA, observacao: 'gaveta bateu' });
+    // só marca quem conferiu: o fechamento continua sem contagem e sem ajuste
+    expect(v.fechamento).toMatchObject({ automatico: true, contadoCentavos: null, ajusteCentavos: 0, verificacao: { em: `${HOJE}T11:15:00.000Z`, por: ANA, observacao: 'gaveta bateu' } });
+    expect(fechamentosAVerificar([auto1, v]).map((c) => c.dia)).toEqual(['2026-11-17']);
+    expect(mensagem(conferirVerificacao([v], v.id))).toBe('Este fechamento já foi verificado por Ana.');
+    // desfeito (a verificação fica guardada no desfeito) e fechado sozinho de novo: precisa verificar outra vez
+    const reaberto = desfazerFechamento(v, { em: `${HOJE}T02:00:00.000Z`, por: ANA, motivo: 'x', explicacao: 'y' }).caixa;
+    expect(reaberto.desfeitos[0]!.verificacao).toMatchObject({ por: ANA });
+    const deNovo = fecharDiasPassados([reaberto], { hoje: '2026-11-20', em: '2026-11-20T03:00:00.000Z', vendas: [], lancamentos: [], fuso: FUSO }).caixas[0]!;
+    expect(fechamentosAVerificar([deNovo]).map((c) => c.dia)).toEqual([ONTEM]);
+  });
+
+  it('pedido: observação opcional, com limite e sem campos estranhos', () => {
+    expect(validarPedidoVerificacao(undefined)).toEqual({ ok: true, valor: { observacao: null } });
+    expect(validarPedidoVerificacao({})).toEqual({ ok: true, valor: { observacao: null } });
+    expect(validarPedidoVerificacao({ observacao: '  contei   R$ 75,00 ' })).toEqual({ ok: true, valor: { observacao: 'contei R$ 75,00' } });
+    expect(mensagem(validarPedidoVerificacao({ observacao: 'x'.repeat(301) }))).toBe('A observação pode ter até 300 caracteres.');
+    expect(mensagem(validarPedidoVerificacao({ observacao: 'ok', valor: 1 }))).toBe('Campo não permitido.');
+    expect(mensagem(validarPedidoVerificacao('bateu'))).toBe('Envie um objeto com a observação.');
+  });
 });
 
 describe('desfazer o fechamento (CX-05)', () => {
@@ -473,6 +529,8 @@ describe('histórico do caixa', () => {
     expect(limpo(resumirAuditoria('caixa.fechado', { dia: HOJE, esperadoCentavos: 100, contadoCentavos: 100, diferencaCentavos: 0 }))).toBe('19/11/2026 • esperado R$ 1,00 • contado R$ 1,00 • sem diferença');
     expect(resumirAuditoria('caixa.fechamento_automatico', { dia: ONTEM })).toBe('18/11/2026 • sem contagem e sem ajuste');
     expect(resumirAuditoria('caixa.fechamento_desfeito', { dia: ONTEM, automatico: true })).toBe('18/11/2026 • era automático');
+    expect(limpo(resumirAuditoria('caixa.fechamento_verificado', { dia: ONTEM, esperadoCentavos: 7500, comObservacao: true }))).toBe('18/11/2026 • esperado R$ 75,00 • com observação');
+    expect(limpo(resumirAuditoria('caixa.fechamento_verificado', { dia: ONTEM, esperadoCentavos: 7500, comObservacao: false }))).toBe('18/11/2026 • esperado R$ 75,00');
     expect(resumirAuditoria('dia_fechado.liberado', { oque: 'compra', dia: ONTEM, autorizadoPor: 'ana' }, nome)).toBe('compra • data 18/11/2026 • liberado por Ana');
   });
 });
