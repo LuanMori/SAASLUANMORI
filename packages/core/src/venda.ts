@@ -28,8 +28,8 @@ import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import { conferirEstoque } from './estoque';
 import { formatarQuantidade, QUANTIDADE_MAX, type UnidadeVenda, unidadeDe, valorDaQuantidade } from './quantidade';
 import { CONTROLE, ehObjeto } from './interno';
-import type { PapelDeLoja } from './papeis';
-import { pode } from './permissoes';
+import type { PapelNaLoja } from './papeis';
+import { pode, type QuemAcessa } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
 /** Na ordem do DaniPets (PAY_METHODS): as formas da tela, os créditos do cliente (vale-troca e cashback) e o fiado. */
@@ -101,7 +101,9 @@ export interface Operador {
 }
 
 export interface OperadorComPapel extends Operador {
-  papel: PapelDeLoja;
+  papel: PapelNaLoja;
+  /** Só no Personalizado: as funções escolhidas para ele. */
+  permissoes?: readonly string[] | null;
 }
 
 /** Desconto pedido pela tela para um item. */
@@ -352,7 +354,7 @@ export function classificarDesconto(
 }
 
 /** Quem precisa autorizar este desconto, para quem está operando. null = a própria pessoa pode dar. */
-export function quemAutorizaDesconto(tipo: TipoDesconto, papelOperador: PapelDeLoja): QuemAutoriza | null {
+export function quemAutorizaDesconto(tipo: TipoDesconto, papelOperador: QuemAcessa): QuemAutoriza | null {
   // quem pode o quê vem da matriz única (permissoes.ts)
   if (tipo === 'brinde') return pode(papelOperador, 'brinde') ? null : 'dono';
   if (tipo === 'acima-do-limite') return pode(papelOperador, 'desconto.acima_do_limite') ? null : 'gestor';
@@ -360,13 +362,13 @@ export function quemAutorizaDesconto(tipo: TipoDesconto, papelOperador: PapelDeL
 }
 
 /** Cancelamento e devolução: o Vendedor precisa do Dono ou do Administrador. */
-export const quemAutorizaEstorno = (papelOperador: PapelDeLoja): QuemAutoriza | null => (pode(papelOperador, 'estorno') ? null : 'gestor');
+export const quemAutorizaEstorno = (papelOperador: QuemAcessa): QuemAutoriza | null => (pode(papelOperador, 'estorno') ? null : 'gestor');
 
 /** A senha de quem autoriza vale se essa pessoa pode fazer aquilo sozinha. */
-const atende = (papel: PapelDeLoja, quem: QuemAutoriza) => (quem === 'dono' ? pode(papel, 'brinde') : pode(papel, 'desconto.acima_do_limite') && pode(papel, 'estorno'));
+const atende = (papel: QuemAcessa, quem: QuemAutoriza) => (quem === 'dono' ? pode(papel, 'brinde') : pode(papel, 'desconto.acima_do_limite') && pode(papel, 'estorno'));
 
 function autorizacaoValida(a: Autorizacao | undefined | null, quem: QuemAutoriza, agora: Date): a is Autorizacao {
-  if (!a || !atende(a.autorizador.papel, quem)) return false;
+  if (!a || !atende(a.autorizador, quem)) return false;
   const idade = agora.getTime() - new Date(a.criadaEm).getTime();
   return idade >= 0 && idade <= VALIDADE_AUTORIZACAO_HORAS * 3_600_000;
 }

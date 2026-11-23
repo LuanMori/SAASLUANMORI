@@ -60,6 +60,9 @@ describe('resumo dos detalhes', () => {
     // conta a pagar avulsa do Financeiro: valor, vencimento e categoria (a descrição fica na própria conta)
     expect(limpo(resumirAuditoria('conta_pagar.criada', { valorCentavos: 180000, vencimento: '2026-12-10', categoria: 'Aluguel' }))).toBe('R$ 1.800,00 • vence 10/12/2026 • Aluguel');
     expect(ACOES_AUDITORIA['conta_pagar.criada']).toBe('Conta a pagar lançada');
+    // Personalizado: o papel e quantas funções (as funções são chaves fixas, nada pessoal)
+    expect(resumirAuditoria('usuario.criado', { papel: 'personalizado', permissoes: ['vender', 'caixa'] })).toBe('Personalizado • 2 funções');
+    expect(resumirAuditoria('usuario.alterado', { campos: ['permissoes'], permissoes: ['vender'] })).toBe('funções do Personalizado: 1');
     // relatório exportado para o Excel: o assunto, o período e quantas abas (nada do conteúdo)
     expect(resumirAuditoria('relatorios.exportado', { assunto: 'Tudo', de: '2026-11-01', ate: '2026-11-23', abas: 17 })).toBe('Tudo • 01/11/2026 a 23/11/2026 • 17 abas');
     expect(resumirAuditoria('relatorios.exportado', { assunto: 'Vendas', de: null, ate: null, abas: 1 })).toBe('Vendas • todo o período • 1 aba');

@@ -34,7 +34,7 @@ async function loja() {
   const fiado = (api: typeof ana, clienteId: string, valor: number, extra = {}) =>
     api.criarVenda({ itens: [{ produtoId: petisco.id, quantidade: valor / 1000 }], pagamentos: [{ forma: 'fiado', valorCentavos: valor }], clienteId, ...extra });
   const historico = async () => (await ana.listarAuditoria()).map((h) => [h.texto, h.quem, txt(h.resumo ?? '')]);
-  return { ana, caio, bruno, petisco, fiado, historico, mudar: (iso: string) => (relogio = new Date(iso)) };
+  return { ana, caio, bruno, petisco, fiado, historico, opcoes, mudar: (iso: string) => (relogio = new Date(iso)) };
 }
 
 describe('cadastro completo (CLI-01)', () => {
@@ -265,7 +265,7 @@ describe('receber o fiado: vencimento, troco, taxa repassada e o mesmo pedido um
 
 describe('pendências de clientes do card e o lembrete de um vencimento (arquivo do Luan, 23/11/2026)', () => {
   it('fiado a vencer em 7 dias (só quem vê o fiado), cashback a vencer e promoções; "não incomodar" sai das listas', async () => {
-    const { ana, caio, bruno, fiado, mudar } = await loja();
+    const { ana, caio, bruno, fiado, mudar, opcoes } = await loja();
     const maria = await ana.cadastrarCliente({ ...MARIA, limiteFiadoCentavos: 100000, autorizaMensagens: true });
     const joao = await ana.cadastrarCliente({ nome: 'João Pereira', telefone: '41988887777', cpf: '11144477735', limiteFiadoCentavos: 100000 });
     await fiado(bruno, maria.id, 3000);
@@ -282,6 +282,11 @@ describe('pendências de clientes do card e o lembrete de um vencimento (arquivo
     await ana.marcarNaoIncomodar(joao.id);
     expect((await ana.pendenciasDeClientes()).fiado!.map((i) => i.nome)).toEqual(['Maria Souza']);
     expect((await ana.mensagemParaCliente(joao.id, 'cobranca')).bloqueio).toBeNull();
+    // o Personalizado sem a função Clientes não vê nome de cliente nenhum no card
+    mudar('2026-12-31T15:00:00Z'); // mais de 30 dias sem comprar: a Maria entra nas promoções (o João pediu para não incomodar)
+    expect((await ana.pendenciasDeClientes()).promocao.map((i) => i.nome)).toEqual(['Maria Souza']);
+    const gil = criarApiLocal({ ...opcoes, operador: { id: 'gil', nome: 'Gil', papel: 'personalizado', permissoes: ['relatorios'] } });
+    expect(await gil.pendenciasDeClientes()).toMatchObject({ fiado: null, cashback: [], promocao: [] });
     // promoções: só com o cupom de retorno ligado
     const regras = (await ana.lerConfiguracao()).regras;
     await ana.salvarRegrasDaLoja({ retorno: { ...regras.retorno, cupomPct: 0 } });

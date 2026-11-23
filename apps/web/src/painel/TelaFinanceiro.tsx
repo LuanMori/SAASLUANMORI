@@ -10,28 +10,7 @@
 //   - lançamentos à mão (entrada, despesa, retirada do dono, transferência), saldo inicial (uma vez por conta) e as
 //     taxas da maquininha (a baixa automática ou manual é escolha do Dono).
 // Depois de cada ação, todas as telas que mostram dinheiro leem de novo (avisarQueOsDadosMudaram).
-import {
-  CATEGORIAS_DESPESA_PADRAO,
-  type ContaId,
-  type ContaPagar,
-  contaNaFrase,
-  dataBr,
-  diaNoFuso,
-  formatarCentavos,
-  formatarNumeroVenda,
-  FUSO_PADRAO,
-  type LinhaDoExtrato,
-  liquidoAReceber,
-  NOME_FORMA_PAGAMENTO,
-  NOME_CONTA,
-  NOME_LANCAMENTO,
-  type NomesDasContas,
-  type PapelDeLoja,
-  pode,
-  type Recebivel,
-  semAcento,
-  somarDias,
-} from '@saas/core';
+import { CATEGORIAS_DESPESA_PADRAO, type ContaId, type ContaPagar, contaNaFrase, dataBr, diaNoFuso, formatarCentavos, formatarNumeroVenda, FUSO_PADRAO, type LinhaDoExtrato, liquidoAReceber, NOME_FORMA_PAGAMENTO, NOME_CONTA, NOME_LANCAMENTO, type NomesDasContas, pode, type Recebivel, semAcento, somarDias, type QuemAcessa } from '@saas/core';
 import { useMemo, useState } from 'react';
 import { type ApiPainel, type ContaDoCliente, ErroApi, type ResumoFinanceiro } from '../api';
 import { avisarQueOsDadosMudaram } from '../sincronizacao';
@@ -67,7 +46,7 @@ type ApiTela = Pick<
 
 interface Props {
   api: ApiTela;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   fuso?: string;
   agora?: () => Date;
   /** Depois de trocar o nome de uma conta: o painel lê as regras de novo (o nome vale nas outras abas). */

@@ -12,19 +12,7 @@
 //   - no alto: cashback em aberto (e de onde vem), clientes, fiado a receber e para lembrar hoje;
 //   - aviso para o Dono e o Administrador quando o Vendedor exclui um cliente (até marcar "Ciente").
 // O CPF aparece mascarado; o Dono e o Administrador podem ver o número inteiro na conta (fica no histórico).
-import {
-  dataBr,
-  diaNoFuso,
-  formatarCentavos,
-  formatarTelefone,
-  FUSO_PADRAO,
-  type PapelDeLoja,
-  pctTexto,
-  pode,
-  primeiroNome,
-  regrasPadrao,
-  type TipoContato,
-} from '@saas/core';
+import { dataBr, diaNoFuso, formatarCentavos, formatarTelefone, FUSO_PADRAO, pctTexto, pode, primeiroNome, regrasPadrao, type TipoContato, type PapelNaLoja, type QuemAcessa } from '@saas/core';
 import { useState } from 'react';
 import { type ApiPainel, type ContaDoCliente, ErroApi, type FiltroClientes, type LinhaCliente } from '../api';
 import { Modal } from './caixa/Modal';
@@ -39,7 +27,7 @@ import { usarCarga } from './usarCarga';
 
 interface Props {
   api: ApiPainel;
-  pessoa: { nome: string; papel: PapelDeLoja };
+  pessoa: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   fuso?: string;
   agora?: () => Date;
   /** Depois de salvar as regras (a barra e as outras abas leem de novo). */
@@ -75,8 +63,8 @@ const diasDesde = (iso: string, hoje: string, fuso: string) => Math.round((Date.
 const haDias = (n: number) => (n === 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
 
 export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => new Date(), aoMudarRegras }: Props) {
-  const veFiado = pode(pessoa.papel, 'clientes.fiado');
-  const gestor = pode(pessoa.papel, 'clientes.desativar');
+  const veFiado = pode(pessoa, 'clientes.fiado');
+  const gestor = pode(pessoa, 'clientes.desativar');
   const [aba, setAba] = useState<Aba>('clientes');
   const [ocupado, setOcupado] = useState(false);
   const [termo, setTermo] = useState('');
@@ -224,7 +212,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         <Conta
           estado={estadoConta}
           conta={conta}
-          papel={pessoa.papel}
+          papel={pessoa}
           rotuloExtra={rotuloExtra}
           api={api}
           fuso={fuso}
@@ -261,7 +249,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
                 api={api}
                 regras={regras}
                 nomeLoja={nomeLoja}
-                podeAlterar={pode(pessoa.papel, 'loja.configurar')}
+                podeAlterar={pode(pessoa, 'loja.configurar')}
                 aoSalvar={(t) => {
                   void recarregarConfig();
                   aoMudarRegras?.();
@@ -278,7 +266,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
                 <div className="cli-ferramentas">
                   <input type="search" value={termo} onChange={(e) => setTermo(e.target.value)} placeholder="Buscar nome, CPF ou telefone" aria-label="Buscar cliente" maxLength={80} />
                   <select value={filtro} onChange={(e) => setFiltro(e.target.value as FiltroClientes)} aria-label="Filtrar clientes">
-                    {FILTROS.filter((f) => !f.permissao || pode(pessoa.papel, f.permissao)).map((f) => (
+                    {FILTROS.filter((f) => !f.permissao || pode(pessoa, f.permissao)).map((f) => (
                       <option key={f.valor} value={f.valor}>
                         {f.rotulo}
                       </option>
@@ -303,7 +291,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
               hoje={hoje}
               aoAbrir={abrirConta}
               aoLembrar={(clienteId) => setJanela({ tipo: 'whatsapp', clienteId, contato: 'cobranca' })}
-              aoTaxas={pode(pessoa.papel, 'financeiro') ? () => setJanela({ tipo: 'taxas' }) : undefined}
+              aoTaxas={pode(pessoa, 'financeiro') ? () => setJanela({ tipo: 'taxas' }) : undefined}
               aoReceber={async (id) => {
               try {
                 const c = await api.contaDoCliente(id);
@@ -320,7 +308,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         <ModalCadastroCliente
           api={api}
           cliente={janela.conta?.cliente ?? null}
-          papel={pessoa.papel}
+          papel={pessoa}
           regras={regras}
           hoje={hoje}
           aoSalvar={(c, novo) => {
@@ -335,12 +323,12 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         />
       )}
       {janela?.tipo === 'receber' && <ModalReceberFiado api={api} conta={janela.conta} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
-      {janela?.tipo === 'taxas' && <ModalTaxasMaquininha api={api} papel={pessoa.papel} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
+      {janela?.tipo === 'taxas' && <ModalTaxasMaquininha api={api} papel={pessoa} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
       {janela?.tipo === 'excluir' && (
         <ModalExcluirCliente
           api={api}
           cliente={janela.conta.cliente}
-          papel={pessoa.papel}
+          papel={pessoa}
           aoConcluir={(t) => {
             setContaId(null);
             concluir(t);
@@ -530,7 +518,7 @@ function Conta({
 }: {
   estado: { tipo: string; mensagem?: string };
   conta: ContaDoCliente | null;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   rotuloExtra: string | null;
   api: ApiPainel;
   fuso: string;

@@ -11,6 +11,8 @@
 //      (na 5ª, 429). Usuário que NÃO existe responde igual, no mesmo tempo e com o mesmo bloqueio.
 //   7. Acertou, mas desativado                                -> 403 (só quem sabe a senha descobre)
 //   8. Acertou: zera a contagem, cria a sessão (segredo novo a cada login) e registra no histórico.
+// O Adm. Sup (super_admin, sem loja; pedido do Luan, 23/11/2026) entra em QUALQUER loja com o login dele: a linha
+// dele não aparece para a API (RLS); as funções app_suporte_* do banco dão só o que o login e a sessão precisam.
 import {
   BadRequestException,
   ForbiddenException,
@@ -24,11 +26,12 @@ import {
   BLOQUEIO_MINUTOS,
   ehPapelDeLoja,
   FORMATO_LOGIN,
+  NOME_SUPORTE,
   MENSAGEM_ACABOU_DE_BLOQUEAR,
   MENSAGEM_CREDENCIAIS,
   mensagemBloqueado,
   normalizarLogin,
-  type PapelDeLoja,
+  type PapelNaLoja,
   situacaoBloqueio,
   subdominioDoEndereco,
   validarSenhaNova,
@@ -46,7 +49,7 @@ import { conferirSenha, gerarHashSenha } from './senhas.js';
 import { encerrarSessoes, lerTentativasTravando, paraBanco } from './sessoes.js';
 
 export interface RespostaSessao {
-  usuario: { id: string; nome: string; usuario: string; papel: PapelDeLoja };
+  usuario: { id: string; nome: string; usuario: string; papel: PapelNaLoja; permissoes: string[] };
   loja: { nome: string; subdominio: string };
   /** true = a pessoa precisa criar a própria senha antes de usar o sistema. */
   senhaProvisoria: boolean;
@@ -55,6 +58,26 @@ export interface RespostaSessao {
 }
 
 const BLOQUEIO_SEGUNDOS = BLOQUEIO_MINUTOS * 60;
+
+/** O que a função app_suporte_para_login devolve (o login do Adm. Sup). */
+interface LinhaSuporte {
+  id: string;
+  nome: string;
+  usuario: string;
+  ativo: boolean;
+  senha_hash: string | null;
+  senha_provisoria: boolean;
+  tentativas_erradas: number;
+  bloqueado_ate: Date | null;
+}
+/** O que app_suporte_por_id devolve (a sessão do Adm. Sup a cada pedido). */
+interface LinhaSuporteSessao {
+  id: string;
+  nome: string;
+  usuario: string;
+  ativo: boolean;
+  senha_provisoria: boolean;
+}
 
 const credenciais = () => new UnauthorizedException({ mensagem: MENSAGEM_CREDENCIAIS, codigo: 'credenciais' });
 
@@ -149,10 +172,15 @@ export class SessaoService {
       ? await this.banco.comLoja(loja.id, (tx) =>
           tx.usuario.findUnique({
             where: { lojaId_usuario: { lojaId: loja.id, usuario: login } },
-            select: { id: true, nome: true, usuario: true, papel: true, ativo: true, senhaHash: true, senhaProvisoria: true, tentativasErradas: true, bloqueadoAte: true },
+            select: { id: true, nome: true, usuario: true, papel: true, permissoes: true, ativo: true, senhaHash: true, senhaProvisoria: true, tentativasErradas: true, bloqueadoAte: true },
           }),
         )
       : null;
+    // sem ninguém com esse login na loja: pode ser o Adm. Sup
+    if (!u && FORMATO_LOGIN.test(login)) {
+      const sup = await this.suporteParaLogin(loja.id, login);
+      if (sup) return this.entrarComoSuporte(loja, sup, senha, ip, anterior, agora);
+    }
 
     if (!u || !ehPapelDeLoja(u.papel)) return this.falhaSemUsuario(`${loja.id}:${login}`, senha, ip, agora);
 
@@ -200,9 +228,66 @@ export class SessaoService {
     return {
       cookie: cookieDaSessao(this.amb, valorDoCookie(loja.id, segredo)),
       resposta: {
-        usuario: { id: u.id, nome: u.nome, usuario: u.usuario, papel: u.papel },
+        usuario: { id: u.id, nome: u.nome, usuario: u.usuario, papel: u.papel, permissoes: u.papel === 'personalizado' ? u.permissoes : [] },
         loja: { nome: loja.nome, subdominio: loja.subdominio },
         senhaProvisoria: u.senhaProvisoria,
+        inatividadeMin: this.amb.sessaoInatividadeMin,
+      },
+    };
+  }
+
+  // ------------------------------------------------------------------ o Adm. Sup (super_admin)
+  private async suporteParaLogin(lojaId: string, login: string): Promise<LinhaSuporte | null> {
+    const linhas = await this.banco.comLoja(lojaId, (tx) => tx.$queryRaw<LinhaSuporte[]>`SELECT * FROM app_suporte_para_login(${login})`);
+    return linhas[0] ?? null;
+  }
+
+  /** O suporte entra na loja do endereço, com as mesmas regras de senha errada e bloqueio de todos. */
+  private async entrarComoSuporte(
+    loja: LojaResumo,
+    sup: LinhaSuporte,
+    senha: string,
+    ip: string,
+    anterior: { lojaId: string; segredo: string } | null,
+    agora: Date,
+  ): Promise<{ cookie: string; resposta: RespostaSessao }> {
+    const estado = { tentativasErradas: sup.tentativas_erradas, bloqueadoAte: sup.bloqueado_ate?.toISOString() ?? null };
+    const situacao = situacaoBloqueio(estado, agora);
+    if (situacao.bloqueado) throw new MuitasTentativasException(mensagemBloqueado(situacao.restanteSegundos), situacao.restanteSegundos);
+    if (!(await conferirSenha(senha, sup.senha_hash))) {
+      this.falhaDeIp(ip);
+      const r = aposSenhaErrada(estado, new Date());
+      const bloqueadoAte = r.estado.bloqueadoAte ? new Date(r.estado.bloqueadoAte) : null;
+      await this.banco.comLoja(loja.id, async (tx) => {
+        await tx.$executeRaw`SELECT app_suporte_registrar(${sup.id}::uuid, ${r.estado.tentativasErradas}::int, ${bloqueadoAte}::timestamptz, NULL::timestamptz)`;
+        await registrarAuditoria(tx, loja.id, null, r.bloqueou ? 'sessao.bloqueado' : 'sessao.senha_errada', null);
+      });
+      if (r.bloqueou) throw new MuitasTentativasException(MENSAGEM_ACABOU_DE_BLOQUEAR, BLOQUEIO_SEGUNDOS);
+      throw credenciais();
+    }
+    if (!sup.ativo) throw new ForbiddenException({ mensagem: 'Este acesso de suporte está desativado.', codigo: 'usuario_desativado' });
+    const segredo = novoSegredo();
+    await this.banco.comLoja(
+      loja.id,
+      async (tx) => {
+        await tx.$executeRaw`SELECT app_suporte_registrar(${sup.id}::uuid, 0, NULL::timestamptz, now())`;
+        if (anterior?.lojaId === loja.id) {
+          await tx.sessao.updateMany({ where: { tokenHash: hashDoSegredo(anterior.segredo), encerradaEm: null }, data: { encerradaEm: new Date() } });
+        }
+        await tx.sessao.create({
+          data: { lojaId: loja.id, usuarioId: sup.id, tokenHash: hashDoSegredo(segredo), expiraEm: new Date(Date.now() + this.amb.sessaoMaximaHoras * 3_600_000) },
+          select: { id: true },
+        });
+        await registrarAuditoria(tx, loja.id, sup.id, 'sessao.entrou');
+      },
+      sup.id,
+    );
+    return {
+      cookie: cookieDaSessao(this.amb, valorDoCookie(loja.id, segredo)),
+      resposta: {
+        usuario: { id: sup.id, nome: NOME_SUPORTE, usuario: sup.usuario, papel: 'super_admin', permissoes: [] },
+        loja: { nome: loja.nome, subdominio: loja.subdominio },
+        senhaProvisoria: false,
         inatividadeMin: this.amb.sessaoInatividadeMin,
       },
     };
@@ -237,15 +322,27 @@ export class SessaoService {
           ultimoUsoEm: true,
           expiraEm: true,
           encerradaEm: true,
-          usuario: { select: { id: true, nome: true, usuario: true, papel: true, ativo: true, senhaProvisoria: true } },
+          usuarioId: true,
           loja: { select: { nome: true, subdominio: true, ativa: true } },
         },
       });
       if (!s || s.lojaId !== lido.lojaId) return null;
+      // a pessoa da loja; se não for, o Adm. Sup (a linha dele não aparece para a API)
+      const daLoja = await tx.usuario.findUnique({
+        where: { id: s.usuarioId },
+        select: { id: true, nome: true, usuario: true, papel: true, permissoes: true, ativo: true, senhaProvisoria: true },
+      });
+      const sup = daLoja ? null : ((await tx.$queryRaw<LinhaSuporteSessao[]>`SELECT * FROM app_suporte_por_id(${s.usuarioId}::uuid)`)[0] ?? null);
+      const pessoa: { id: string; nome: string; usuario: string; papel: string; permissoes: string[]; ativo: boolean; senhaProvisoria: boolean } | null = daLoja
+        ? daLoja
+        : sup
+          ? { id: sup.id, nome: NOME_SUPORTE, usuario: sup.usuario, papel: 'super_admin', permissoes: [], ativo: sup.ativo, senhaProvisoria: false }
+          : null;
       const venceu =
         s.encerradaEm !== null || s.expiraEm <= agora || s.ultimoUsoEm.getTime() + this.amb.sessaoInatividadeMin * 60_000 <= agora.getTime();
       const outroEndereco = this.amb.dominioBase !== null && subdominioDoEndereco(req.get('host'), this.amb.dominioBase) !== s.loja.subdominio;
-      if (venceu || outroEndereco || !s.usuario.ativo || !s.loja.ativa || !ehPapelDeLoja(s.usuario.papel)) {
+      const papelValido = pessoa !== null && (ehPapelDeLoja(pessoa.papel) || (sup !== null && pessoa.papel === 'super_admin'));
+      if (venceu || outroEndereco || !pessoa || !pessoa.ativo || !s.loja.ativa || !papelValido) {
         if (s.encerradaEm === null) await tx.sessao.update({ where: { id: s.id }, data: { encerradaEm: agora }, select: { id: true } });
         return null;
       }
@@ -256,19 +353,20 @@ export class SessaoService {
         lojaId: s.lojaId,
         lojaNome: s.loja.nome,
         lojaSubdominio: s.loja.subdominio,
-        usuarioId: s.usuario.id,
-        papel: s.usuario.papel,
-        nome: s.usuario.nome,
-        usuario: s.usuario.usuario,
+        usuarioId: pessoa.id,
+        papel: pessoa.papel as PapelNaLoja,
+        permissoes: pessoa.papel === 'personalizado' ? pessoa.permissoes : [],
+        nome: pessoa.nome,
+        usuario: pessoa.usuario,
         sessaoId: s.id,
-        senhaProvisoria: s.usuario.senhaProvisoria,
+        senhaProvisoria: pessoa.senhaProvisoria,
       };
     });
   }
 
   resposta(ctx: ContextoRequisicao): RespostaSessao {
     return {
-      usuario: { id: ctx.usuarioId, nome: ctx.nome, usuario: ctx.usuario, papel: ctx.papel },
+      usuario: { id: ctx.usuarioId, nome: ctx.nome, usuario: ctx.usuario, papel: ctx.papel, permissoes: ctx.permissoes },
       loja: { nome: ctx.lojaNome, subdominio: ctx.lojaSubdominio },
       senhaProvisoria: ctx.senhaProvisoria,
       inatividadeMin: this.amb.sessaoInatividadeMin,
@@ -296,6 +394,9 @@ export class SessaoService {
   async trocarSenha(ctx: ContextoRequisicao, corpo: unknown): Promise<RespostaSessao> {
     const dados = lerCampos(corpo, ['senhaAtual', 'senhaNova']);
     if (!dados) throw new BadRequestException({ mensagem: 'Informe a senha atual e a senha nova.' });
+    if (ctx.papel === 'super_admin') {
+      throw new ForbiddenException({ mensagem: 'A senha do suporte é trocada pelo script db:suporte, não pela loja.', codigo: 'suporte' });
+    }
 
     const u = await this.banco.comLoja(ctx.lojaId, (tx) =>
       tx.usuario.findUnique({ where: { id: ctx.usuarioId }, select: { senhaHash: true, tentativasErradas: true, bloqueadoAte: true } }),

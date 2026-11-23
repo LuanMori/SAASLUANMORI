@@ -24,31 +24,7 @@
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
 // quem está logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
 // Cada venda alimenta o estoque, o histórico do cliente, o financeiro, a Visão geral e os Relatórios.
-import {
-  dataBr,
-  descreverPagamentos,
-  type FormaPagamento,
-  FORMAS_DA_TELA,
-  MENSAGEM_CASHBACK_SEM_CLIENTE,
-  mensagemFormaSemCliente,
-  pctTexto,
-  primeiroNome,
-  formatarCentavos,
-  formatarNumeroVenda,
-  formaPrecisaDeCliente,
-  formatarQuantidade,
-  lerQuantidade,
-  LIMITES_VENDA,
-  PASSO_QUANTIDADE,
-  QUANTIDADE_MAX,
-  quantidadeParaTexto,
-  unidadeDe,
-  valorDaQuantidade,
-  NOME_FORMA_PAGAMENTO,
-  type PapelDeLoja,
-  semAcento,
-  type ValeTroca,
-} from '@saas/core';
+import { dataBr, descreverPagamentos, type FormaPagamento, FORMAS_DA_TELA, MENSAGEM_CASHBACK_SEM_CLIENTE, mensagemFormaSemCliente, pctTexto, primeiroNome, formatarCentavos, formatarNumeroVenda, formaPrecisaDeCliente, formatarQuantidade, lerQuantidade, LIMITES_VENDA, PASSO_QUANTIDADE, QUANTIDADE_MAX, quantidadeParaTexto, unidadeDe, valorDaQuantidade, NOME_FORMA_PAGAMENTO, semAcento, type ValeTroca, type PapelNaLoja } from '@saas/core';
 import { type FormEvent, type KeyboardEvent as TeclaNoCampo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
 import {
@@ -86,7 +62,7 @@ import { usarCarga } from './usarCarga';
 interface Props {
   api: ApiPainel;
   /** Quem está operando (para mostrar e para as regras de desconto; quem registra é a API). */
-  operador: { nome: string; papel: PapelDeLoja };
+  operador: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   loja: { nome: string };
   fuso: string;
   agora?: () => Date;
@@ -697,7 +673,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                     const comCupom = cupomNaLinha(l, p, cupom);
                     const u = unidadeDe(p.unidade);
                     const passo = PASSO_QUANTIDADE[u];
-                    const semAutorizacao = autorizacaoNecessaria(l, p, operador.papel, limiteDescontoPct) !== null && !l.desconto?.autorizacao;
+                    const semAutorizacao = autorizacaoNecessaria(l, p, operador, limiteDescontoPct) !== null && !l.desconto?.autorizacao;
                     return (
                       <tr key={l.produtoId} className={ultimaLinha?.produtoId === l.produtoId ? 'pdv-ultima' : undefined}>
                         <td className="pdv-n">{i + 1}</td>

@@ -1,25 +1,7 @@
 // apps/web/src/painel/caixa/carrinho.ts
 // O carrinho da Frente de caixa: contas e regras que a tela usa (as mesmas do servidor, para
 // avisar antes de enviar). Quem decide de verdade é a API (@saas/core/venda).
-import {
-  classificarDesconto,
-  type FormaPagamento,
-  FORMAS_DA_TELA,
-  precoComCupom,
-  formatarQuantidade,
-  LIMITES_VENDA,
-  lerQuantidade,
-  type NovaVenda,
-  type Pagamento,
-  type PapelDeLoja,
-  QUANTIDADE_MAX,
-  type QuemAutoriza,
-  quemAutorizaDesconto,
-  reaisParaCentavos,
-  type UnidadeVenda,
-  unidadeDe,
-  valorDaQuantidade,
-} from '@saas/core';
+import { classificarDesconto, type FormaPagamento, FORMAS_DA_TELA, precoComCupom, formatarQuantidade, LIMITES_VENDA, lerQuantidade, type NovaVenda, type Pagamento, type PapelDeLoja, QUANTIDADE_MAX, type QuemAutoriza, quemAutorizaDesconto, reaisParaCentavos, type UnidadeVenda, unidadeDe, valorDaQuantidade, type QuemAcessa } from '@saas/core';
 import type { Produto } from '../../api';
 
 export interface DescontoNaLinha {
@@ -152,7 +134,7 @@ export function totaisDoCarrinho(linhas: readonly LinhaCarrinho[], porId: Readon
 }
 
 /** Quem precisa autorizar o desconto desta linha para quem está operando (null = ninguém). `limitePct` = regra da loja. */
-export function autorizacaoNecessaria(l: LinhaCarrinho, p: Produto, papel: PapelDeLoja, limitePct?: number): QuemAutoriza | null {
+export function autorizacaoNecessaria(l: LinhaCarrinho, p: Produto, papel: QuemAcessa, limitePct?: number): QuemAutoriza | null {
   if (!l.desconto) return null;
   return quemAutorizaDesconto(classificarDesconto(p.precoCentavos, l.desconto.precoFinalCentavos, limitePct).tipo, papel);
 }

@@ -8,26 +8,7 @@
 //      escolhido ou sem cliente);
 //   4) cada item devolvido volta para o estoque (prateleira) ou não (avaria, vencido); no cancelamento,
 //      tudo volta para o estoque.
-import {
-  type Devolucao,
-  type ValeTroca,
-  descreverPagamentos,
-  diaNoFuso,
-  estornavelPorForma,
-  formatarCentavos,
-  formatarNumeroVenda,
-  formatarQuantidade,
-  lerQuantidade,
-  NOME_PAPEL,
-  type PapelDeLoja,
-  podeCancelarVenda,
-  quemAutorizaEstorno,
-  repartirEstorno,
-  restanteParaDevolver,
-  unidadeDe,
-  valorDaQuantidade,
-  type Venda,
-} from '@saas/core';
+import { type Devolucao, type ValeTroca, descreverPagamentos, diaNoFuso, estornavelPorForma, formatarCentavos, formatarNumeroVenda, formatarQuantidade, lerQuantidade, NOME_PAPEL, podeCancelarVenda, quemAutorizaEstorno, repartirEstorno, restanteParaDevolver, unidadeDe, valorDaQuantidade, type Venda, type PapelNaLoja } from '@saas/core';
 import { type FormEvent, useEffect, useState } from 'react';
 import { type ApiPainel, type Autorizador, ErroApi } from '../../api';
 import { dataNoFuso, horaNoFuso, pagamentosComValores } from '../formato';
@@ -43,7 +24,7 @@ export interface ValeDaDevolucao {
 
 interface Props {
   api: Pick<ApiPainel, 'listarVendas' | 'buscarVenda' | 'listarAutorizadores' | 'autorizar' | 'cancelarVenda' | 'devolverItens' | 'listarContasDeClientes'>;
-  operador: { nome: string; papel: PapelDeLoja };
+  operador: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   fuso: string;
   agora: () => Date;
   aoConcluir: (mensagem: string, vale?: ValeDaDevolucao) => void;
@@ -183,7 +164,7 @@ function PassoVenda({
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const precisa = quemAutorizaEstorno(operador.papel);
+  const precisa = quemAutorizaEstorno(operador);
 
   useEffect(() => {
     if (!precisa) return;

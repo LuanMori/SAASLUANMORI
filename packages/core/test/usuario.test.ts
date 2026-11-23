@@ -26,6 +26,8 @@ import {
   validarLogin,
   validarNovoUsuario,
   validarSenhaNova,
+  papeisQuePodeCriar,
+  PERMISSOES_CONCEDIVEIS,
 } from '../src';
 
 const campos = (r: { ok: boolean; erros?: { campo: string }[] }) => (!r.ok && r.erros ? r.erros.map((e) => e.campo) : []);
@@ -48,7 +50,6 @@ describe('permissões (matriz única, do DaniPets)', () => {
   });
 
   it('papel desconhecido ou vazio não pode nada (dado alterado por fora)', () => {
-    expect(pode('super_admin', 'vender')).toBe(false);
     expect(pode('chefe', 'vender')).toBe(false);
     expect(pode('__proto__', 'vender')).toBe(false);
     expect(pode(null, 'vender')).toBe(false);
@@ -115,6 +116,7 @@ describe('quem gerencia quem', () => {
   const adm: UsuarioParaRegra = { id: 'adm', papel: 'administrador', ativo: true };
   const vend: UsuarioParaRegra = { id: 'vend', papel: 'vendedor', ativo: true };
   const loja = [dono, adm, vend];
+  const SUP: UsuarioParaRegra = { id: 'sup', papel: 'super_admin', ativo: true };
 
   it('Vendedor não gerencia usuários', () => {
     expect(mensagem(conferirGestaoDeUsuario(vend, null, { tipo: 'criar', papel: 'vendedor' }, loja))).toBe(
@@ -124,8 +126,11 @@ describe('quem gerencia quem', () => {
 
   it('Administrador gerencia Vendedor e Administrador, mas não mexe em Dono nem promove a Dono', () => {
     expect(conferirGestaoDeUsuario(adm, null, { tipo: 'criar', papel: 'vendedor' }, loja).ok).toBe(true);
-    expect(mensagem(conferirGestaoDeUsuario(adm, null, { tipo: 'criar', papel: 'dono' }, loja))).toBe('Só um Dono cadastra outro Dono.');
+    expect(mensagem(conferirGestaoDeUsuario(adm, null, { tipo: 'criar', papel: 'dono' }, loja))).toBe(
+      'O Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.',
+    );
     expect(mensagem(conferirGestaoDeUsuario(adm, vend, { tipo: 'alterar', mudanca: { papel: 'dono' } }, loja))).toMatch(/Só um Dono/);
+    expect(conferirGestaoDeUsuario(adm, { ...adm, id: 'adm2' }, { tipo: 'alterar', mudanca: { nome: 'Caio Lima' } }, loja).ok).toBe(true);
     expect(mensagem(conferirGestaoDeUsuario(adm, dono, { tipo: 'redefinir_senha' }, loja))).toMatch(/Só um Dono/);
     expect(mensagem(conferirGestaoDeUsuario(adm, dono, { tipo: 'alterar', mudanca: { ativo: false } }, loja))).toMatch(/Só um Dono/);
     expect(conferirGestaoDeUsuario(adm, vend, { tipo: 'redefinir_senha' }, loja).ok).toBe(true);
@@ -143,9 +148,60 @@ describe('quem gerencia quem', () => {
     // com dois Donos, um pode tirar o outro
     expect(conferirGestaoDeUsuario(dono, outroDono, { tipo: 'alterar', mudanca: { ativo: false } }, [dono, outroDono]).ok).toBe(true);
     // o Dono desativado não conta
-    expect(mensagem(conferirGestaoDeUsuario(dono, outroDono, { tipo: 'alterar', mudanca: { papel: 'administrador' } }, [outroDono, { ...dono, ativo: false }]))).toBe(
+    expect(mensagem(conferirGestaoDeUsuario(dono, outroDono, { tipo: 'alterar', mudanca: { papel: 'vendedor' } }, [outroDono, { ...dono, ativo: false }]))).toBe(
       'Mantenha pelo menos um Dono ativo na loja.',
     );
+    // nem o Adm. Sup deixa a loja sem Dono
+    expect(mensagem(conferirGestaoDeUsuario(SUP, outroDono, { tipo: 'alterar', mudanca: { ativo: false } }, [outroDono]))).toBe('Mantenha pelo menos um Dono ativo na loja.');
+  });
+
+  it('Dono e Administrador cadastram só Vendedor e Personalizado; Dono e Administrador, só o Adm. Sup (pedido do Luan)', () => {
+    expect([papeisQuePodeCriar(dono), papeisQuePodeCriar(adm), papeisQuePodeCriar(vend), papeisQuePodeCriar(SUP)]).toEqual([
+      ['vendedor', 'personalizado'],
+      ['vendedor', 'personalizado'],
+      [],
+      ['dono', 'administrador', 'vendedor', 'personalizado'],
+    ]);
+    expect(mensagem(conferirGestaoDeUsuario(dono, null, { tipo: 'criar', papel: 'administrador' }, loja))).toMatch(/só são cadastrados pelo suporte/);
+    expect(mensagem(conferirGestaoDeUsuario(dono, vend, { tipo: 'alterar', mudanca: { papel: 'administrador' } }, loja))).toBe('Só o suporte (Adm. Sup) dá o papel de Dono ou de Administrador.');
+    expect(conferirGestaoDeUsuario(dono, adm, { tipo: 'alterar', mudanca: { papel: 'vendedor' } }, loja).ok).toBe(true); // tirar o papel pode
+    // o Adm. Sup cadastra o Dono (implantação) e o Administrador, e dá esses papéis
+    expect(conferirGestaoDeUsuario(SUP, null, { tipo: 'criar', papel: 'dono' }, []).ok).toBe(true);
+    expect(conferirGestaoDeUsuario(SUP, vend, { tipo: 'alterar', mudanca: { papel: 'administrador' } }, loja).ok).toBe(true);
+    expect(conferirGestaoDeUsuario(SUP, dono, { tipo: 'redefinir_senha' }, loja).ok).toBe(true);
+    // ninguém da loja mexe no Adm. Sup (ele não é da loja)
+    expect(mensagem(conferirGestaoDeUsuario(dono, SUP, { tipo: 'alterar', mudanca: { ativo: false } }, loja))).toBe('Usuário não encontrado.');
+  });
+
+  it('Personalizado: precisa de funções, só das que se podem dar e que quem cadastra também tem', () => {
+    const base = { nome: 'Gil Souza', usuario: 'gil', senha: 'senha-forte-123' };
+    const v = validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['relatorios', 'vender', 'vender'] });
+    expect(v.ok && v.valor.permissoes).toEqual(['vender', 'relatorios']); // sem repetir, na ordem da lista
+    expect(campos(validarNovoUsuario({ ...base, papel: 'personalizado' }))).toEqual(['permissoes']);
+    expect(mensagem(validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['brinde'] }))).toBe('Esta função não pode ser dada a um Personalizado: brinde.');
+    expect(mensagem(validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['usuarios'] }))).toMatch(/não pode ser dada/);
+    expect(mensagem(validarNovoUsuario({ ...base, papel: 'vendedor', permissoes: ['vender'] }))).toBe('Funções escolhidas só no papel Personalizado.');
+    expect(PERMISSOES_CONCEDIVEIS).not.toContain('usuarios');
+    expect(PERMISSOES_CONCEDIVEIS).not.toContain('caixa.ciencia');
+    expect(PERMISSOES_CONCEDIVEIS).toContain('financeiro');
+    expect(conferirGestaoDeUsuario(dono, null, { tipo: 'criar', papel: 'personalizado', permissoes: ['vender', 'financeiro'] }, loja).ok).toBe(true);
+    expect(mensagem(conferirGestaoDeUsuario(dono, null, { tipo: 'criar', papel: 'personalizado', permissoes: [] }, loja))).toBe('Marque pelo menos uma função para o Personalizado.');
+    // um Personalizado que gerencia usuários não existe (a gestão de usuários não se dá)
+    const gil: UsuarioParaRegra = { id: 'gil', papel: 'personalizado', ativo: true, permissoes: ['vender'] };
+    expect(conferirGestaoDeUsuario(gil, null, { tipo: 'criar', papel: 'vendedor' }, loja).ok).toBe(false);
+    // virar Personalizado pede as funções; funções só no Personalizado; ninguém muda as próprias
+    expect(mensagem(conferirGestaoDeUsuario(dono, vend, { tipo: 'alterar', mudanca: { papel: 'personalizado' } }, loja))).toBe('Marque pelo menos uma função para o Personalizado.');
+    expect(conferirGestaoDeUsuario(dono, vend, { tipo: 'alterar', mudanca: { papel: 'personalizado', permissoes: ['caixa'] } }, loja).ok).toBe(true);
+    expect(conferirGestaoDeUsuario(adm, gil, { tipo: 'alterar', mudanca: { permissoes: ['caixa', 'compras'] } }, [...loja, gil]).ok).toBe(true);
+    expect(mensagem(conferirGestaoDeUsuario(dono, vend, { tipo: 'alterar', mudanca: { permissoes: ['caixa'] } }, loja))).toBe('Funções escolhidas só no papel Personalizado.');
+  });
+
+  it('o Personalizado pode só as funções dele; o Adm. Sup pode tudo', () => {
+    const gil = { papel: 'personalizado', permissoes: ['vender', 'relatorios', 'brinde'] };
+    expect([pode(gil, 'vender'), pode(gil, 'relatorios'), pode(gil, 'financeiro'), pode(gil, 'brinde')]).toEqual([true, true, false, false]); // brinde é só do Dono
+    expect(pode('personalizado', 'vender')).toBe(false); // sem as funções, nada
+    expect([pode('super_admin', 'brinde'), pode('super_admin', 'usuarios.donos'), pode({ papel: 'super_admin' }, 'caixa.ciencia')]).toEqual([true, true, true]);
+    expect(quemPode('financeiro')).toEqual(['dono', 'administrador']); // a mensagem fala dos papéis fixos
   });
 
   it('excluir dados (LGPD): só o Dono, só de usuário desativado, nunca de si mesmo', () => {

@@ -14,8 +14,8 @@
 //   - excluir os dados (LGPD): só o Dono, só de usuário desativado.
 // O servidor confere tudo de novo, e o banco tem uma trava própria para papel e Dono.
 import { CONTROLE, ehObjeto } from './interno';
-import { ehPapelDeLoja, NOME_PAPEL, PAPEIS_DE_LOJA, type PapelDeLoja } from './papeis';
-import { mensagemSemPermissao, pode } from './permissoes';
+import { ehAdmSup, ehPapelDeLoja, NOME_PAPEL, PAPEIS_DE_LOJA, type PapelDeLoja, type PapelNaLoja } from './papeis';
+import { ehPermissaoConcedivel, mensagemSemPermissao, type Permissao, PERMISSOES_CONCEDIVEIS, pode, type QuemAcessa } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
 export const LIMITES_USUARIO = { nomeMin: 2, nomeMax: 120, loginMin: 2, loginMax: 40, senhaMin: 8, senhaMax: 128 } as const;
@@ -87,12 +87,16 @@ export interface NovoUsuario {
   papel: PapelDeLoja;
   /** Senha provisória: no primeiro acesso a pessoa cria a dela. */
   senha: string;
+  /** Só no Personalizado: as funções escolhidas para ele (PERMISSOES_CONCEDIVEIS). */
+  permissoes?: Permissao[];
 }
 
 export interface AlteracaoUsuario {
   nome?: string;
   papel?: PapelDeLoja;
   ativo?: boolean;
+  /** Só no Personalizado: a lista nova de funções (troca a anterior inteira). */
+  permissoes?: Permissao[];
 }
 
 function lerNome(valor: unknown, erros: ErroCampo[]): string {
@@ -106,6 +110,22 @@ function lerNome(valor: unknown, erros: ErroCampo[]): string {
 function lerPapel(valor: unknown, erros: ErroCampo[]): PapelDeLoja {
   if (!ehPapelDeLoja(valor)) erros.push({ campo: 'papel', mensagem: `Escolha o papel: ${PAPEIS_DE_LOJA.map((p) => NOME_PAPEL[p]).join(', ')}.` });
   return valor as PapelDeLoja;
+}
+
+/** Funções do Personalizado: pelo menos uma, sem repetir, só das que se podem dar. */
+function lerPermissoes(valor: unknown, erros: ErroCampo[]): Permissao[] {
+  if (!Array.isArray(valor) || valor.length === 0) {
+    erros.push({ campo: 'permissoes', mensagem: 'Marque pelo menos uma função para o Personalizado.' });
+    return [];
+  }
+  const estranha = valor.find((p) => !ehPermissaoConcedivel(p));
+  if (estranha !== undefined) {
+    erros.push({ campo: 'permissoes', mensagem: `Esta função não pode ser dada a um Personalizado: ${typeof estranha === 'string' ? estranha : '?'}.` });
+    return [];
+  }
+  // na ordem da lista de permissões (a mesma em toda tela e em todo registro)
+  const marcadas = new Set(valor as Permissao[]);
+  return PERMISSOES_CONCEDIVEIS.filter((p) => marcadas.has(p));
 }
 
 function camposPermitidos(dados: Record<string, unknown>, permitidos: readonly string[], erros: ErroCampo[]) {
@@ -126,24 +146,30 @@ export function validarLogin(valor: unknown): Resultado<string> {
 export function validarNovoUsuario(entrada: unknown): Resultado<NovoUsuario> {
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os dados do usuário.' }] };
   const erros: ErroCampo[] = [];
-  camposPermitidos(entrada, ['nome', 'usuario', 'papel', 'senha'], erros);
+  camposPermitidos(entrada, ['nome', 'usuario', 'papel', 'senha', 'permissoes'], erros);
   const nome = lerNome(entrada.nome, erros);
   const login = validarLogin(entrada.usuario);
   if (!login.ok) erros.push(...login.erros);
   const papel = lerPapel(entrada.papel, erros);
+  let permissoes: Permissao[] | undefined;
+  if (papel === 'personalizado') permissoes = lerPermissoes(entrada.permissoes, erros);
+  else if (entrada.permissoes !== undefined && !(Array.isArray(entrada.permissoes) && entrada.permissoes.length === 0)) {
+    erros.push({ campo: 'permissoes', mensagem: 'Funções escolhidas só no papel Personalizado.' });
+  }
   const senha = validarSenhaNova(entrada.senha, { usuario: login.ok ? login.valor : null, nome });
   if (!senha.ok) erros.push(...senha.erros);
   if (erros.length) return { ok: false, erros };
-  return { ok: true, valor: { nome, usuario: (login as { valor: string }).valor, papel, senha: entrada.senha as string } };
+  return { ok: true, valor: { nome, usuario: (login as { valor: string }).valor, papel, senha: entrada.senha as string, ...(permissoes ? { permissoes } : {}) } };
 }
 
 export function validarAlteracaoUsuario(entrada: unknown): Resultado<AlteracaoUsuario> {
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com o que muda.' }] };
   const erros: ErroCampo[] = [];
-  camposPermitidos(entrada, ['nome', 'papel', 'ativo'], erros);
+  camposPermitidos(entrada, ['nome', 'papel', 'ativo', 'permissoes'], erros);
   const mudanca: AlteracaoUsuario = {};
   if (entrada.nome !== undefined) mudanca.nome = lerNome(entrada.nome, erros);
   if (entrada.papel !== undefined) mudanca.papel = lerPapel(entrada.papel, erros);
+  if (entrada.permissoes !== undefined) mudanca.permissoes = lerPermissoes(entrada.permissoes, erros);
   if (entrada.ativo !== undefined) {
     if (typeof entrada.ativo !== 'boolean') erros.push({ campo: 'ativo', mensagem: 'Informe se o usuário fica ativo (true ou false).' });
     else mudanca.ativo = entrada.ativo;
@@ -152,15 +178,29 @@ export function validarAlteracaoUsuario(entrada: unknown): Resultado<AlteracaoUs
   return erros.length ? { ok: false, erros } : { ok: true, valor: mudanca };
 }
 
-/** O que a regra precisa saber de cada usuário. */
+/** O que a regra precisa saber de cada usuário (quem faz pode ser o Adm. Sup). */
 export interface UsuarioParaRegra {
   id: string;
-  papel: PapelDeLoja;
+  papel: PapelNaLoja;
   ativo: boolean;
+  /** Funções do Personalizado. */
+  permissoes?: readonly string[] | null;
 }
 
+/**
+ * Que papéis `quem` pode dar a um usuário novo (pedido do Luan, 23/11/2026): o Dono e o Administrador cadastram
+ * Vendedor e Personalizado; o Dono (na implantação) e o Administrador só o Adm. Sup cadastra.
+ */
+export function papeisQuePodeCriar(quem: QuemAcessa): PapelDeLoja[] {
+  const papel = typeof quem === 'string' ? quem : quem?.papel;
+  if (ehAdmSup(papel)) return [...PAPEIS_DE_LOJA];
+  return pode(quem, 'usuarios') ? ['vendedor', 'personalizado'] : [];
+}
+
+const SO_PELO_SUPORTE = 'O Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.';
+
 export type AcaoSobreUsuario =
-  | { tipo: 'criar'; papel: PapelDeLoja }
+  | { tipo: 'criar'; papel: PapelDeLoja; permissoes?: readonly string[] }
   | { tipo: 'alterar'; mudanca: AlteracaoUsuario }
   | { tipo: 'redefinir_senha' }
   | { tipo: 'excluir_dados' };
@@ -177,17 +217,22 @@ export function conferirGestaoDeUsuario(
   acao: AcaoSobreUsuario,
   daLoja: readonly UsuarioParaRegra[],
 ): Resultado<null> {
-  if (!ator.ativo || !pode(ator.papel, 'usuarios')) return recusa(mensagemSemPermissao('usuarios'));
+  if (!ator.ativo || !pode(ator, 'usuarios')) return recusa(mensagemSemPermissao('usuarios'));
+  // ninguém dá ao Personalizado uma função que não tem (o Administrador não dá o que é só do Dono)
+  const daFuncoes = (lista: readonly string[] | undefined) =>
+    !lista || lista.every((p) => ehPermissaoConcedivel(p) && pode(ator, p)) ? null : recusa('Você só pode dar ao Personalizado as funções que você mesmo tem.', 'permissoes');
 
   if (acao.tipo === 'criar') {
-    if (acao.papel === 'dono' && !pode(ator.papel, 'usuarios.donos')) return recusa('Só um Dono cadastra outro Dono.', 'papel');
-    return { ok: true, valor: null };
+    if (!papeisQuePodeCriar(ator).includes(acao.papel)) return recusa(acao.papel === 'dono' || acao.papel === 'administrador' ? SO_PELO_SUPORTE : mensagemSemPermissao('usuarios'), 'papel');
+    if (acao.papel === 'personalizado' && (!acao.permissoes || acao.permissoes.length === 0)) return recusa('Marque pelo menos uma função para o Personalizado.', 'permissoes');
+    return daFuncoes(acao.permissoes) ?? { ok: true, valor: null };
   }
   if (!alvo) return recusa('Usuário não encontrado.');
+  if (ehAdmSup(alvo.papel)) return recusa('Usuário não encontrado.'); // o Adm. Sup não é da loja
 
   const ehEle = alvo.id === ator.id;
   const mexeEmDono = alvo.papel === 'dono' || (acao.tipo === 'alterar' && acao.mudanca.papel === 'dono');
-  if (mexeEmDono && !pode(ator.papel, 'usuarios.donos')) return recusa('Só um Dono altera, desativa ou redefine a senha de outro Dono, ou dá o papel de Dono.');
+  if (mexeEmDono && !pode(ator, 'usuarios.donos')) return recusa('Só um Dono altera, desativa ou redefine a senha de outro Dono, ou dá o papel de Dono.');
 
   if (acao.tipo === 'redefinir_senha') {
     if (ehEle) return recusa('Para a sua própria senha, use “Trocar minha senha”.');
@@ -195,7 +240,7 @@ export function conferirGestaoDeUsuario(
   }
 
   if (acao.tipo === 'excluir_dados') {
-    if (!pode(ator.papel, 'usuarios.excluir_dados')) return recusa(mensagemSemPermissao('usuarios.excluir_dados'));
+    if (!pode(ator, 'usuarios.excluir_dados')) return recusa(mensagemSemPermissao('usuarios.excluir_dados'));
     if (ehEle) return recusa('Você não pode excluir os seus próprios dados por aqui.');
     if (alvo.ativo) return recusa('Desative o usuário antes de excluir os dados dele.');
     return { ok: true, valor: null };
@@ -203,7 +248,21 @@ export function conferirGestaoDeUsuario(
 
   const { mudanca } = acao;
   if (ehEle && mudanca.ativo === false) return recusa('Você não pode desativar o seu próprio usuário.', 'ativo');
-  if (ehEle && mudanca.papel !== undefined && mudanca.papel !== alvo.papel) return recusa('Você não pode mudar o seu próprio papel. Peça a outro Dono.', 'papel');
+  if (ehEle && ((mudanca.papel !== undefined && mudanca.papel !== alvo.papel) || mudanca.permissoes !== undefined)) {
+    return recusa('Você não pode mudar o seu próprio papel nem as suas funções. Peça a outro Dono.', 'papel');
+  }
+  // dar o papel de Dono ou de Administrador: só o Adm. Sup
+  if (mudanca.papel !== undefined && mudanca.papel !== alvo.papel && (mudanca.papel === 'dono' || mudanca.papel === 'administrador') && !ehAdmSup(ator.papel)) {
+    return recusa('Só o suporte (Adm. Sup) dá o papel de Dono ou de Administrador.', 'papel');
+  }
+  // funções: só no Personalizado (o papel novo, ou o atual se o papel não muda)
+  const papelDepois = mudanca.papel ?? alvo.papel;
+  if (mudanca.permissoes !== undefined && papelDepois !== 'personalizado') return recusa('Funções escolhidas só no papel Personalizado.', 'permissoes');
+  if (papelDepois === 'personalizado' && alvo.papel !== 'personalizado' && !(mudanca.permissoes && mudanca.permissoes.length)) {
+    return recusa('Marque pelo menos uma função para o Personalizado.', 'permissoes');
+  }
+  const funcoes = daFuncoes(mudanca.permissoes);
+  if (funcoes) return funcoes;
 
   // a loja nunca fica sem um Dono ativo
   const deixaDeSerDonoAtivo = alvo.papel === 'dono' && alvo.ativo && ((mudanca.papel !== undefined && mudanca.papel !== 'dono') || mudanca.ativo === false);

@@ -34,16 +34,30 @@ curl -s http://localhost:8080/api/saude      # {"status":"ok"}
 O `up` cria o banco (UTF-8, ordem do português), aplica as migrations, prepara as roles `saas_app` e
 `saas_backup` e só então sobe a API (que confere se a conexão é segura antes de aceitar pedidos).
 
-### Cadastrar a primeira loja e o primeiro Dono
+### Cadastrar o suporte (uma vez por servidor)
+
+O **Adm. Sup** é o usuário mestre: entra em qualquer loja, não aparece na lista de usuários e aparece como
+"Suporte" no histórico. Só ele cadastra o Dono e o Administrador (pedido do Luan, 23/11/2026 — ver
+[`decisoes/0006-adm-sup-e-personalizado.md`](decisoes/0006-adm-sup-e-personalizado.md)).
 
 ```bash
 C="docker compose -f docker-compose.prod.yml --env-file .env.producao"
+$C run --rm migracao npx tsx scripts/cadastrar-suporte.ts --usuario suporte
+```
+
+A senha aparece **uma vez**: guarde num cofre de senhas. Nova senha: `--redefinir-senha`; tirar o acesso:
+`--desativar` (as duas encerram as sessões abertas dele em todas as lojas); voltar: `--reativar`.
+
+### Cadastrar a primeira loja e o primeiro Dono
+
+```bash
 $C run --rm -e SEED_LOJAS="Pet Shop da Ana=petshopdaana" migracao npx tsx scripts/seed-dev.ts
 $C run --rm migracao npx tsx scripts/cadastrar-usuario.ts --loja petshopdaana --usuario ana --nome "Ana Paula" --papel dono
 ```
 
-O segundo comando mostra a senha provisória uma vez. A Ana abre `https://petshopdaana.nomedaempresa.com.br`,
-entra, cria a senha dela e cadastra a equipe na aba **Usuários**.
+O segundo comando mostra a senha provisória uma vez (ou, no lugar dele, o suporte entra em
+`https://petshopdaana.nomedaempresa.com.br` e cadastra a Ana na aba **Usuários**). A Ana entra, cria a senha
+dela e cadastra a equipe (**Vendedor** e **Personalizado**) na aba **Usuários**.
 
 ## 3. Atualizar para uma versão nova
 

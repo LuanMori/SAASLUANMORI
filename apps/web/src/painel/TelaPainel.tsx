@@ -12,8 +12,8 @@
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
 // À meia-noite com o sistema aberto (usarViradaDoDia), o caixa que ficou aberto fecha sozinho, as telas
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
-import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelDeLoja } from '@saas/core';
-import { useCallback, useEffect, useState } from 'react';
+import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelNaLoja } from '@saas/core';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
 import { usarInatividade } from '../usarInatividade';
@@ -38,7 +38,8 @@ import { usarViradaDoDia } from './usarViradaDoDia';
 interface Props extends DadosBarra {
   api: ApiSistema;
   /** Quem está logado. `id` e `usuario` entram na tela Usuários e na troca de senha. */
-  pessoa: { id?: string; nome: string; usuario?: string; papel: PapelDeLoja };
+  /** `permissoes`: só no Personalizado (as funções escolhidas para ele). O Adm. Sup entra com o papel super_admin. */
+  pessoa: { id?: string; nome: string; usuario?: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   aoSair: () => void;
   secaoInicial?: IdSecao;
   /** Fuso da loja (define o que é "hoje"). */
@@ -110,14 +111,16 @@ export function TelaPainel({
   }, [carregarConfig]);
   const lojaDaBarra = config ? { nome: config.dados.nome, descricao: config.dados.descricao, logo: config.dados.logo } : loja;
   const nomesDasContas = config?.regras.financeiro.nomesContas ?? NOME_CONTA;
+  // quem está logado, com as funções do Personalizado (as telas perguntam `pode(acesso, ...)`)
+  const acesso = useMemo(() => ({ papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }), [pessoa.papel, pessoa.permissoes]);
 
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
-  const permitido = item ? podeVer(item, pessoa.papel) : false;
+  const permitido = item ? podeVer(item, acesso) : false;
   const disponivel = (id: IdSecao) => secoesDisponiveis === null || secoesDisponiveis.includes(id);
   const pode = (id: IdSecao) => {
     const alvo = ITENS_MENU.find((i) => i.id === id);
-    return alvo ? podeVer(alvo, pessoa.papel) && disponivel(id) : false;
+    return alvo ? podeVer(alvo, acesso) && disponivel(id) : false;
   };
   // Pendência "só gestor" some para o Vendedor e "só Dono" para quem não é Dono; nas outras, o botão só aparece
   // para quem pode abrir a aba de destino.
@@ -138,7 +141,7 @@ export function TelaPainel({
         <main className="pdv-conteudo" aria-label="Frente de caixa">
           <TelaFrenteCaixa
             api={api}
-            operador={{ nome: pessoa.nome, papel: pessoa.papel }}
+            operador={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
             loja={lojaDaBarra}
             limiteDescontoPct={config?.regras.venda.descontoSemSenhaPct}
             fuso={fuso}
@@ -212,16 +215,16 @@ export function TelaPainel({
               aoIrPara={escolher}
             />
           )}
-          {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
+          {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={acesso} fuso={fuso} intervaloMs={intervaloMs} />}
           {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
-          {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
-          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
+          {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} />}
+          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={acesso} aoMudar={carregarConfig} />}
           {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
-          {ver('financeiro') && <TelaFinanceiro api={api} papel={pessoa.papel} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
+          {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
           {ver('clientes') && (
-            <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />
+            <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />
           )}
-          {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} aoMudarRegras={carregarConfig} />}
+          {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} aoMudarRegras={carregarConfig} />}
         </main>
         {trocandoSenha && (
           <ModalTrocarSenha

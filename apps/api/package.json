@@ -17,6 +17,7 @@
     "db:backup-role": "tsx scripts/criar-role-backup.ts",
     "db:seed": "tsx scripts/seed-dev.ts",
     "db:usuario": "tsx scripts/cadastrar-usuario.ts",
+    "db:suporte": "tsx scripts/cadastrar-suporte.ts",
     "pretest": "prisma generate",
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --runInBand"
   },

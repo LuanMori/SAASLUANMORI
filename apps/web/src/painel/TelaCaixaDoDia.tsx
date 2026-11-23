@@ -14,23 +14,7 @@
 //     diferença acima da tolerância da loja; só o Dono e o Administrador desfazem o último fechamento;
 //   - histórico de caixa e movimentos em dinheiro (as tabelas sempre com o cabeçalho; vazias: "Nenhum registro.");
 //   - Regras do caixa (Dono e Administrador): a diferença que fecha sem senha (padrão R$ 10,00).
-import {
-  contaNaFrase,
-  acimaDaTolerancia,
-  type CaixaDoDia,
-  dataBr,
-  diferencasAConferir,
-  fechamentosAVerificar,
-  formatarCentavos,
-  FUSO_PADRAO,
-  LIMITES_CAIXA,
-  LIMITES_REGRAS,
-  type Lancamento,
-  NOME_LANCAMENTO,
-  type PapelDeLoja,
-  pode,
-  reaisParaCentavos,
-} from '@saas/core';
+import { contaNaFrase, acimaDaTolerancia, type CaixaDoDia, dataBr, diferencasAConferir, fechamentosAVerificar, formatarCentavos, FUSO_PADRAO, LIMITES_CAIXA, LIMITES_REGRAS, type Lancamento, NOME_LANCAMENTO, pode, reaisParaCentavos, type PapelNaLoja } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiCaixa, type ApiLoja, type ApiVendas, ErroApi, type PainelCaixa } from '../api';
 import { AvisoComIcone as Aviso } from './AvisoComIcone';
@@ -43,7 +27,7 @@ import { usarCarga } from './usarCarga';
 interface Props {
   api: ApiCaixa & Pick<ApiVendas, 'listarAutorizadores' | 'autorizar'> & Pick<ApiLoja, 'salvarRegrasDaLoja'>;
   /** Quem está logado (é o operador ao abrir). */
-  pessoa: { nome: string; papel: PapelDeLoja };
+  pessoa: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   fuso?: string;
   /** Depois de salvar as regras (a barra e as outras abas leem de novo). */
   aoMudarRegras?: () => void;
@@ -70,11 +54,11 @@ export function TelaCaixaDoDia({ api, pessoa, fuso = FUSO_PADRAO, aoMudarRegras 
   const [aviso, setAviso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
-  const gestor = pode(pessoa.papel, 'caixa.desfazer');
+  const gestor = pode(pessoa, 'caixa.desfazer');
   // fechamentos automáticos que ninguém conferiu: quem confere é o Dono ou o Administrador
   const aVerificar = dados && gestor ? fechamentosAVerificar(dados.historico) : [];
   // falta ou sobra acima da tolerância de que o Dono ainda não está ciente (só o Dono vê e dá ciência)
-  const aConferir = dados && pode(pessoa.papel, 'caixa.ciencia') ? diferencasAConferir(dados.historico, dados.toleranciaCentavos) : [];
+  const aConferir = dados && pode(pessoa, 'caixa.ciencia') ? diferencasAConferir(dados.historico, dados.toleranciaCentavos) : [];
   const [dandoCiencia, setDandoCiencia] = useState<string | null>(null);
   async function ciente(c: CaixaDoDia) {
     setDandoCiencia(c.id);
@@ -113,7 +97,7 @@ export function TelaCaixaDoDia({ api, pessoa, fuso = FUSO_PADRAO, aoMudarRegras 
           <div className="cx-topo-meta">
             <SituacaoCaixa dados={dados} fuso={fuso} />
             <span className="cx-data">{diaPorExtenso(dados.hoje)}</span>
-            {pode(pessoa.papel, 'loja.configurar') && (
+            {pode(pessoa, 'loja.configurar') && (
               <button type="button" className="botao cx-regras" onClick={() => setJanela({ tipo: 'regras' })}>
                 Regras do caixa
               </button>
@@ -374,7 +358,7 @@ function CardOperacao({
 }: {
   api: Pick<ApiCaixa, 'operarCaixa'>;
   dados: PainelCaixa;
-  pessoa: { papel: PapelDeLoja };
+  pessoa: { papel: PapelNaLoja; permissoes?: readonly string[] | null };
   aoConcluir: (t: string) => void;
   aoFalhar: (e: unknown) => void;
   comSenha: (acao: { tipo: 'retirada'; valorCentavos: number }, texto: string, depois: (a: Autorizado) => Promise<void>) => void;
@@ -386,7 +370,7 @@ function CardOperacao({
   const [descricao, setDescricao] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const retiradaSemSenha = pode(pessoa.papel, 'caixa.retirada');
+  const retiradaSemSenha = pode(pessoa, 'caixa.retirada');
   const esperado = dados.aFechar?.caixa.id === dados.caixa?.id ? (dados.aFechar?.gaveta.esperadoCentavos ?? null) : null;
 
   async function registrar(ev: FormEvent) {
@@ -484,7 +468,7 @@ function CardFechar({
 }: {
   api: Pick<ApiCaixa, 'fecharCaixa'>;
   dados: PainelCaixa;
-  pessoa: { papel: PapelDeLoja };
+  pessoa: { papel: PapelNaLoja; permissoes?: readonly string[] | null };
   aoConcluir: (t: string) => void;
   aoFalhar: (e: unknown) => void;
   comSenha: (acao: { tipo: 'fechamento'; dia: string; contadoCentavos: number }, texto: string, depois: (a: Autorizado) => Promise<void>) => void;
@@ -515,7 +499,7 @@ function CardFechar({
     const pedeSenha = (texto: string) =>
       comSenha({ tipo: 'fechamento', dia: alvo.caixa.dia, contadoCentavos: centavos }, texto, (a) => gravar(a.autorizacao));
     const textoSenha = `Fechamento do caixa de ${dataBr(alvo.caixa.dia)} com ${dif < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(dif))} (esperado ${formatarCentavos(g.esperadoCentavos)}, contado ${formatarCentavos(centavos)}). Acima de ${formatarCentavos(dados.toleranciaCentavos)}, o Dono ou o Administrador precisa autorizar.`;
-    if (Math.abs(dif) > dados.toleranciaCentavos && !pode(pessoa.papel, 'caixa.diferenca')) return pedeSenha(textoSenha);
+    if (Math.abs(dif) > dados.toleranciaCentavos && !pode(pessoa, 'caixa.diferenca')) return pedeSenha(textoSenha);
     setEnviando(true);
     try {
       await gravar(null);

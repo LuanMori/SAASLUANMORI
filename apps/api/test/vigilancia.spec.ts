@@ -32,6 +32,7 @@ const UPDATE_POR_COLUNA = [
   'usuarios.bloqueado_ate',
   'usuarios.nome',
   'usuarios.papel',
+  'usuarios.permissoes',
   'usuarios.senha_hash',
   'usuarios.senha_provisoria',
   'usuarios.tentativas_erradas',
@@ -69,7 +70,14 @@ describe('Vigilância do banco inteiro', () => {
       SELECT DISTINCT c.relname AS tabela FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'loja_id' AND NOT a.attisdropped
        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY 1`);
-    const { rows: policies } = await admin.query(`SELECT tablename, cmd, permissive, roles, qual, with_check FROM pg_policies WHERE schemaname = 'public' ORDER BY 1`);
+    const { rows: todas } = await admin.query(`SELECT tablename, policyname, cmd, permissive, roles, qual, with_check FROM pg_policies WHERE schemaname = 'public' ORDER BY 1, 2`);
+    // a ÚNICA exceção revisada (migration 20261123210000): a dona do schema (nunca a API) vê a linha do Adm. Sup,
+    // para as funções app_suporte_* e o script db:suporte; a API continua só com a policy da loja
+    const excecao = todas.filter((p) => p.policyname === 'usuarios_suporte_dono_do_schema');
+    expect(excecao).toHaveLength(1);
+    expect(excecao[0]).toMatchObject({ tablename: 'usuarios', cmd: 'ALL', qual: "((loja_id IS NULL) AND (papel = 'super_admin'::papel))" });
+    expect(String(excecao[0].roles)).not.toMatch(/public|saas_app/);
+    const policies = todas.filter((p) => p !== excecao[0]).map(({ policyname: _n, ...p }) => p);
     expect(policies.map((p) => p.tablename)).toEqual(tabelas.map((t) => t.tabela));
     for (const p of policies) {
       expect(p).toEqual({

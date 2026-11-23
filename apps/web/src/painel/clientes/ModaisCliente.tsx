@@ -9,30 +9,7 @@
 //   - taxas da maquininha (Dono e Administrador; a baixa automática ou manual é escolha do Dono);
 //   - excluir cliente sem histórico, com motivo (CLI-07).
 // As regras (campo extra, fiado, cashback, cupom, mensagens) ficam na aba Regras do programa (clientes/AbaRegras.tsx).
-import {
-  contaNaFrase,
-  type NomesDasContas,
-  baixaAutomaticaDoCartao,
-  type Cliente,
-  type CotacaoRecebimento,
-  cotarRecebimentoFiado,
-  dataBr,
-  descreverAbatidas,
-  type ErroCampo,
-  FORMAS_RECEBER_FIADO,
-  type FormaReceberFiado,
-  formatarCentavos,
-  formatarTelefone,
-  LIMITES_CLIENTE,
-  NOME_FORMA_PAGAMENTO,
-  pctTexto,
-  pode,
-  type PapelDeLoja,
-  previaDoRecebimento,
-  reaisParaCentavos,
-  type RegrasDaLoja,
-  validarNovoCliente,
-} from '@saas/core';
+import { contaNaFrase, type NomesDasContas, baixaAutomaticaDoCartao, type Cliente, type CotacaoRecebimento, cotarRecebimentoFiado, dataBr, descreverAbatidas, type ErroCampo, FORMAS_RECEBER_FIADO, type FormaReceberFiado, formatarCentavos, formatarTelefone, LIMITES_CLIENTE, NOME_FORMA_PAGAMENTO, pctTexto, pode, previaDoRecebimento, reaisParaCentavos, type RegrasDaLoja, validarNovoCliente, type QuemAcessa } from '@saas/core';
 import { type FormEvent, useRef, useState } from 'react';
 import { type ApiPainel, type ClienteSemCpf, type ContaDoCliente, ErroApi } from '../../api';
 import { Modal } from '../caixa/Modal';
@@ -74,7 +51,7 @@ export function ModalCadastroCliente({
   api: Pick<ApiPainel, 'cadastrarCliente' | 'atualizarCliente'>;
   /** null = cliente novo. */
   cliente: ClienteSemCpf | null;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   regras: RegrasDaLoja;
   /** AAAA-MM-DD (limite do nascimento). */
   hoje: string;
@@ -388,7 +365,7 @@ export function ModalTaxasMaquininha({
   aoFechar,
 }: {
   api: Pick<ApiPainel, 'lerTaxasCartao' | 'salvarTaxasCartao'>;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
@@ -496,7 +473,7 @@ export function ModalExcluirCliente({
 }: {
   api: Pick<ApiPainel, 'excluirCliente'>;
   cliente: Pick<ClienteSemCpf, 'id' | 'nome' | 'telefone'>;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {

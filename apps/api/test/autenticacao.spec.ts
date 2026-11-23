@@ -45,7 +45,7 @@ describe('Login próprio (usuário e senha)', () => {
   it('entra: cookie HttpOnly e SameSite=Strict, sem validade fixa; o banco guarda só o hash do segredo', async () => {
     const r = await login(ana()).expect(200);
     expect(r.body).toEqual({
-      usuario: { id: expect.stringMatching(UUID), nome: 'Ana Paula', usuario: 'ana', papel: 'vendedor' },
+      usuario: { id: expect.stringMatching(UUID), nome: 'Ana Paula', usuario: 'ana', papel: 'vendedor', permissoes: [] },
       loja: { nome: 'Loja A', subdominio: 'lojaa' },
       senhaProvisoria: false,
       inatividadeMin: 30,

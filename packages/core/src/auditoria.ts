@@ -181,11 +181,17 @@ export function resumirAuditoria(
   const autorizou = typeof d.autorizadoPor === 'string' ? nomeDoUsuario(d.autorizadoPor) : null;
   const partes: (string | null)[] = [];
   switch (acao) {
-    case 'usuario.criado':
-      partes.push(papel(d.papel));
+    case 'usuario.criado': {
+      const n = Array.isArray(d.permissoes) ? d.permissoes.length : 0;
+      partes.push(papel(d.papel), d.papel === 'personalizado' && n > 0 ? `${n} ${n === 1 ? 'função' : 'funções'}` : null);
       break;
+    }
     case 'usuario.alterado':
       if (papel(d.papelAntes) && papel(d.papelDepois)) partes.push(`papel: ${papel(d.papelAntes)} → ${papel(d.papelDepois)}`);
+      if (Array.isArray(d.campos) && d.campos.includes('permissoes')) {
+        const n = Array.isArray(d.permissoes) ? d.permissoes.length : null;
+        partes.push(n === null ? 'funções do Personalizado' : `funções do Personalizado: ${n}`);
+      }
       break;
     case 'loja.dados_alterados':
       partes.push(lista(d.campos, NOME_CAMPO_LOJA));

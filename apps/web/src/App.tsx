@@ -122,7 +122,7 @@ export function App({ urlApi = configuracao.apiUrl, lojaDev = configuracao.lojaD
       loja={{ nome: sessao.loja.nome }}
       pessoa={sessao.usuario}
       aoSair={() => void sair()}
-      secaoInicial={pode(sessao.usuario.papel, 'usuarios') ? 'usuarios' : 'visao-geral'}
+      secaoInicial={pode(sessao.usuario, 'usuarios') ? 'usuarios' : 'visao-geral'}
       secoesDisponiveis={SECOES_COM_SERVIDOR}
       inatividadeMin={sessao.inatividadeMin}
       aoInatividade={() => void sair(`Sua sessão terminou depois de ${sessao.inatividadeMin} minutos sem uso. Entre de novo.`)}

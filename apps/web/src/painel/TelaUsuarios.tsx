@@ -3,6 +3,9 @@
 // cadastram a equipe da loja. Cada pessoa entra com o próprio usuário e senha; a senha que o Dono
 // cria é PROVISÓRIA (no primeiro acesso a pessoa cria a dela, e nem o Dono fica sabendo).
 // As regras (quem mexe em quem) são as de @saas/core, as mesmas do servidor e da demonstração.
+// Pedido do Luan (23/11/2026): o Dono e o Administrador cadastram só Vendedor e Personalizado (o Personalizado tem
+// as funções marcadas para ele); o Dono (na implantação) e o Administrador, só o Adm. Sup cadastra. O Adm. Sup não
+// aparece na lista; no histórico, aparece como "Suporte".
 import {
   type AlteracaoUsuario,
   LIMITES_USUARIO,
@@ -17,17 +20,24 @@ import {
   situacaoDoUsuario,
   validarNovoUsuario,
   validarSenhaNova,
+  ehPapelDeLoja,
+  ehPermissaoConcedivel,
+  nomeDoPapel,
+  papeisQuePodeCriar,
+  PERMISSOES_CONCEDIVEIS,
+  type PapelNaLoja,
+  type QuemAcessa,
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
 import { Modal } from './caixa/Modal';
-import { dataNoFuso, horaNoFuso } from './formato';
+import { dataNoFuso, horaNoFuso, plural } from './formato';
 import { usarCarga } from './usarCarga';
 
 interface Props {
   api: ApiUsuarios;
   /** Quem está usando a tela. */
-  eu: { id: string; papel: PapelDeLoja };
+  eu: { id: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   fuso: string;
   agora?: () => Date;
 }
@@ -63,7 +73,7 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
   const [aviso, setAviso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  const souDono = pode(eu.papel, 'usuarios.donos');
+  const souDono = pode(eu, 'usuarios.donos');
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
 
   async function alternarAtivo(u: UsuarioDaLoja) {
@@ -151,7 +161,10 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
                           <td data-rotulo="Usuário" className="mono">
                             {u.usuario}
                           </td>
-                          <td data-rotulo="Papel">{NOME_PAPEL[u.papel]}</td>
+                          <td data-rotulo="Papel">
+                            {nomeDoPapel(u.papel)}
+                            {u.papel === 'personalizado' && <small className="suave"> · {plural(u.permissoes?.length ?? 0, 'função', 'funções')}</small>}
+                          </td>
                           <td data-rotulo="Situação">
                             <span className={`us-situacao us-${situacao.split(' ')[0]!.toLowerCase()}`}>{situacao}</span>
                           </td>
@@ -176,7 +189,7 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
                                     )}
                                   </>
                                 )}
-                                {!u.ativo && !ehEu && pode(eu.papel, 'usuarios.excluir_dados') && u.nome !== 'Usuário removido' && (
+                                {!u.ativo && !ehEu && pode(eu, 'usuarios.excluir_dados') && u.nome !== 'Usuário removido' && (
                                   <button type="button" className="link us-perigo" onClick={() => setJanela({ tipo: 'excluir', u })} aria-label={`Excluir os dados de ${u.nome}`}>
                                     Excluir dados
                                   </button>
@@ -235,9 +248,9 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
         </>
       )}
 
-      {janela?.tipo === 'novo' && <ModalNovoUsuario api={api} souDono={souDono} aoFechar={() => setJanela(null)} aoCriar={(u, senha) => setJanela({ tipo: 'criado', u, senha })} />}
+      {janela?.tipo === 'novo' && <ModalNovoUsuario api={api} eu={eu} aoFechar={() => setJanela(null)} aoCriar={(u, senha) => setJanela({ tipo: 'criado', u, senha })} />}
       {janela?.tipo === 'editar' && (
-        <ModalEditarUsuario api={api} u={janela.u} ehEu={janela.u.id === eu.id} souDono={souDono} aoFechar={() => setJanela(null)} aoSalvar={(n) => fechar(`${n.nome}: alterações salvas.`)} />
+        <ModalEditarUsuario api={api} u={janela.u} eu={eu} ehEu={janela.u.id === eu.id} aoFechar={() => setJanela(null)} aoSalvar={(n) => fechar(`${n.nome}: alterações salvas.`)} />
       )}
       {janela?.tipo === 'senha' && <ModalNovaSenha api={api} u={janela.u} aoFechar={() => setJanela(null)} aoSalvar={(senha) => setJanela({ tipo: 'redefinida', u: janela.u, senha })} />}
       {janela?.tipo === 'excluir' && <ModalExcluirDados api={api} u={janela.u} aoFechar={() => setJanela(null)} aoExcluir={() => fechar('Dados pessoais excluídos. O histórico continua, como “Usuário removido”.')} />}
@@ -306,7 +319,17 @@ function TabelaPermissoes() {
                     <td data-rotulo="Permissão">{PERMISSOES[perm]}</td>
                     {PAPEIS_DE_LOJA.map((p) => (
                       <td key={p} data-rotulo={NOME_PAPEL[p]} className="numero">
-                        {quem.includes(p) ? <span aria-label="pode">✓</span> : <span className="suave" aria-label="não pode">—</span>}
+                        {p === 'personalizado' ? (
+                          ehPermissaoConcedivel(perm) ? (
+                            <span className="suave" aria-label="se marcada">se marcada</span>
+                          ) : (
+                            <span className="suave" aria-label="não pode">—</span>
+                          )
+                        ) : quem.includes(p) ? (
+                          <span aria-label="pode">✓</span>
+                        ) : (
+                          <span className="suave" aria-label="não pode">—</span>
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -336,20 +359,44 @@ function CampoSenhaProvisoria({ valor, aoMudar, erro, id }: { valor: string; aoM
   );
 }
 
+/** As funções que quem cadastra pode dar a um Personalizado (as que se podem dar e que ele mesmo tem). */
+function FuncoesDoPersonalizado({ eu, marcadas, aoMudar, erro }: { eu: QuemAcessa; marcadas: readonly Permissao[]; aoMudar: (l: Permissao[]) => void; erro?: string }) {
+  const lista = PERMISSOES_CONCEDIVEIS.filter((p) => pode(eu, p));
+  const marcar = (p: Permissao, sim: boolean) => aoMudar(lista.filter((x) => (x === p ? sim : marcadas.includes(x))));
+  return (
+    <fieldset className="us-funcoes">
+      <legend>Funções do Personalizado</legend>
+      <p className="modal-dica">Marque o que esta pessoa pode fazer. O que é só do Dono e a gestão de usuários não podem ser dados.</p>
+      <div className="us-funcoes-lista">
+        {lista.map((p) => (
+          <label key={p}>
+            <input type="checkbox" checked={marcadas.includes(p)} onChange={(e) => marcar(p, e.target.checked)} /> {PERMISSOES[p]}
+          </label>
+        ))}
+      </div>
+      {erro && <span className="campo-erro">{erro}</span>}
+    </fieldset>
+  );
+}
+
+const SO_PELO_SUPORTE = 'O Dono e o Administrador são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.';
+
 function ModalNovoUsuario({
   api,
-  souDono,
+  eu,
   aoFechar,
   aoCriar,
 }: {
   api: ApiUsuarios;
-  souDono: boolean;
+  eu: QuemAcessa;
   aoFechar: () => void;
   aoCriar: (u: UsuarioDaLoja, senha: string) => void;
 }) {
+  const opcoes = papeisQuePodeCriar(eu);
   const [nome, setNome] = useState('');
   const [usuario, setUsuario] = useState('');
-  const [papel, setPapel] = useState<PapelDeLoja>('vendedor');
+  const [papel, setPapel] = useState<PapelDeLoja>(opcoes.includes('vendedor') ? 'vendedor' : (opcoes[0] ?? 'vendedor'));
+  const [permissoes, setPermissoes] = useState<Permissao[]>([]);
   const [senha, setSenha] = useState(() => sortearSenhaProvisoria());
   const [erros, setErros] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<string | null>(null);
@@ -357,7 +404,7 @@ function ModalNovoUsuario({
 
   async function enviar(ev: FormEvent) {
     ev.preventDefault();
-    const dados = { nome, usuario, papel, senha };
+    const dados = { nome, usuario, papel, senha, ...(papel === 'personalizado' ? { permissoes } : {}) };
     const v = validarNovoUsuario(dados);
     if (!v.ok) {
       setErros(Object.fromEntries(v.erros.map((e) => [e.campo, e.mensagem])));
@@ -377,7 +424,7 @@ function ModalNovoUsuario({
   }
 
   return (
-    <Modal titulo="Novo usuário" aoFechar={aoFechar}>
+    <Modal titulo="Novo usuário" aoFechar={aoFechar} larga={papel === 'personalizado'}>
       <form className="modal-form" onSubmit={enviar} noValidate>
         <p className="modal-sub">A pessoa entra com o usuário e a senha provisória; no primeiro acesso ela cria a própria senha.</p>
         <div className="campo">
@@ -394,7 +441,7 @@ function ModalNovoUsuario({
           <div className="campo">
             <label htmlFor="us-papel">Papel</label>
             <select id="us-papel" value={papel} onChange={(e) => setPapel(e.target.value as PapelDeLoja)}>
-              {PAPEIS_DE_LOJA.filter((p) => p !== 'dono' || souDono).map((p) => (
+              {opcoes.map((p) => (
                 <option key={p} value={p}>
                   {NOME_PAPEL[p]}
                 </option>
@@ -403,6 +450,8 @@ function ModalNovoUsuario({
             {erros.papel && <span className="campo-erro">{erros.papel}</span>}
           </div>
         </div>
+        {!opcoes.includes('dono') && <p className="modal-dica">{SO_PELO_SUPORTE}</p>}
+        {papel === 'personalizado' && <FuncoesDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} erro={erros.permissoes} />}
         <CampoSenhaProvisoria id="us-senha" valor={senha} aoMudar={setSenha} erro={erros.senha} />
         {erro && (
           <p className="alerta alerta-erro" role="alert">
@@ -425,20 +474,24 @@ function ModalNovoUsuario({
 function ModalEditarUsuario({
   api,
   u,
+  eu,
   ehEu,
-  souDono,
   aoFechar,
   aoSalvar,
 }: {
   api: ApiUsuarios;
   u: UsuarioDaLoja;
+  eu: QuemAcessa;
   ehEu: boolean;
-  souDono: boolean;
   aoFechar: () => void;
   aoSalvar: (u: UsuarioDaLoja) => void;
 }) {
+  const atual = (ehPapelDeLoja(u.papel) ? u.papel : 'vendedor') as PapelDeLoja;
+  // o papel atual sempre aparece; dar Dono ou Administrador, só o Adm. Sup
+  const opcoes = PAPEIS_DE_LOJA.filter((p) => p === atual || papeisQuePodeCriar(eu).includes(p));
   const [nome, setNome] = useState(u.nome);
-  const [papel, setPapel] = useState<PapelDeLoja>(u.papel);
+  const [papel, setPapel] = useState<PapelDeLoja>(atual);
+  const [permissoes, setPermissoes] = useState<Permissao[]>(() => PERMISSOES_CONCEDIVEIS.filter((p) => (u.permissoes ?? []).includes(p)));
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -446,7 +499,10 @@ function ModalEditarUsuario({
     ev.preventDefault();
     const mudanca: AlteracaoUsuario = {};
     if (nome.trim() !== u.nome) mudanca.nome = nome;
-    if (papel !== u.papel) mudanca.papel = papel;
+    if (papel !== atual) mudanca.papel = papel;
+    if (papel === 'personalizado' && JSON.stringify(permissoes) !== JSON.stringify(PERMISSOES_CONCEDIVEIS.filter((p) => (u.permissoes ?? []).includes(p)))) {
+      mudanca.permissoes = permissoes;
+    }
     if (Object.keys(mudanca).length === 0) return aoFechar();
     setErro(null);
     setEnviando(true);
@@ -460,7 +516,7 @@ function ModalEditarUsuario({
   }
 
   return (
-    <Modal titulo={`Editar ${u.nome}`} aoFechar={aoFechar}>
+    <Modal titulo={`Editar ${u.nome}`} aoFechar={aoFechar} larga={papel === 'personalizado'}>
       <form className="modal-form" onSubmit={enviar} noValidate>
         <div className="campo">
           <label htmlFor="us-ed-nome">Nome</label>
@@ -469,14 +525,16 @@ function ModalEditarUsuario({
         <div className="campo">
           <label htmlFor="us-ed-papel">Papel</label>
           <select id="us-ed-papel" value={papel} onChange={(e) => setPapel(e.target.value as PapelDeLoja)} disabled={ehEu}>
-            {PAPEIS_DE_LOJA.filter((p) => p !== 'dono' || souDono).map((p) => (
+            {opcoes.map((p) => (
               <option key={p} value={p}>
                 {NOME_PAPEL[p]}
               </option>
             ))}
           </select>
           {ehEu && <span className="modal-dica">Ninguém muda o próprio papel. Peça a outro Dono.</span>}
+          {!ehEu && !papeisQuePodeCriar(eu).includes('dono') && <span className="modal-dica">{SO_PELO_SUPORTE}</span>}
         </div>
+        {papel === 'personalizado' && !ehEu && <FuncoesDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} />}
         <p className="modal-dica">
           O usuário (login) <span className="mono">{u.usuario}</span> não muda.
         </p>

@@ -1,7 +1,7 @@
 // apps/web/src/painel/menu.tsx — itens da barra lateral, copiados do DaniPets V9.3.3:
 // "Frente de caixa" em destaque acima do menu e os outros itens em grupos
 // (Operação, Cadastros, Gestão, Sistema). Para mudar a barra, mexa só nesta lista.
-import { type PapelDeLoja, type Permissao, pode } from '@saas/core';
+import { type Permissao, pode, type QuemAcessa } from '@saas/core';
 import type { ReactNode } from 'react';
 
 export type IdSecao =
@@ -54,6 +54,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'frente-de-caixa',
     rotulo: 'Frente de caixa',
+    permissao: 'vender',
     icone: (
       <Icone>
         <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
@@ -98,6 +99,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'clientes',
     rotulo: 'Clientes',
+    permissao: 'clientes',
     icone: (
       <Icone>
         <circle cx="9" cy="8" r="3.5" />
@@ -180,6 +182,6 @@ export const GRUPOS_MENU: readonly GrupoMenu[] = [
 /** Todos os itens, na ordem em que aparecem na barra. */
 export const ITENS_MENU: readonly ItemMenu[] = [ITEM_CAIXA, ...GRUPOS_MENU.flatMap((g) => g.itens)];
 
-export function podeVer(item: ItemMenu, papel: PapelDeLoja): boolean {
-  return !item.permissao || pode(papel, item.permissao);
+export function podeVer(item: ItemMenu, quem: QuemAcessa): boolean {
+  return !item.permissao || pode(quem, item.permissao);
 }

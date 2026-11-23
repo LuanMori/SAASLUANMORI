@@ -3,6 +3,9 @@
 > Decisão do Luan em 18/11/2026 (revisão, item 5.4): sai o Auth0; cada pessoa entra com usuário e
 > senha guardados no nosso banco, e o **Dono cadastra a equipe** pela aba **Usuários**.
 > Detalhes da decisão: [`decisoes/0002-login-proprio.md`](decisoes/0002-login-proprio.md).
+> Desde 23/11/2026 (pedido do Luan): o **Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup)**,
+> na implantação; o Dono cadastra **Vendedor** e **Personalizado** (com as funções que ele marcar).
+> Detalhes: [`decisoes/0006-adm-sup-e-personalizado.md`](decisoes/0006-adm-sup-e-personalizado.md).
 
 ## Como a pessoa entra
 
@@ -13,16 +16,43 @@
    própria senha**. Nenhuma outra tela ou rota funciona antes disso.
 4. Pronto: a sessão fica num cookie que o JavaScript da página não consegue ler.
 
+## O suporte (Adm. Sup)
+
+O **Adm. Sup** (papel `super_admin`) é o usuário mestre do sistema: um login que vale para todas as lojas,
+cadastrado no servidor (pode haver um por pessoa da equipe de suporte). Ele entra em **qualquer loja** com o
+próprio usuário e senha e tem acesso a tudo, mas não aparece na lista de usuários da loja; no histórico e nas
+vendas, aparece como **"Suporte"**.
+
+```bash
+npm run db:suporte -w @saas/api -- --usuario suporte                  # cadastra; mostra a senha UMA vez
+npm run db:suporte -w @saas/api -- --usuario suporte --redefinir-senha
+npm run db:suporte -w @saas/api -- --usuario suporte --desativar      # (esta e a nova senha encerram as sessões dele)
+npm run db:suporte -w @saas/api -- --usuario suporte --reativar
+```
+
+A senha é sorteada (20 letras e números) e mostrada uma vez: guarde num cofre de senhas. Ela **não é
+provisória** e só muda por esse script (a tela "Trocar senha" recusa para o suporte). O login do suporte
+não pode ser usado por ninguém da loja. Em produção (Docker):
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.producao run --rm migracao \
+  npx tsx scripts/cadastrar-suporte.ts --usuario suporte
+```
+
 ## O primeiro Dono de cada loja
 
-O Dono é criado pelo script (depois ele cadastra o resto pela tela):
+O Dono (e o Administrador) **só o suporte cadastra**, na implantação. Dois caminhos, os dois "pelo suporte":
+
+1. **Pela tela:** o suporte entra no endereço da loja e cadastra o Dono na aba **Usuários**.
+2. **Pelo script**, no servidor (quem tem acesso ao servidor é o suporte):
 
 ```bash
 npm run db:seed    -w @saas/api                    # lojas do SEED_LOJAS ("Loja A=lojaa;Loja B=lojab")
 npm run db:usuario -w @saas/api -- --loja lojaa --usuario ana --nome "Ana Paula" --papel dono
 ```
 
-O script mostra a **senha provisória uma vez**. Entregue à pessoa; no primeiro acesso ela cria a dela.
+Os dois mostram a **senha provisória uma vez**. Entregue à pessoa; no primeiro acesso ela cria a dela.
+Depois, o Dono cadastra a equipe (Vendedor e Personalizado) pela aba Usuários.
 No Windows, o `teste-local.bat` faz tudo isso e mostra a senha. Em produção (Docker):
 
 ```bash
@@ -30,7 +60,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.producao run --rm migr
   npx tsx scripts/cadastrar-usuario.ts --loja lojaa --usuario ana --nome "Ana Paula" --papel dono
 ```
 
-Perdeu o acesso? `... --loja lojaa --usuario ana --redefinir-senha` (nova provisória) ou `--desativar`.
+Perdeu o acesso? `... --loja lojaa --usuario ana --redefinir-senha` (nova provisória) ou `--desativar`,
+ou o suporte entra na loja e faz o mesmo pela aba Usuários. O `db:usuario` recusa o login do suporte e o papel
+Personalizado (este se cadastra pela tela, com as funções); o `db:suporte` recusa um login que alguém de alguma
+loja já usa.
 
 ## Regras (as mesmas no servidor, na tela e na demonstração — `packages/core`)
 
@@ -45,11 +78,13 @@ Perdeu o acesso? `... --loja lojaa --usuario ana --redefinir-senha` (nova provis
 | Sessão | termina com **30 minutos sem uso** (DaniPets: IDLE_MINUTES) ou **12 horas** depois do login; a tela sai sozinha junto | `SESSAO_INATIVIDADE_MIN`, `SESSAO_MAXIMA_HORAS` |
 | Trocar a senha | pede a senha atual; errar 5 vezes bloqueia e derruba a sessão; troca derruba as sessões dos outros aparelhos | `POST /sessao/senha` |
 | Desativar / nova senha pelo Dono | derruba na hora as sessões abertas da pessoa | `usuarios.service.ts` |
-| Quem cadastra | Dono e Administrador. Dono novo, mexer em Dono ou dar o papel de Dono: **só outro Dono**. Ninguém desativa a si mesmo nem muda o próprio papel. A loja nunca fica sem um Dono ativo | `conferirGestaoDeUsuario` + trava no banco |
+| Quem cadastra | O Dono e o Administrador cadastram **Vendedor** e **Personalizado**. **Dono e Administrador: só o suporte** (Adm. Sup) cadastra ou dá esses papéis. Mexer em Dono (alterar, desativar, nova senha): só outro Dono ou o suporte. Ninguém desativa a si mesmo nem muda o próprio papel ou as próprias funções. A loja nunca fica sem um Dono ativo | `conferirGestaoDeUsuario` + trava no banco |
+| Personalizado | só as funções marcadas para ele (pelo menos uma). Não recebe as funções só do Dono nem a de cadastrar usuários; quem cadastra só dá as funções que tem | `permissoes.ts` (`PERMISSOES_CONCEDIVEIS`) + `usuario.ts` |
 | Excluir dados (LGPD) | só o Dono, só de usuário desativado; fica "Usuário removido" no histórico | `POST /usuarios/:id/excluir-dados` |
 
 O banco tem uma trava própria (trigger `usuarios_trava_api`): mesmo que a API tivesse um erro, a role
-da API não consegue promover alguém a Dono sem ser Dono, desativar a si mesma ou deixar a loja sem Dono.
+da API não consegue cadastrar ou dar o papel de Dono ou de Administrador sem ser o suporte, deixar um
+Personalizado sem funções, desativar a si mesma, mudar o próprio papel ou deixar a loja sem Dono.
 
 ## O cookie de sessão
 
@@ -70,8 +105,8 @@ da API não consegue promover alguém a Dono sem ser Dono, desativar a si mesma 
 | `GET /sessao` | logado (também com senha provisória) | quem está logado |
 | `POST /sessao/senha` | logado (também com senha provisória) | `{ senhaAtual, senhaNova }` |
 | `POST /sessao/sair` | qualquer um | encerra a sessão deste navegador |
-| `GET/POST /usuarios`, `PATCH /usuarios/:id`, `POST /usuarios/:id/senha`, `POST /usuarios/:id/excluir-dados` | Dono e Administrador | tela Usuários |
-| `GET /auditoria?limite=40` | Dono e Administrador | histórico (quem fez o quê) |
+| `GET/POST /usuarios`, `PATCH /usuarios/:id`, `POST /usuarios/:id/senha`, `POST /usuarios/:id/excluir-dados` | Dono, Administrador e o suporte | tela Usuários (`permissoes` só no Personalizado) |
+| `GET /auditoria?limite=40` | Dono, Administrador e o suporte | histórico (quem fez o quê; o suporte aparece como "Suporte") |
 | `GET /saude` | qualquer um | a API e o banco respondem? |
 
 ## Quem veio do Auth0

@@ -2,7 +2,7 @@
 // GET /auditoria?limite=40 -> { itens } da loja da sessão, do mais novo para o mais antigo.
 // Só Dono e Administrador (os mesmos que cuidam dos usuários).
 import { BadRequestException, Controller, Get, Injectable, Module, Query } from '@nestjs/common';
-import { ACOES_AUDITORIA, type AcaoAuditoria, resumirAuditoria } from '@saas/core';
+import { ACOES_AUDITORIA, type AcaoAuditoria, NOME_SUPORTE, resumirAuditoria } from '@saas/core';
 import { Contexto, type ContextoRequisicao } from '../auth/contexto.js';
 import { Exige } from '../auth/decoradores.js';
 import { BancoService } from '../banco/banco.service.js';
@@ -46,6 +46,12 @@ export class AuditoriaService {
         produtos.length ? tx.produto.findMany({ where: { lojaId: ctx.lojaId, id: { in: produtos } }, select: { id: true, nome: true } }) : [],
       ]);
       const nome = new Map([...pessoas, ...itens].map((p) => [p.id, p.nome]));
+      // quem não é da loja pode ser o Adm. Sup: aparece como "Suporte" (a linha dele não aparece para a API)
+      for (const id of ids) {
+        if (nome.has(id)) continue;
+        const sup = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM app_suporte_por_id(${id}::uuid)`;
+        if (sup.length) nome.set(id, NOME_SUPORTE);
+      }
       return linhas.map((l) => ({
         id: l.id,
         acao: l.acao,

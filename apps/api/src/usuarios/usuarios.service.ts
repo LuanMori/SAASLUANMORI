@@ -5,6 +5,9 @@
 //
 // Toda alteração roda com a trava da loja (pg_advisory_xact_lock 'usuarios:<loja>', a mesma do
 // trigger): dois Donos se rebaixando ao mesmo tempo não deixam a loja sem nenhum.
+// Pedido do Luan (23/11/2026): o Dono e o Administrador cadastram Vendedor e Personalizado (com as funções marcadas);
+// o Dono e o Administrador só o Adm. Sup (super_admin) cadastra. O Adm. Sup não é da loja: não aparece na lista e o
+// login dele não pode ser usado por ninguém da loja.
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   type AcaoSobreUsuario,
@@ -28,6 +31,7 @@ const CAMPOS_PUBLICOS = {
   nome: true,
   usuario: true,
   papel: true,
+  permissoes: true,
   ativo: true,
   senhaProvisoria: true,
   bloqueadoAte: true,
@@ -65,9 +69,10 @@ export class UsuariosService {
       ctx.lojaId,
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`usuarios:${ctx.lojaId}`}, 0))`;
-        const todos = await tx.usuario.findMany({ where: { lojaId: ctx.lojaId }, select: { id: true, papel: true, ativo: true } });
-        const daLoja = todos.filter((u): u is UsuarioParaRegra => ehPapelDeLoja(u.papel));
-        const ator = daLoja.find((u) => u.id === ctx.usuarioId);
+        const todos = await tx.usuario.findMany({ where: { lojaId: ctx.lojaId }, select: { id: true, papel: true, ativo: true, permissoes: true } });
+        const daLoja = todos.filter((u): u is UsuarioParaRegra & typeof u => ehPapelDeLoja(u.papel));
+        // o Adm. Sup não é da loja: a sessão já conferiu que ele está ativo
+        const ator: UsuarioParaRegra | undefined = ctx.papel === 'super_admin' ? { id: ctx.usuarioId, papel: 'super_admin', ativo: true } : daLoja.find((u) => u.id === ctx.usuarioId);
         if (!ator) throw new ForbiddenException({ mensagem: 'Seu acesso a esta loja está desativado.' });
         return fn(tx, ator, daLoja);
       },
@@ -94,14 +99,16 @@ export class UsuariosService {
     const hash = await gerarHashSenha(novo.senha);
     try {
       return await this.comTrava(ctx, async (tx, ator, daLoja) => {
-        this.conferir(ator, null, { tipo: 'criar', papel: novo.papel }, daLoja);
+        this.conferir(ator, null, { tipo: 'criar', papel: novo.papel, ...(novo.permissoes ? { permissoes: novo.permissoes } : {}) }, daLoja);
         const existe = await tx.usuario.findUnique({ where: { lojaId_usuario: { lojaId: ctx.lojaId, usuario: novo.usuario } }, select: { id: true } });
-        if (existe) throw loginRepetido(novo.usuario);
+        // o login do Adm. Sup também fica fora (senão a pessoa da loja tomaria o lugar dele no login)
+        const doSuporte = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM app_suporte_para_login(${novo.usuario})`;
+        if (existe || doSuporte.length) throw loginRepetido(novo.usuario);
         const criado = await tx.usuario.create({
-          data: { lojaId: ctx.lojaId, nome: novo.nome, usuario: novo.usuario, papel: novo.papel, senhaHash: hash, senhaProvisoria: true },
+          data: { lojaId: ctx.lojaId, nome: novo.nome, usuario: novo.usuario, papel: novo.papel, permissoes: novo.permissoes ?? [], senhaHash: hash, senhaProvisoria: true },
           select: CAMPOS_PUBLICOS,
         });
-        await registrarAuditoria(tx, ctx.lojaId, ctx.usuarioId, 'usuario.criado', { tipo: 'usuario', id: criado.id }, { papel: novo.papel });
+        await registrarAuditoria(tx, ctx.lojaId, ctx.usuarioId, 'usuario.criado', { tipo: 'usuario', id: criado.id }, { papel: novo.papel, ...(novo.permissoes ? { permissoes: novo.permissoes } : {}) });
         return criado;
       });
     } catch (erro) {
@@ -118,9 +125,13 @@ export class UsuariosService {
       const alvo = await this.lerAlvo(tx, ctx, id);
       this.conferir(ator, alvo, { tipo: 'alterar', mudanca }, daLoja);
 
-      const campos = (Object.keys(mudanca) as (keyof typeof mudanca)[]).filter((k) => mudanca[k] !== alvo[k]);
+      const igual = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+      const campos = (Object.keys(mudanca) as (keyof typeof mudanca)[]).filter((k) => !igual(mudanca[k], alvo[k]));
+      // quem deixa de ser Personalizado perde as funções
+      if (mudanca.papel !== undefined && mudanca.papel !== 'personalizado' && alvo.permissoes.length > 0 && !campos.includes('permissoes')) campos.push('permissoes');
       if (campos.length === 0) return alvo;
-      const dados = Object.fromEntries(campos.map((k) => [k, mudanca[k]]));
+      const dados: Record<string, unknown> = Object.fromEntries(campos.map((k) => [k, mudanca[k]]));
+      if ((mudanca.papel ?? alvo.papel) !== 'personalizado') dados.permissoes = [];
       const salvo = await tx.usuario.update({ where: { id: alvo.id }, data: dados, select: CAMPOS_PUBLICOS });
 
       const alvoAud = { tipo: 'usuario', id: alvo.id } as const;
@@ -134,6 +145,7 @@ export class UsuariosService {
         await registrarAuditoria(tx, ctx.lojaId, ctx.usuarioId, 'usuario.alterado', alvoAud, {
           campos: outros,
           ...(outros.includes('papel') ? { papelAntes: alvo.papel, papelDepois: salvo.papel } : {}),
+          ...(outros.includes('permissoes') ? { permissoes: salvo.permissoes } : {}),
         });
       }
       return salvo;

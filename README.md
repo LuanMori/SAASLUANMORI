@@ -150,6 +150,7 @@ npm run db:app-role    -w @saas/api   # liga o login da role saas_app com a senh
 npm run db:backup-role -w @saas/api   # role do backup (só leitura)
 npm run db:seed        -w @saas/api   # lojas do SEED_LOJAS ("Loja A=lojaa;Loja B=lojab")
 npm run db:usuario     -w @saas/api -- --loja lojaa --usuario dono --nome "Dono da Loja" --papel dono   # mostra a senha provisória
+npm run db:suporte     -w @saas/api -- --usuario suporte   # o Adm. Sup (entra em qualquer loja); mostra a senha uma vez
 
 # terminal 1
 npm run dev:build -w @saas/api      # compila em modo watch
@@ -177,27 +178,28 @@ aplicam as migrations com `prisma migrate deploy` e conectam como `saas_app`. O 
 |---|---|
 | `apps/api/test/vigilancia.spec.ts` | **o banco inteiro**: toda tabela de loja com RLS forçado e a policy padrão; privilégios da `saas_app` numa lista fechada; sem superusuário/BYPASSRLS (nem herdado); a API não sobe com conexão insegura ou tabela sem RLS |
 | `apps/api/test/autenticacao.spec.ts` | login: cookie HttpOnly/SameSite/`__Host-`, só o hash no banco, mesma resposta para usuário inexistente, 5 erradas = 5 min (também para quem não existe), 30 tentativas simultâneas, limite por IP, desativado, sem senha, sessão de 30 min e 12 h, sair, senha provisória, trocar senha, origem de outro site, loja pelo endereço |
-| `apps/api/test/usuarios.spec.ts` | tela Usuários: Dono/Administrador/Vendedor, login repetido, ninguém se desativa, dois Donos ao mesmo tempo, desativar derruba a sessão, nova senha, excluir dados (LGPD), histórico; **e a trava no banco** conectando direto como `saas_app` |
+| `apps/api/test/usuarios.spec.ts` | tela Usuários: Vendedor e Personalizado (com funções), Dono e Administrador só pelo suporte, login repetido, ninguém se desativa, dois Donos ao mesmo tempo, desativar derruba a sessão, nova senha, excluir dados (LGPD), histórico; **e a trava no banco** conectando direto como `saas_app` |
 | `apps/api/test/isolamento.spec.ts` | produto da Loja A não aparece na B; loja_id sempre o da sessão; mesmo login em duas lojas com senhas separadas; cookie com a loja trocada não entra; 30 pedidos simultâneos sem mistura |
 | `apps/api/test/rls-banco.spec.ts` | query direta sem loja_id → 0 linhas; WITH CHECK; sem vazamento no pool; sem DELETE/DDL; CHECK do super_admin |
 | `apps/api/test/codigos.spec.ts` | código interno 0001…, 25 cadastros simultâneos, código de barras só números e sem repetir, preço maior que zero |
 | `apps/api/test/acentos-e-logs.spec.ts` | acentos de ponta a ponta (bytes UTF-8 no banco, NFC); logs em JSON sem senha, cookie ou nome |
 | `apps/api/test/backup.spec.ts` | `pg_dump` com a role de backup → `pg_restore` num banco novo → mesmas linhas e RLS; com a role da API o dump falha |
 | `apps/api/test/migracoes.spec.ts` | aplica → reverte uma a uma → reaplica igual; migrations 2 e 3 convertem dados antigos (Auth0 → login próprio) |
-| `apps/api/test/scripts.spec.ts` | `db:usuario` (senha provisória sorteada, redefinir, desativar) e `db:seed` |
+| `apps/api/test/scripts.spec.ts` | `db:usuario` (senha provisória sorteada, redefinir, desativar, login do suporte recusado, Personalizado só pela tela) e `db:seed` |
+| `apps/api/test/adm-sup.spec.ts` | o suporte (Adm. Sup): entra em qualquer loja, não aparece na lista, cadastra Dono e Administrador, "Suporte" no histórico, a API não enxerga a linha dele, `db:suporte` (senha, desativar, sessões encerradas em todas as lojas) |
 | `packages/core/test/*` | produto, dinheiro, venda, estoque, clientes (e exclusão LGPD), financeiro, permissões, senha, bloqueio, usuários, endereço da loja |
 | `apps/web/src/**/*.test.ts(x)` | sistema real (login, senha provisória, 401 volta à entrada), cliente HTTP, tela Usuários, trocar senha, saída por inatividade, barra lateral, Visão geral, Frente de caixa, Produtos e estoque, Relatórios, demonstração |
 
 ## Regras de produto já decididas (Luan, 11/11/2026 — iguais ao DaniPets V9.2)
 
-- **Só entra quem o dono cadastrou.** Desde 18/11/2026, pela aba **Usuários** (o primeiro Dono, pelo script `db:usuario`). Ver `docs/LOGIN.md`.
+- **Só entra quem o dono cadastrou.** Desde 18/11/2026, pela aba **Usuários**. Desde 23/11/2026, o Dono e o Administrador só o suporte (Adm. Sup) cadastra, na implantação; o Dono cadastra Vendedor e Personalizado (com as funções que marcar). Ver `docs/LOGIN.md` e `docs/decisoes/0006-adm-sup-e-personalizado.md`.
 - **Preço de venda maior que zero.** Brinde é dado na venda, com 100% de desconto e autorização do Dono (Fase 4).
 - **Código interno é do sistema:** maior código da loja + 1, com 4 dígitos (0001… 9999, 10000…). Cada loja tem a sua sequência.
 - **Código de barras: opcional, só números**, único na loja. Nenhum código de barras pode ser igual a um código interno da mesma loja (o leitor aceita os dois).
 
 ## Decisões técnicas
 
-Registros completos em `docs/decisoes/` (auditoria, login próprio, transação e concorrência, roles do banco, implantação).
+Registros completos em `docs/decisoes/` (auditoria, login próprio, transação e concorrência, roles do banco, implantação, suporte e Personalizado).
 
 | Decisão | Por quê |
 |---|---|

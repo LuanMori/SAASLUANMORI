@@ -1,7 +1,7 @@
 // packages/core/src/permissoes.ts
 // QUEM PODE FAZER O QUÊ, num lugar só (revisão de 18/11/2026, item 4.3).
-// Telas, demonstração e servidor perguntam aqui: `pode(papel, 'financeiro')`. Ninguém
-// compara papel solto ("papel === 'dono'") para liberar uma ação.
+// Telas, demonstração e servidor perguntam aqui: `pode(quem, 'financeiro')`, com o papel ou com a pessoa (o
+// Personalizado tem as funções dele). Ninguém compara papel solto ("papel === 'dono'") para liberar uma ação.
 //
 // Matriz copiada do DaniPets V9.3.3:
 //   - Dono e Administrador: tudo liberado (DaniPets: isManager);
@@ -10,6 +10,9 @@
 //     já fechado: só o Dono (DaniPets: cliAnonimizar, askDono);
 //   - ciência do fechamento com diferença acima da tolerância (pendência 3, pedido do Luan em 22/11/2026) e a
 //     baixa do cartão automática ou manual (23/11/2026): só o Dono. As taxas da maquininha: Dono e Administrador.
+//   - Personalizado (pedido do Luan, 23/11/2026): só as funções escolhidas para ele, dentre as que se podem dar
+//     (PERMISSOES_CONCEDIVEIS: tudo, menos o que é só do Dono e a gestão de usuários);
+//   - Adm. Sup (super_admin, o usuário mestre): tudo, em qualquer loja.
 // Para mudar a regra de um papel, mude só a tabela PODE abaixo (e os testes).
 import type { PapelDeLoja } from './papeis';
 
@@ -64,28 +67,54 @@ const SO_DONO = new Set<Permissao>([
   'fiado.liberar',
 ]);
 
-/** A matriz. Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */
-const PODE: Record<PapelDeLoja, ReadonlySet<Permissao>> = {
+/** O que se pode dar a um Personalizado: tudo, menos o que é só do Dono e a gestão de usuários. */
+export const PERMISSOES_CONCEDIVEIS: readonly Permissao[] = LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p) && p !== 'usuarios');
+const CONCEDIVEIS = new Set<Permissao>(PERMISSOES_CONCEDIVEIS);
+export const ehPermissaoConcedivel = (p: unknown): p is Permissao => typeof p === 'string' && CONCEDIVEIS.has(p as Permissao);
+
+type PapelDaMatriz = 'super_admin' | 'dono' | 'administrador' | 'vendedor';
+
+/** A matriz. Adm. Sup e Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */
+const PODE: Record<PapelDaMatriz, ReadonlySet<Permissao>> = {
+  super_admin: TODAS,
   dono: TODAS,
   administrador: new Set(LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p))),
   vendedor: new Set<Permissao>(['vender', 'caixa', 'clientes', 'produtos.cadastrar']),
 };
+const NADA: ReadonlySet<Permissao> = new Set();
 
-/** Papel que não está na matriz (dado alterado por fora) não pode nada (como o DaniPets V9.3.3). */
-export function pode(papel: PapelDeLoja | string | null | undefined, permissao: Permissao): boolean {
-  return Boolean(papel && Object.hasOwn(PODE, papel) && PODE[papel as PapelDeLoja].has(permissao));
+/** Quem está fazendo algo: o papel, ou a pessoa com o papel e (no Personalizado) as funções escolhidas para ela. */
+export interface Acesso {
+  papel: string;
+  permissoes?: readonly string[] | null;
+}
+export type QuemAcessa = string | Acesso | null | undefined;
+
+/**
+ * Tudo o que `quem` pode. O Personalizado tem só as funções dele que se podem dar (uma função só do Dono gravada
+ * por fora não vale). Papel que não está na matriz (dado alterado por fora) não pode nada (como o DaniPets V9.3.3).
+ */
+export function permissoesDe(quem: QuemAcessa): ReadonlySet<Permissao> {
+  if (!quem) return NADA;
+  const papel = typeof quem === 'string' ? quem : quem.papel;
+  if (papel === 'personalizado') return new Set((typeof quem === 'string' ? [] : (quem.permissoes ?? [])).filter(ehPermissaoConcedivel));
+  return Object.hasOwn(PODE, papel) ? PODE[papel as PapelDaMatriz] : NADA;
+}
+
+export function pode(quem: QuemAcessa, permissao: Permissao): boolean {
+  return permissoesDe(quem).has(permissao);
 }
 
 /** Quem tem a permissão, para escrever a mensagem de recusa: "só o Dono ou o Administrador". */
 export function quemPode(permissao: Permissao): PapelDeLoja[] {
-  return (Object.keys(PODE) as PapelDeLoja[]).filter((p) => PODE[p].has(permissao));
+  return (['dono', 'administrador', 'vendedor'] as const).filter((p) => PODE[p].has(permissao));
 }
 
-const NOME: Record<PapelDeLoja, string> = { dono: 'o Dono', administrador: 'o Administrador', vendedor: 'o Vendedor' };
+const NOME: Record<'dono' | 'administrador' | 'vendedor', string> = { dono: 'o Dono', administrador: 'o Administrador', vendedor: 'o Vendedor' };
 
 /** "Financeiro: só o Dono ou o Administrador." */
 export function mensagemSemPermissao(permissao: Permissao): string {
-  const papeis = quemPode(permissao).map((p) => NOME[p]);
+  const papeis = quemPode(permissao).map((p) => NOME[p as keyof typeof NOME]);
   const lista = papeis.length <= 1 ? (papeis[0] ?? 'ninguém') : `${papeis.slice(0, -1).join(', ')} ou ${papeis.at(-1)}`;
   return `${PERMISSOES[permissao]}: só ${lista}.`;
 }

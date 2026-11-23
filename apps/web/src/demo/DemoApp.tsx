@@ -66,8 +66,8 @@ export function DemoApp() {
     if (!atual) return;
     if (!atual.ativo) sair('Seu acesso a esta loja foi desativado. Fale com o Dono da loja.');
     else if (atual.senhaProvisoria && !sessao.usuario.senhaProvisoria) sair('Sua senha foi redefinida pelo Dono ou pelo Administrador. Entre com a senha provisória.');
-    else if (atual.papel !== sessao.usuario.papel || atual.nome !== sessao.usuario.nome) {
-      setSessao({ ...sessao, usuario: { ...sessao.usuario, papel: atual.papel, nome: atual.nome } });
+    else if (atual.papel !== sessao.usuario.papel || atual.nome !== sessao.usuario.nome || JSON.stringify(atual.permissoes ?? null) !== JSON.stringify(sessao.usuario.permissoes ?? null)) {
+      setSessao({ ...sessao, usuario: { ...sessao.usuario, papel: atual.papel, nome: atual.nome, permissoes: atual.permissoes ?? null } });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- confere só quando outra aba grava
   }, [versao]);
@@ -130,12 +130,12 @@ function AreaLogada({
     () =>
       criarApiLocal({
         lojaId: loja.id,
-        operador: { id: usuario.id, nome: usuario.nome, papel: usuario.papel },
+        operador: { id: usuario.id, nome: usuario.nome, papel: usuario.papel, permissoes: usuario.permissoes ?? null },
         // desativada em outra aba: volta para a entrada (o servidor faz o mesmo com o 401)
         aoSessaoEncerrada: (mensagem) => aoSair(mensagem),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- aoSair muda a cada render; a API só muda com a pessoa
-    [loja.id, usuario.id, usuario.nome, usuario.papel],
+    [loja.id, usuario.id, usuario.nome, usuario.papel, usuario.permissoes],
   );
   if (usuario.senhaProvisoria) {
     return (
@@ -153,7 +153,7 @@ function AreaLogada({
     <TelaPainel
       api={api}
       loja={{ nome: loja.nome, descricao: loja.descricao }}
-      pessoa={{ id: usuario.id, nome: usuario.nome, usuario: usuario.usuario, papel: usuario.papel }}
+      pessoa={{ id: usuario.id, nome: usuario.nome, usuario: usuario.usuario, papel: usuario.papel, permissoes: usuario.permissoes ?? null }}
       pendencias={exemplos ? pendenciasExemplo() : null}
       chaveCarrinho={`saas-demo:pdv:${loja.id}:${usuario.id}`}
       aoSair={() => aoSair()}
@@ -201,7 +201,9 @@ function FaixaDemo({
         <div className="demo-detalhes">
           <p>
             Em qualquer loja: <code>ana</code> (Dono), <code>caio</code> (Administrador) e <code>bruno</code> (Vendedor), senha{' '}
-            <code>{SENHA_DEMO}</code>.{' '}
+            <code>{SENHA_DEMO}</code>. O <code>suporte</code> é o Adm. Sup (o usuário mestre): entra em qualquer loja com tudo
+            liberado, não aparece na lista de usuários e, no histórico e nas vendas, aparece como “Suporte”; só ele cadastra o
+            Dono e o Administrador.{' '}
             <code>carla</code> está desativada. Como no sistema real: 5 senhas erradas seguidas bloqueiam o usuário por 5 minutos,
             a senha fica guardada só como hash, a sessão termina depois de 30 minutos sem uso e quem recebe uma senha provisória
             (aba Usuários, com a Ana ou o Caio) cria a própria no primeiro acesso. Cada loja já vem com produtos (com estoque),

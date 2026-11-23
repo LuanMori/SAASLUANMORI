@@ -1,6 +1,8 @@
 // apps/api/scripts/cadastrar-usuario.ts
 // Cadastra o PRIMEIRO Dono de uma loja (os outros, o Dono cadastra pela tela Usuários), ou socorre
-// quem perdeu o acesso: nova senha provisória, desativar.
+// quem perdeu o acesso: nova senha provisória, desativar. Quem roda é o suporte (Adm. Sup), na implantação:
+// o Dono e o Administrador só o suporte cadastra (pedido do Luan, 23/11/2026). O Personalizado, com as funções
+// dele, é cadastrado pela tela; o login do suporte (db:suporte) não pode ser usado por ninguém da loja.
 //
 // Uso:
 //   npm run db:usuario -w @saas/api -- --loja lojaa --usuario ana --nome "Ana Paula" --papel dono
@@ -91,14 +93,22 @@ export async function cadastrarUsuario(connectionString: string, opcoes: OpcoesC
         await auditar('usuario.senha_redefinida', atual.id);
         resultado = { resumo: `Nova senha provisória para ${login.valor} na loja ${l.nome}.`, senhaProvisoria: senha };
       }
+    } else if (opcoes.papel === 'personalizado') {
+      throw new Error('O Personalizado é cadastrado pela aba Usuários, com as funções marcadas para ele.');
     } else if (atual) {
       if (opcoes.papel !== undefined && !ehPapelDeLoja(opcoes.papel)) throw new Error(`--papel deve ser: ${PAPEIS_DE_LOJA.join(', ')}.`);
       const nome = opcoes.nome?.trim() || atual.nome;
       const papel = opcoes.papel ?? atual.papel;
-      await cliente.query('UPDATE usuarios SET nome = $2, papel = $3::papel, ativo = true, atualizado_em = now() WHERE id = $1', [atual.id, nome, papel]);
+      // funções escolhidas só no Personalizado: saindo dele, elas saem junto (como na tela)
+      await cliente.query(
+        `UPDATE usuarios SET nome = $2, papel = $3::papel, permissoes = CASE WHEN $3 = 'personalizado' THEN permissoes ELSE '{}'::text[] END, ativo = true, atualizado_em = now() WHERE id = $1`,
+        [atual.id, nome, papel],
+      );
       await auditar('usuario.alterado', atual.id, { papel });
       resultado = { resumo: `${login.valor} atualizado na loja ${l.nome} como ${papel} (a senha não mudou).` };
     } else {
+      const doSuporte = await cliente.query(`SELECT 1 FROM usuarios WHERE loja_id IS NULL AND papel = 'super_admin' AND usuario = $1`, [login.valor]);
+      if (doSuporte.rowCount) throw new Error(`O login "${login.valor}" é do suporte (Adm. Sup). Escolha outro.`);
       const senha = sortearSenhaProvisoria(login.valor, opcoes.nome ?? '');
       const v = validarNovoUsuario({ nome: opcoes.nome, usuario: login.valor, papel: opcoes.papel, senha });
       if (!v.ok) throw erroDe(v);

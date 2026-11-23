@@ -4,7 +4,7 @@
 //   Operação / Cadastros / Gestão / Sistema · pessoa (inicial, nome, papel,
 //   botão de tema, Trocar senha, Sair) · versão no rodapé.
 // Itens que o papel não pode ver somem; grupo sem item visível some junto.
-import { NOME_PAPEL, type PapelDeLoja } from '@saas/core';
+import { nomeDoPapel, type PapelNaLoja } from '@saas/core';
 import { MARCA } from '../marca';
 import { usarTema } from '../tema';
 import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from './menu';
@@ -12,7 +12,7 @@ import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from '.
 export interface DadosBarra {
   /** Dados da loja (Dados e backup → Dados da loja): sem logo, aparecem as iniciais do nome. */
   loja: { nome: string; descricao?: string | null; logo?: string | null };
-  pessoa: { nome: string; papel: PapelDeLoja };
+  pessoa: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
 }
 
 interface Props extends DadosBarra {
@@ -68,7 +68,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocar
     </button>
   );
 
-  const grupos = GRUPOS_MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => podeVer(i, pessoa.papel)) })).filter(
+  const grupos = GRUPOS_MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => podeVer(i, pessoa)) })).filter(
     (g) => g.itens.length > 0,
   );
 
@@ -84,7 +84,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocar
         </div>
       </div>
 
-      {botao(ITEM_CAIXA, ' nav-pos')}
+      {podeVer(ITEM_CAIXA, pessoa) && botao(ITEM_CAIXA, ' nav-pos')}
 
       <nav className="navlist" aria-label="Menu principal">
         {grupos.map((g) => (
@@ -104,7 +104,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocar
           </span>
           <div className="sideuser-name">
             <b>{pessoa.nome}</b>
-            <small>{NOME_PAPEL[pessoa.papel]}</small>
+            <small>{nomeDoPapel(pessoa.papel)}</small>
           </div>
           <BotaoTema />
         </div>

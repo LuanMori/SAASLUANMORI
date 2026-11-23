@@ -734,7 +734,7 @@ export function criarApiLocal({
       aoSessaoEncerrada?.(mensagem);
       throw new ErroApi(401, mensagem, [], 'sessao_encerrada');
     }
-    return atual ? { id: atual.id, nome: atual.nome, papel: atual.papel } : operador;
+    return atual ? { id: atual.id, nome: atual.nome, papel: atual.papel, permissoes: atual.permissoes ?? null } : operador;
   };
   const config = () => configuracaoDemo(lojaId);
   const regras = (): RegrasDaLoja => config().regras;
@@ -746,7 +746,7 @@ export function criarApiLocal({
   /** Mesma matriz de permissões do servidor (@saas/core/permissoes). */
   const exigir = (permissao: Permissao): OperadorComPapel => {
     const quem = exigirOperador();
-    if (!pode(quem.papel, permissao)) throw new ErroApi(403, mensagemSemPermissao(permissao));
+    if (!pode(quem, permissao)) throw new ErroApi(403, mensagemSemPermissao(permissao));
     return quem;
   };
   const pessoa = (o: OperadorComPapel): Operador => ({ id: o.id, nome: o.nome });
@@ -754,7 +754,7 @@ export function criarApiLocal({
   const exigirPeriodoPermitido = (filtro: FiltroVendas) => {
     const quem = exigirOperador();
     const hoje = diaNoFuso(agora(), fuso);
-    if (!pode(quem.papel, 'relatorios') && (filtro.de !== hoje || filtro.ate !== hoje)) {
+    if (!pode(quem, 'relatorios') && (filtro.de !== hoje || filtro.ate !== hoje)) {
       throw new ErroApi(403, 'Vendas de outros dias: só o Dono ou o Administrador (Relatórios).');
     }
   };
@@ -1107,7 +1107,7 @@ export function criarApiLocal({
         const unidade = unidadeDe(novo.unidade);
         exigirUnidadeDaLoja(unidade);
         // DaniPets: o custo do estoque inicial é só do Dono e do Administrador
-        if (custoInicialCentavos !== null && !pode(quem.papel, 'produtos.alterar')) {
+        if (custoInicialCentavos !== null && !pode(quem, 'produtos.alterar')) {
           throw new ErroApi(403, 'Custo do estoque inicial: só o Dono ou o Administrador.', [{ campo: 'custoInicialCentavos', mensagem: 'Só o Dono ou o Administrador.' }]);
         }
 
@@ -1386,14 +1386,14 @@ export function criarApiLocal({
         exigirOperador();
         // mesma proteção do login (e a mesma contagem): 5 senhas erradas seguidas bloqueiam por 5 minutos
         const g = await conferirAutorizadorDemo(lojaId, usuarioId, senha, agora);
-        if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g.papel, 'brinde')) {
+        if (acao.tipo === 'desconto' && acao.precoFinalCentavos === 0 && !pode(g, 'brinde')) {
           throw new ErroApi(403, 'Brinde só com a autorização de um Dono.');
         }
-        if (acao.tipo === 'dia_fechado' && !pode(g.papel, 'dia_fechado.liberar')) {
+        if (acao.tipo === 'dia_fechado' && !pode(g, 'dia_fechado.liberar')) {
           throw new ErroApi(403, 'Lançamento em dia com o caixa já fechado: só com a liberação de um Dono.');
         }
-        if (acao.tipo === 'fiado' && !pode(g.papel, 'fiado.liberar')) throw new ErroApi(403, 'Fiado acima do limite ou vencido: só com a liberação de um Dono.');
-        if (acao.tipo === 'excluir_dados_cliente' && !pode(g.papel, 'clientes.excluir_dados')) throw new ErroApi(403, 'Excluir os dados de um cliente: só com a liberação de um Dono.');
+        if (acao.tipo === 'fiado' && !pode(g, 'fiado.liberar')) throw new ErroApi(403, 'Fiado acima do limite ou vencido: só com a liberação de um Dono.');
+        if (acao.tipo === 'excluir_dados_cliente' && !pode(g, 'clientes.excluir_dados')) throw new ErroApi(403, 'Excluir os dados de um cliente: só com a liberação de um Dono.');
         const id = novoId();
         autorizacoes.set(id, { id, autorizador: g, acao: { ...acao } as AcaoAutorizada, criadaEm: agora().toISOString(), lojaId });
         return { autorizacao: id, autorizador: g };
@@ -1525,7 +1525,7 @@ export function criarApiLocal({
       const saldos = saldosDeEstoque(movimentos);
       const minimos = minimosDaLoja();
       // custo é só do Dono e do Administrador (DaniPets: o Vendedor não vê custo)
-      const custos = pode(quem.papel, 'compras') ? custosMedios(movimentos) : null;
+      const custos = pode(quem, 'compras') ? custosMedios(movimentos) : null;
       return produtosDaLoja().map((p) => {
         const saldo = saldos.get(p.id) ?? 0;
         const minimo = minimos[p.id] ?? null;
@@ -1742,9 +1742,9 @@ export function criarApiLocal({
     async listarContasDeClientes(pedido = {}) {
       await preparar();
       const quem = exigirOperador();
-      const veFiado = pode(quem.papel, 'clientes.fiado');
+      const veFiado = pode(quem, 'clientes.fiado');
       const filtro = pedido.filtro ?? 'todos';
-      if ((filtro === 'fiado' || filtro === 'vencido' || filtro === 'desativados') && !pode(quem.papel, filtro === 'desativados' ? 'clientes.desativar' : 'clientes.fiado')) {
+      if ((filtro === 'fiado' || filtro === 'vencido' || filtro === 'desativados') && !pode(quem, filtro === 'desativados' ? 'clientes.desativar' : 'clientes.fiado')) {
         throw new ErroApi(403, mensagemSemPermissao(filtro === 'desativados' ? 'clientes.desativar' : 'clientes.fiado'));
       }
       const termo = semAcento(String(pedido.termo ?? '').trim().slice(0, LIMITES_CLIENTE.buscaMax));
@@ -1878,7 +1878,7 @@ export function criarApiLocal({
         gravarDaLoja(CHAVES.clientes, lojaId, daLoja.filter((x) => x.id !== id));
         auditar('cliente.excluido', { tipo: 'cliente', id });
         // feito pelo Vendedor: o Dono e o Administrador ficam sabendo (DaniPets avisosClientes)
-        if (!pode(quem.papel, 'clientes.desativar')) {
+        if (!pode(quem, 'clientes.desativar')) {
           const aviso = { id: novoId(), clienteNome: c.nome, telefone: c.telefone, motivo: texto, por: pessoa(quem), em: agora().toISOString(), ciente: null };
           gravarDaLoja(CHAVES.avisosClientes, lojaId, [...lerDaLoja<AvisoDeCliente>(CHAVES.avisosClientes, lojaId), aviso]);
         }
@@ -2028,7 +2028,7 @@ export function criarApiLocal({
         const daLoja = clientesDaLoja();
         const cliente = daLoja.find((c) => c.id === id) ?? null;
         const recebiveis = recebiveisDaLoja();
-        const permitido = conferirExclusaoDeCliente(quem.papel, cliente, fiadoEmAberto(recebiveis, id));
+        const permitido = conferirExclusaoDeCliente(quem, cliente, fiadoEmAberto(recebiveis, id));
         if (!permitido.ok) throw new ErroApi(cliente ? 403 : 404, permitido.erros[0]!.mensagem, permitido.erros);
         // a exclusão precisa da liberação de um Dono, com motivo (DaniPets cliAnonimizar)
         const lib = exigirOk(validarLiberacao(opcoes.liberacao), 400);
@@ -2101,11 +2101,13 @@ export function criarApiLocal({
       const painel = painelRetorno();
       const clientes = clientesDaLoja().filter((c) => !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO);
       const pct = painel.regras.retorno.cupomPct;
+      // as listas têm nomes de clientes: só para quem tem a função Clientes (o Personalizado pode não ter)
+      const veClientes = pode(quem, 'clientes');
       return {
         hoje: painel.hoje,
-        fiado: pode(quem.papel, 'clientes.fiado') ? fiadoAVencer(recebiveisDaLoja(), clientes, contatosDaLoja(), painel.hoje) : null,
-        cashback: painel.cashback,
-        promocao: pct > 0 ? painel.retorno.filter((x) => !x.bloqueio).map((x) => ({ ...x, percentual: pct })) : [],
+        fiado: pode(quem, 'clientes.fiado') ? fiadoAVencer(recebiveisDaLoja(), clientes, contatosDaLoja(), painel.hoje) : null,
+        cashback: veClientes ? painel.cashback : [],
+        promocao: veClientes && pct > 0 ? painel.retorno.filter((x) => !x.bloqueio).map((x) => ({ ...x, percentual: pct })) : [],
       };
     },
 
@@ -2173,7 +2175,7 @@ export function criarApiLocal({
       const quem = exigirOperador();
       if (!(TIPOS_CONTATO as readonly string[]).includes(tipo)) throw new ErroApi(400, 'Escolha o tipo de lembrete.');
       // o lembrete de pagamento é sobre o fiado: só quem vê o fiado de todos (DaniPets: aba Fiado)
-      if (tipo === 'cobranca' && !pode(quem.papel, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
+      if (tipo === 'cobranca' && !pode(quem, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
       const c = exigirClienteDaFidelidade(clienteId);
       const hoje = hojeNaLoja();
       const r = regras();
@@ -2204,7 +2206,7 @@ export function criarApiLocal({
         const tipo = dados?.tipo as TipoContato;
         const canal = dados?.canal as CanalContato;
         if (!(TIPOS_CONTATO as readonly string[]).includes(tipo) || (canal !== 'whatsapp' && canal !== 'outro')) throw new ErroApi(400, 'Lembrete inválido.');
-        if (tipo === 'cobranca' && !pode(quem.papel, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
+        if (tipo === 'cobranca' && !pode(quem, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
         const c = exigirClienteDaFidelidade(clienteId);
         // pelo WhatsApp, só para quem tem WhatsApp e autorizou (o lembrete de pagamento só pede o WhatsApp). O "não
         // incomodar" não bloqueia aqui: só tira o cliente das listas de lembrete (decisão do Luan, 23/11/2026)
@@ -2405,7 +2407,7 @@ export function criarApiLocal({
         const pedido = taxas && typeof taxas === 'object' && !('baixaAutomatica' in taxas) ? { ...taxas, baixaAutomatica: baixaAutomaticaDoCartao(atuais) } : taxas;
         const validacao = validarTaxasCartao(pedido);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
-        if (validacao.valor.baixaAutomatica !== baixaAutomaticaDoCartao(atuais) && !pode(quem.papel, 'financeiro.baixa_cartao')) {
+        if (validacao.valor.baixaAutomatica !== baixaAutomaticaDoCartao(atuais) && !pode(quem, 'financeiro.baixa_cartao')) {
           throw new ErroApi(403, mensagemSemPermissao('financeiro.baixa_cartao'));
         }
         gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
@@ -2438,7 +2440,7 @@ export function criarApiLocal({
         movimentos: [...movimentos].sort((a, b) => a.criadoEm.localeCompare(b.criadoEm)),
         historico: [...caixas].sort((a, b) => b.dia.localeCompare(a.dia)),
         // o saldo das contas é do Financeiro (Dono e Administrador)
-        saldoCaixaFisicoCentavos: pode(quem.papel, 'financeiro') ? saldosDasContas(lancamentos).porConta.caixa : null,
+        saldoCaixaFisicoCentavos: pode(quem, 'financeiro') ? saldosDasContas(lancamentos).porConta.caixa : null,
         toleranciaCentavos: regras().caixa.toleranciaCentavos,
         ultimoDiaFechado: s.ultimoDiaFechado,
       };
@@ -2457,11 +2459,11 @@ export function criarApiLocal({
         responsavel: s.caixa?.abertura.por.nome ?? null,
         atrasado: s.atrasado?.dia ?? null,
         // a pendência "Deseja verificar?" é de quem confere o caixa (Dono e Administrador)
-        aVerificar: pode(quem.papel, 'caixa.desfazer')
+        aVerificar: pode(quem, 'caixa.desfazer')
           ? fechamentosAVerificar(caixasDaLoja()).map((c) => ({ caixaId: c.id, dia: c.dia, esperadoCentavos: c.fechamento!.esperadoCentavos }))
           : null,
         // pendência 3: falta ou sobra acima da tolerância, só para o Dono
-        diferencasAConferir: pode(quem.papel, 'caixa.ciencia')
+        diferencasAConferir: pode(quem, 'caixa.ciencia')
           ? diferencasAConferir(caixasDaLoja(), regras().caixa.toleranciaCentavos).map((c) => {
               const f = c.fechamento!;
               return {
@@ -2503,7 +2505,7 @@ export function criarApiLocal({
         // retirada do dono: o Vendedor precisa da senha do Dono ou do Administrador (DaniPets V9.3.3)
         let autorizadoPor: Operador | null = null;
         let usada: string | null = null;
-        if (op.tipo === 'retirada' && !pode(quem.papel, 'caixa.retirada')) {
+        if (op.tipo === 'retirada' && !pode(quem, 'caixa.retirada')) {
           const a = op.autorizacao ? (autorizacoesDaLoja().get(op.autorizacao) ?? null) : null;
           if (!autorizacaoServe(a, 'caixa.retirada', (x) => x.tipo === 'retirada' && x.valorCentavos === op.valorCentavos, agora())) {
             throw new ErroApi(403, 'Retirada do dono: precisa da senha do Dono ou do Administrador.', [], 'precisa_autorizacao');
@@ -2537,14 +2539,14 @@ export function criarApiLocal({
           lancamentos,
           fuso,
           toleranciaCentavos: tolerancia,
-          podeQualquerDiferenca: pode(quem.papel, 'caixa.diferenca'),
+          podeQualquerDiferenca: pode(quem, 'caixa.diferenca'),
         });
         if (!c.ok) throw new ErroApi(c.erros[0]?.campo === 'justificativa' ? 400 : 409, c.erros[0]!.mensagem, c.erros);
         // diferença acima da tolerância: o Vendedor precisa da senha do Dono ou do Administrador (DaniPets CX-04)
         let autorizadoPor: Operador | null = null;
         let usada: string | null = null;
         // a diferença acima da tolerância fica para o Dono dar ciência, a não ser que ele mesmo tenha fechado ou autorizado
-        let donoCiente: Operador | null = pode(quem.papel, 'caixa.ciencia') ? pessoa(quem) : null;
+        let donoCiente: Operador | null = pode(quem, 'caixa.ciencia') ? pessoa(quem) : null;
         if (c.valor.precisaAutorizacao) {
           const a = pedido.autorizacao ? (autorizacoesDaLoja().get(pedido.autorizacao) ?? null) : null;
           const serve = autorizacaoServe(a, 'caixa.diferenca', (x) => x.tipo === 'fechamento' && x.dia === pedido.dia && x.contadoCentavos === pedido.contadoCentavos, agora());
@@ -2553,7 +2555,7 @@ export function criarApiLocal({
           }
           autorizadoPor = { id: a.autorizador.id, nome: a.autorizador.nome };
           usada = a.id;
-          if (pode(a.autorizador.papel, 'caixa.ciencia')) donoCiente = autorizadoPor;
+          if (pode(a.autorizador, 'caixa.ciencia')) donoCiente = autorizadoPor;
         }
         const r = fecharCaixa(c.valor, { em: agora().toISOString(), por: pessoa(quem), autorizadoPor, vendas: vendasDaLoja(), lancamentos, fuso, toleranciaCentavos: tolerancia, donoCiente });
         gravarCaixas(caixas.map((x) => (x.id === r.caixa.id ? r.caixa : x)));

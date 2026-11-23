@@ -31,7 +31,7 @@ function relogio() {
 
 const entrar = (usuario: string, senha: string, agora = () => AGORA) => entrarDemo('lojaa', usuario, senha, { agora, atrasoMs: 0 });
 // abre o caixa do dia sozinha antes de vender (o próprio caixa tem os testes dele)
-const api = (operadorId: string, papel: 'dono' | 'administrador' | 'vendedor', agora = () => AGORA) =>
+const api = (operadorId: string, papel: 'dono' | 'administrador' | 'vendedor' | 'super_admin', agora = () => AGORA) =>
   comCaixaAberto(criarApiLocal({ lojaId: 'loja-a', operador: { id: operadorId, nome: operadorId, papel }, exemplos: false, atrasoMs: 0, agora }));
 
 describe('senha da demonstração', () => {
@@ -108,7 +108,9 @@ describe('tela Usuários na demonstração (as regras do servidor)', () => {
   it('quem pode o quê: Vendedor não vê; Administrador não mexe em Dono; ninguém se desativa', async () => {
     expect((await erro(api('bruno', 'vendedor').listarUsuarios())).message).toBe(mensagemSemPermissao('usuarios'));
     const caio = api('caio', 'administrador');
-    expect((await erro(caio.criarUsuario({ nome: 'Outro Dono', usuario: 'outro', papel: 'dono', senha: 'senha-inicial-88' }))).message).toBe('Só um Dono cadastra outro Dono.');
+    expect((await erro(caio.criarUsuario({ nome: 'Outro Dono', usuario: 'outro', papel: 'dono', senha: 'senha-inicial-88' }))).message).toBe(
+      'O Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.',
+    );
     expect((await erro(caio.alterarUsuario('ana', { nome: 'Ana Maria' }))).status).toBe(403);
     expect((await erro(caio.alterarUsuario('caio', { ativo: false }))).message).toBe('Você não pode desativar o seu próprio usuário.');
     expect((await erro(caio.criarUsuario({ nome: 'Bruno Dois', usuario: 'bruno', papel: 'vendedor', senha: 'senha-inicial-88' }))).status).toBe(409);
@@ -176,5 +178,55 @@ describe('excluir os dados de um cliente (LGPD) na demonstração', () => {
     expect(tudo).not.toContain('Maria Souza');
     expect(tudo).not.toContain('52998224725');
     expect((await ana.listarVendas({ de: '2026-11-18', ate: '2026-11-18' })).every((v) => v.cliente?.nome === NOME_CLIENTE_REMOVIDO)).toBe(true);
+  });
+});
+
+describe('Adm. Sup e Personalizado (pedido do Luan, 23/11/2026)', () => {
+  it('o Adm. Sup entra em qualquer loja com "suporte", não aparece na lista e, no histórico, aparece como "Suporte"', async () => {
+    const r = await entrar('suporte', SENHA_DEMO);
+    expect(r).toMatchObject({ ok: true, usuario: { usuario: 'suporte', nome: 'Suporte', papel: 'super_admin' } });
+    const naLojaB = await entrarDemo('lojab', 'suporte', SENHA_DEMO, { agora: () => AGORA, atrasoMs: 0 });
+    expect(naLojaB.ok).toBe(true);
+    const sup = api('adm-sup', 'super_admin');
+    // cadastra o Dono (implantação) e o Administrador
+    await sup.criarUsuario({ nome: 'Dora', usuario: 'dora', papel: 'dono', senha: 'senha-inicial-88' });
+    await sup.criarUsuario({ nome: 'Abel', usuario: 'abel', papel: 'administrador', senha: 'senha-inicial-88' });
+    const lista = await api('ana', 'dono').listarUsuarios();
+    expect(lista.map((u) => u.usuario)).not.toContain('suporte');
+    expect(lista.map((u) => u.usuario)).toEqual(expect.arrayContaining(['dora', 'abel']));
+    const hist = await api('ana', 'dono').listarAuditoria(10);
+    expect(hist.filter((h) => h.acao === 'usuario.criado').map((h) => [h.quem, h.resumo])).toEqual([
+      ['Suporte', 'Administrador'],
+      ['Suporte', 'Dono'],
+    ]);
+    expect(hist.find((h) => h.acao === 'sessao.entrou')?.quem).toBe('Suporte');
+    // ninguém da loja usa o login "suporte" nem mexe no Adm. Sup
+    expect((await erro(api('ana', 'dono').criarUsuario({ nome: 'Falso', usuario: 'suporte', papel: 'vendedor', senha: 'senha-inicial-88' }))).status).toBe(409);
+    expect((await erro(api('ana', 'dono').alterarUsuario('adm-sup', { ativo: false }))).status).toBe(404);
+    // senha errada do suporte conta como as outras
+    expect(await entrar('suporte', 'errada')).toEqual({ ok: false, mensagem: MENSAGEM_CREDENCIAIS });
+  });
+
+  it('as vendas do Adm. Sup ficam no nome "Suporte"', async () => {
+    const sup = api('adm-sup', 'super_admin');
+    await entrar('suporte', SENHA_DEMO); // cria o cadastro do suporte
+    const p = await sup.criarProduto({ nome: 'Petisco', codigoBarras: null, precoCentavos: 500 });
+    await sup.lancarMovimentoEstoque({ produtoId: p.id, tipo: 'entrada', quantidade: 3, motivo: '' });
+    const v = await sup.criarVenda({ itens: [{ produtoId: p.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 500 }] });
+    expect(v.vendedor).toEqual({ id: 'adm-sup', nome: 'Suporte' });
+  });
+
+  it('Personalizado: o Dono marca as funções; o Personalizado não gerencia usuários', async () => {
+    const ana = api('ana', 'dono');
+    const gil = await ana.criarUsuario({ nome: 'Gil', usuario: 'gil', papel: 'personalizado', senha: 'senha-inicial-88', permissoes: ['vender', 'relatorios'] });
+    expect(gil).toMatchObject({ papel: 'personalizado', permissoes: ['vender', 'relatorios'] });
+    expect((await erro(ana.criarUsuario({ nome: 'Lia', usuario: 'lia', papel: 'personalizado', senha: 'senha-inicial-88' }))).status).toBe(400);
+    const hist = await ana.listarAuditoria(3);
+    expect(hist.find((h) => h.acao === 'usuario.criado')?.resumo).toBe('Personalizado • 2 funções');
+    await ana.alterarUsuario(gil.id, { permissoes: ['vender', 'relatorios', 'compras'] });
+    expect((await ana.listarAuditoria(3)).find((h) => h.acao === 'usuario.alterado')?.resumo).toBe('funções do Personalizado: 3');
+    // voltou a Vendedor: perde a lista
+    const vend = await ana.alterarUsuario(gil.id, { papel: 'vendedor' });
+    expect(vend.permissoes ?? null).toBeNull();
   });
 });

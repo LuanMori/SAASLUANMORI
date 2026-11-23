@@ -4,7 +4,7 @@
 // WhatsApp e no regulamento (DaniPets ESP-01 e 05: lá eram fixos no código) — e as regras que não têm aba
 // própria (o desconto que o Vendedor dá sem senha; no DaniPets, fixo em 10%). As outras regras ficam nas
 // abas onde são usadas, como no DaniPets. Exportar e importar os dados da loja entram no módulo 13.
-import { type DadosDaLoja, LIMITES_LOJA, LIMITES_REGRAS, type PapelDeLoja, pode, type RegrasDaLoja } from '@saas/core';
+import { type DadosDaLoja, LIMITES_LOJA, LIMITES_REGRAS, pode, type RegrasDaLoja, type QuemAcessa } from '@saas/core';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { type ApiLoja, ErroApi } from '../api';
 import { iniciais } from './BarraLateral';
@@ -12,7 +12,7 @@ import { usarCarga } from './usarCarga';
 
 interface Props {
   api: ApiLoja;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   /** Os dados ou as regras mudaram: a área logada recarrega (barra lateral, Frente de caixa). */
   aoMudar?: () => void;
 }

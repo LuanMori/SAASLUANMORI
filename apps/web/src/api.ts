@@ -53,6 +53,7 @@ import type {
   NovoUsuario,
   AlteracaoUsuario,
   PapelDeLoja,
+  PapelNaLoja,
   PedidoCancelamento,
   PedidoDevolucao,
   Recebivel,
@@ -692,7 +693,10 @@ export interface UsuarioDaLoja {
   nome: string;
   /** Login, minúsculo. */
   usuario: string;
-  papel: PapelDeLoja;
+  /** Na lista da loja, só os papéis da loja; o Adm. Sup aparece só na própria sessão. */
+  papel: PapelNaLoja;
+  /** Só no Personalizado: as funções escolhidas para ele. */
+  permissoes?: string[] | null;
   ativo: boolean;
   /** Senha criada ou redefinida pelo Dono: no próximo acesso a pessoa cria a dela. */
   senhaProvisoria: boolean;
@@ -742,7 +746,7 @@ export type ApiSistema = ApiPainel & ApiUsuarios & ApiConta;
 
 /** Quem está logado (GET /sessao e resposta do login). */
 export interface SessaoAtual {
-  usuario: { id: string; nome: string; usuario: string; papel: PapelDeLoja };
+  usuario: { id: string; nome: string; usuario: string; papel: PapelNaLoja; permissoes?: string[] | null };
   loja: { nome: string; subdominio: string };
   senhaProvisoria: boolean;
   /** Minutos sem uso até a sessão cair (a tela sai sozinha). */

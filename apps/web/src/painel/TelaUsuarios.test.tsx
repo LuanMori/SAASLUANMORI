@@ -16,10 +16,10 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const AGORA = () => new Date('2026-11-18T15:00:00Z');
-const api = (id: string, papel: 'dono' | 'administrador' | 'vendedor') =>
+const api = (id: string, papel: 'dono' | 'administrador' | 'vendedor' | 'super_admin') =>
   criarApiLocal({ lojaId: 'loja-a', operador: { id, nome: id, papel }, exemplos: false, atrasoMs: 0, agora: AGORA });
 
-function montar(id = 'ana', papel: 'dono' | 'administrador' | 'vendedor' = 'dono') {
+function montar(id = 'ana', papel: 'dono' | 'administrador' | 'vendedor' | 'super_admin' = 'dono') {
   render(<TelaUsuarios api={api(id, papel)} eu={{ id, papel }} fuso="America/Sao_Paulo" agora={AGORA} />);
 }
 
@@ -75,7 +75,8 @@ describe('TelaUsuarios', () => {
     expect(within(ana).queryByRole('button')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
     const papeis = within(screen.getByRole('dialog', { name: 'Novo usuário' })).getAllByRole('option').map((o) => o.textContent);
-    expect(papeis).toEqual(['Administrador', 'Vendedor']);
+    expect(papeis).toEqual(['Vendedor', 'Personalizado']); // Dono e Administrador, só o Adm. Sup
+    expect(within(screen.getByRole('dialog', { name: 'Novo usuário' })).getByText(/são cadastrados pelo suporte \(Adm\. Sup\)/)).toBeTruthy();
   });
 
   it('desativa (com aviso), cria nova senha provisória e exclui os dados do desativado', async () => {
@@ -151,5 +152,38 @@ describe('na barra lateral', () => {
     await userEvent.click(within(janela).getByRole('button', { name: 'Trocar a senha' }));
     expect(await screen.findByText(/Senha trocada/)).toBeTruthy();
     expect((await entrarDemo('lojaa', 'ana', 'uma-frase-facil-de-lembrar', { atrasoMs: 0 })).ok).toBe(true);
+  });
+});
+
+describe('TelaUsuarios: Personalizado e Adm. Sup (pedido do Luan, 23/11/2026)', () => {
+  it('o Dono cadastra um Personalizado marcando as funções; a lista mostra quantas', async () => {
+    montar();
+    await linha('Ana');
+    await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
+    const janela = screen.getByRole('dialog', { name: 'Novo usuário' });
+    expect(within(janela).getAllByRole('option').map((o) => o.textContent)).toEqual(['Vendedor', 'Personalizado']);
+    await userEvent.type(within(janela).getByLabelText('Nome'), 'Gil Souza');
+    await userEvent.type(within(janela).getByLabelText('Usuário (login)'), 'gil');
+    await userEvent.selectOptions(within(janela).getByLabelText('Papel'), 'personalizado');
+    const funcoes = within(janela).getByRole('group', { name: 'Funções do Personalizado' });
+    expect(within(funcoes).queryByLabelText(/Cadastrar, alterar e desativar usuários/)).toBeNull(); // não se dá
+    expect(within(funcoes).queryByLabelText(/Dar brinde/)).toBeNull(); // só do Dono
+    await userEvent.click(within(janela).getByRole('button', { name: 'Cadastrar' }));
+    expect(within(janela).getByText('Marque pelo menos uma função para o Personalizado.')).toBeTruthy();
+    await userEvent.click(within(funcoes).getByLabelText('Vender na Frente de caixa'));
+    await userEvent.click(within(funcoes).getByLabelText('Relatórios e vendas de outros dias'));
+    await userEvent.click(within(janela).getByRole('button', { name: 'Cadastrar' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pronto' }));
+    const gil = await linha('Gil Souza');
+    expect(within(gil).getByRole('cell', { name: /^Personalizado/ }).textContent).toBe('Personalizado · 2 funções');
+  });
+
+  it('o Adm. Sup vê as opções Dono e Administrador', async () => {
+    await entrarDemo('lojaa', 'suporte', 'demo1234', { agora: AGORA, atrasoMs: 0 });
+    montar('adm-sup', 'super_admin');
+    await linha('Ana');
+    await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
+    const papeis = within(screen.getByRole('dialog', { name: 'Novo usuário' })).getAllByRole('option').map((o) => o.textContent);
+    expect(papeis).toEqual(['Dono', 'Administrador', 'Vendedor', 'Personalizado']);
   });
 });

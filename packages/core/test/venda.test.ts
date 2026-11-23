@@ -644,8 +644,8 @@ describe('devoluções com a venda de origem', () => {
 
 describe('papéis e texto', () => {
   it('Dono e Administrador são gestores; nomes como a tela mostra', () => {
-    expect([ehGestor('dono'), ehGestor('administrador'), ehGestor('vendedor')]).toEqual([true, true, false]);
-    expect(NOME_PAPEL).toEqual({ dono: 'Dono', administrador: 'Administrador', vendedor: 'Vendedor' });
+    expect([ehGestor('dono'), ehGestor('administrador'), ehGestor('vendedor'), ehGestor('personalizado'), ehGestor('super_admin')]).toEqual([true, true, false, false, true]);
+    expect(NOME_PAPEL).toEqual({ dono: 'Dono', administrador: 'Administrador', vendedor: 'Vendedor', personalizado: 'Personalizado' });
   });
   it('semAcento: para buscar "racao" e achar "Ração"', () => {
     expect(semAcento('  Ração Prêmium ÇÃES ')).toBe('racao premium caes');

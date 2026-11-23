@@ -52,7 +52,7 @@ export class GuardaAutenticacao implements CanActivate {
       throw new ForbiddenException({ mensagem: 'Crie a sua senha antes de continuar.', codigo: 'senha_provisoria' });
     }
     const permissao = this.reflector.getAllAndOverride<Permissao | undefined>(PERMISSAO, alvos);
-    if (permissao && !pode(contexto.papel, permissao)) {
+    if (permissao && !pode(contexto, permissao)) {
       throw new ForbiddenException({ mensagem: mensagemSemPermissao(permissao), codigo: 'sem_permissao' });
     }
     return true;

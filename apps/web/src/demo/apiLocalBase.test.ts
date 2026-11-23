@@ -190,8 +190,12 @@ describe('quem está logado, como está agora (outra aba pode ter mudado)', () =
     const { ana, bruno } = await loja();
     await autorizadoresDemo('loja-a');
     expect((await erro(bruno.resumoFinanceiro())).status).toBe(403);
-    await ana.alterarUsuario('bruno', { papel: 'administrador' });
+    // virou Personalizado com o Financeiro: vale na hora
+    await ana.alterarUsuario('bruno', { papel: 'personalizado', permissoes: ['vender', 'financeiro'] });
     await expect(bruno.resumoFinanceiro()).resolves.toMatchObject({ totalCentavos: 0 });
+    // tirou a função: perde na hora
+    await ana.alterarUsuario('bruno', { permissoes: ['vender'] });
+    expect((await erro(bruno.resumoFinanceiro())).status).toBe(403);
   });
 });
 

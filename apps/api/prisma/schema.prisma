@@ -23,6 +23,8 @@ enum Papel {
   dono
   administrador
   vendedor
+  /// Só as funções marcadas para a pessoa (coluna permissoes). Pedido do Luan, 23/11/2026.
+  personalizado
 
   @@map("papel")
 }
@@ -49,7 +51,8 @@ model Loja {
 /// Pessoa que opera o sistema dentro de UMA loja. Só entra quem o Dono ou o Administrador
 /// cadastrou (tela Usuários; o primeiro Dono, pelo script db:usuario). Login próprio: usuário + senha.
 /// A mesma pessoa em duas lojas = duas linhas (uma por loja), com senhas independentes.
-/// super_admin: loja_id NULL (garantido por CHECK no banco).
+/// super_admin: loja_id NULL (garantido por CHECK no banco). É o Adm. Sup, o usuário mestre: entra em qualquer
+/// loja; a API não enxerga a linha dele (RLS) e usa as funções app_suporte_* (migration 20261123210000).
 /// A trava usuarios_trava_api (trigger) impede, no próprio banco, que a API promova alguém a Dono
 /// sem ser Dono, desative a si mesma ou deixe a loja sem Dono ativo.
 model Usuario {
@@ -59,6 +62,8 @@ model Usuario {
   usuario           String    @db.VarChar(40)
   nome              String    @db.VarChar(120)
   papel             Papel     @default(vendedor)
+  /// Só no Personalizado: as funções escolhidas (chaves de PERMISSOES_CONCEDIVEIS, @saas/core). CHECK no banco.
+  permissoes        String[]  @default([])
   ativo             Boolean   @default(true)
   /// scrypt (apps/api/src/auth/senhas.ts). null = ainda sem senha (não entra).
   senhaHash         String?   @map("senha_hash") @db.VarChar(255)

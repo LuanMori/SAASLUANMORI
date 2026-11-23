@@ -4,15 +4,7 @@
 //   - o Vendedor dá até 10% sozinho; acima disso, o Dono ou o Administrador autoriza com a senha;
 //   - brinde só com a autorização de um Dono (quem está operando sendo Dono, não precisa).
 // A autorização vale só para este produto e este preço, uma vez, e o servidor confere de novo.
-import {
-  classificarDesconto,
-  formatarCentavos,
-  LIMITE_DESCONTO_VENDEDOR_PCT,
-  NOME_PAPEL,
-  type PapelDeLoja,
-  quemAutorizaDesconto,
-  reaisParaCentavos,
-} from '@saas/core';
+import { classificarDesconto, formatarCentavos, LIMITE_DESCONTO_VENDEDOR_PCT, NOME_PAPEL, quemAutorizaDesconto, reaisParaCentavos, type PapelNaLoja } from '@saas/core';
 import { type FormEvent, useEffect, useState } from 'react';
 import { type Autorizador, ErroApi, type Produto } from '../../api';
 import { centavosParaTexto, type DescontoNaLinha } from './carrinho';
@@ -21,7 +13,7 @@ import { Modal } from './Modal';
 interface Props {
   produto: Produto;
   atual: DescontoNaLinha | null;
-  operador: { nome: string; papel: PapelDeLoja };
+  operador: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
   carregarAutorizadores: () => Promise<Autorizador[]>;
   autorizar: (usuarioId: string, senha: string, precoFinalCentavos: number) => Promise<{ autorizacao: string; autorizador: Autorizador }>;
   aoAplicar: (desconto: DescontoNaLinha) => void;
@@ -43,7 +35,7 @@ export function ModalDesconto({ produto, atual, operador, carregarAutorizadores,
 
   const centavos = reaisParaCentavos(precoTexto);
   const { tipo, pct } = centavos === null ? { tipo: 'invalido' as const, pct: 0 } : classificarDesconto(produto.precoCentavos, centavos, limitePct);
-  const quem = quemAutorizaDesconto(tipo, operador.papel);
+  const quem = quemAutorizaDesconto(tipo, operador);
   const opcoes = (autorizadores ?? []).filter((a) => (quem === 'dono' ? a.papel === 'dono' : true));
 
   useEffect(() => {

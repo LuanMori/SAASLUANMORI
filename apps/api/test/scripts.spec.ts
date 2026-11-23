@@ -1,6 +1,7 @@
 // apps/api/test/scripts.spec.ts
 // Scripts de instalação: lojas pelo endereço (db:seed) e o primeiro Dono de cada loja (db:usuario).
 import type pg from 'pg';
+import { cadastrarSuporte } from '../scripts/cadastrar-suporte.js';
 import { cadastrarUsuario, sortearSenhaProvisoria } from '../scripts/cadastrar-usuario.js';
 import { lerSeedLojas, semearLojas } from '../scripts/seed-dev.js';
 import { conferirSenha } from '../src/auth/senhas.js';
@@ -69,6 +70,18 @@ describe('scripts/cadastrar-usuario', () => {
     await cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'ana', nome: 'Ana', papel: 'dono', acao: 'cadastrar' });
     expect((await cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'ana', acao: 'desativar' })).resumo).toBe('ana desativado na loja Loja A.');
     expect((await usuario('ana')).ativo).toBe(false);
+  });
+
+  it('o login do suporte não vale na loja; Personalizado só pela tela; saindo do Personalizado, as funções saem', async () => {
+    await cadastrarSuporte(URL, { usuario: 'suporte', acao: 'cadastrar' });
+    await expect(cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'suporte', nome: 'Falso Suporte', papel: 'dono', acao: 'cadastrar' })).rejects.toThrow(/é do suporte/);
+    await expect(cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'bia', nome: 'Bia', papel: 'personalizado', acao: 'cadastrar' })).rejects.toThrow(/aba Usuários/);
+    await cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'bia', nome: 'Bia', papel: 'vendedor', acao: 'cadastrar' });
+    await admin.query(`UPDATE usuarios SET papel = 'personalizado', permissoes = '{vender,caixa}' WHERE usuario = 'bia'`);
+    await cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'bia', nome: 'Bia', acao: 'cadastrar' }); // sem --papel: continua Personalizado
+    expect((await admin.query(`SELECT papel, permissoes FROM usuarios WHERE usuario = 'bia'`)).rows[0]).toEqual({ papel: 'personalizado', permissoes: ['vender', 'caixa'] });
+    await cadastrarUsuario(URL, { loja: 'lojaa', usuario: 'bia', papel: 'vendedor', acao: 'cadastrar' });
+    expect((await admin.query(`SELECT papel, permissoes FROM usuarios WHERE usuario = 'bia'`)).rows[0]).toEqual({ papel: 'vendedor', permissoes: [] });
   });
 
   it('recusa loja desconhecida, papel inválido, login inválido e cadastro sem nome', async () => {

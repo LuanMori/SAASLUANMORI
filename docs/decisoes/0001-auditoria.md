@@ -73,6 +73,11 @@ fez: nos detalhes fica só o id da conta (`caixa` ou `banco`). Trocar o nome ent
 Módulo 10 (Relatórios, 23/11/2026): relatório exportado para Excel (o assunto — Vendas, Clientes, Tudo… —, o período e
 quantas abas). O conteúdo da planilha não vai para o histórico.
 
+Usuários (23/11/2026, pedido do Luan — [`0006`](0006-adm-sup-e-personalizado.md)): o que o **suporte (Adm. Sup)** faz
+numa loja fica no histórico daquela loja como feito por **"Suporte"** (o id dele fica guardado; o nome é buscado na hora
+pela função `app_suporte_por_id`). "Usuário criado" do Personalizado diz quantas funções ele recebeu; "usuário alterado",
+quando as funções mudam, diz quantas ficaram (os nomes das funções ficam nos detalhes, não no resumo).
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,

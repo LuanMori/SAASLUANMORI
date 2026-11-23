@@ -2,7 +2,7 @@
 // Contexto da requisição, montado SÓ pela guarda a partir da sessão conferida no banco. Controllers e
 // services leem a loja e a pessoa daqui — nunca do corpo, da URL ou de cabeçalho escolhido pela tela.
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
-import type { PapelDeLoja } from '@saas/core';
+import type { PapelNaLoja } from '@saas/core';
 import type { Request } from 'express';
 
 export interface ContextoRequisicao {
@@ -10,7 +10,10 @@ export interface ContextoRequisicao {
   lojaNome: string;
   lojaSubdominio: string;
   usuarioId: string;
-  papel: PapelDeLoja;
+  /** super_admin = o Adm. Sup (usuário mestre), que entra em qualquer loja. */
+  papel: PapelNaLoja;
+  /** Só no Personalizado: as funções escolhidas para ele. */
+  permissoes: string[];
   nome: string;
   /** Login. */
   usuario: string;

@@ -22,11 +22,11 @@ const GRUPOS_V933 = {
   Sistema: ['Usuários', 'Dados e backup', 'Suporte'],
 };
 
-function montar(papel: PapelDeLoja = 'dono', aoSair = vi.fn()) {
+function montar(papel: PapelDeLoja = 'dono', aoSair = vi.fn(), permissoes: string[] | null = null) {
   render(
     <TelaPainel
       loja={{ nome: 'Loja A', descricao: 'Rações, petiscos e acessórios' }}
-      pessoa={{ nome: 'Ana', papel }}
+      pessoa={{ nome: 'Ana', papel, permissoes }}
       aoSair={aoSair}
       api={criarApiLocal({ lojaId: 'loja-teste', operador: { id: 'ana', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 })}
       agora={() => new Date('2026-11-12T12:00:00Z')}
@@ -62,6 +62,23 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
 
   it('Vendedor não vê Compras, Financeiro, Relatórios, Usuários nem Dados e backup (e o grupo Gestão some)', () => {
     expect(montar('vendedor').grupos()).toEqual({
+      Operação: ['Visão geral', 'Caixa do dia'],
+      Cadastros: ['Produtos e estoque', 'Clientes'],
+      Sistema: ['Suporte'],
+    });
+    expect(screen.getByRole('button', { name: 'Frente de caixa' })).toBeTruthy();
+  });
+
+  it('Personalizado vê só as funções marcadas: sem "Vender", nem a Frente de caixa; sem "Clientes", nem Clientes', () => {
+    expect(montar('personalizado', vi.fn(), ['relatorios', 'produtos.alterar']).grupos()).toEqual({
+      Operação: ['Visão geral'],
+      Cadastros: ['Produtos e estoque'],
+      Gestão: ['Relatórios'],
+      Sistema: ['Suporte'],
+    });
+    expect(screen.queryByRole('button', { name: 'Frente de caixa' })).toBeNull();
+    cleanup();
+    expect(montar('personalizado', vi.fn(), ['vender', 'clientes', 'caixa']).grupos()).toEqual({
       Operação: ['Visão geral', 'Caixa do dia'],
       Cadastros: ['Produtos e estoque', 'Clientes'],
       Sistema: ['Suporte'],

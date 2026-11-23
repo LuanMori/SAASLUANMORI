@@ -53,6 +53,7 @@ describe('Tela Usuários (API)', () => {
       nome: 'Joana Lima',
       usuario: 'joana',
       papel: 'vendedor',
+      permissoes: [],
       ativo: true,
       senhaProvisoria: true,
       bloqueadoAte: null,
@@ -74,12 +75,17 @@ describe('Tela Usuários (API)', () => {
 
   it('o Administrador não cadastra Dono nem mexe em Dono', async () => {
     const novo = { nome: 'Outro Dono', usuario: 'outro', papel: 'dono', senha: 'senha-inicial-88' };
-    expect((await http().post('/usuarios').set('Cookie', cookie.gerente!).send(novo).expect(403)).body.mensagem).toBe('Só um Dono cadastra outro Dono.');
+    expect((await http().post('/usuarios').set('Cookie', cookie.gerente!).send(novo).expect(403)).body.mensagem).toBe('O Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.');
     await http().patch(`/usuarios/${id.dona}`).set('Cookie', cookie.gerente!).send({ nome: 'Maria' }).expect(403);
     await http().post(`/usuarios/${id.dona}/senha`).set('Cookie', cookie.gerente!).send({ senha: 'nova-senha-123' }).expect(403);
     await http().patch(`/usuarios/${id.caixa}`).set('Cookie', cookie.gerente!).send({ papel: 'dono' }).expect(403);
-    // mas cadastra vendedor e administrador
-    await http().post('/usuarios').set('Cookie', cookie.gerente!).send({ ...novo, papel: 'administrador' }).expect(201);
+    // Administrador, só o suporte; Vendedor e Personalizado (com as funções), sim
+    expect((await http().post('/usuarios').set('Cookie', cookie.gerente!).send({ ...novo, papel: 'administrador' }).expect(403)).body.mensagem).toBe('O Dono e o Administrador só são cadastrados pelo suporte (Adm. Sup), na implantação do sistema.');
+    await http().post('/usuarios').set('Cookie', cookie.gerente!).send({ ...novo, usuario: 'novo.vend', papel: 'vendedor' }).expect(201);
+    const p = await http().post('/usuarios').set('Cookie', cookie.dona!).send({ ...novo, usuario: 'gil', papel: 'personalizado', permissoes: ['vender', 'relatorios'] }).expect(201);
+    expect(p.body).toMatchObject({ papel: 'personalizado', permissoes: ['vender', 'relatorios'] });
+    // o Personalizado não recebe o que é só do Dono nem a gestão de usuários
+    await http().post('/usuarios').set('Cookie', cookie.dona!).send({ ...novo, usuario: 'lia', papel: 'personalizado', permissoes: ['usuarios'] }).expect(400);
   });
 
   it('login repetido -> 409; campo estranho e senha fraca -> 400', async () => {
@@ -104,8 +110,8 @@ describe('Tela Usuários (API)', () => {
     id.dono2 = await criarUsuario(admin, lojaA, { usuario: 'dono2', papel: 'dono' });
     cookie.dono2 = await entrar(app, 'lojaa', 'dono2');
     const [a, b] = await Promise.all([
-      http().patch(`/usuarios/${id.dono2}`).set('Cookie', cookie.dona!).send({ papel: 'administrador' }),
-      http().patch(`/usuarios/${id.dona}`).set('Cookie', cookie.dono2).send({ papel: 'administrador' }),
+      http().patch(`/usuarios/${id.dono2}`).set('Cookie', cookie.dona!).send({ papel: 'vendedor' }),
+      http().patch(`/usuarios/${id.dona}`).set('Cookie', cookie.dono2).send({ papel: 'vendedor' }),
     ]);
     expect([a.status, b.status].sort()).toEqual([200, 403]);
     const { rows } = await admin.query(`SELECT count(*)::int AS n FROM usuarios WHERE papel = 'dono' AND ativo`);
@@ -121,13 +127,19 @@ describe('Tela Usuários (API)', () => {
     expect((await acoes()).map((a) => a.acao)).toEqual(['usuario.desativado', 'usuario.reativado']);
   });
 
-  it('mudar o papel vale já no próximo pedido; o histórico guarda o papel, não o nome', async () => {
-    await http().get('/usuarios').set('Cookie', cookie.caixa!).expect(403);
-    await http().patch(`/usuarios/${id.caixa}`).set('Cookie', cookie.gerente!).send({ papel: 'administrador', nome: 'Bruno Silva' }).expect(200);
-    await http().get('/usuarios').set('Cookie', cookie.caixa!).expect(200);
-    const [alterou] = await acoes();
-    expect(alterou.detalhes).toEqual({ campos: ['nome', 'papel'], papelAntes: 'vendedor', papelDepois: 'administrador' });
+  it('mudar o papel e as funções vale já no próximo pedido; o histórico guarda o papel e as funções, não o nome', async () => {
+    const produto = { nome: 'Ração 1 kg', codigoBarras: null, precoCentavos: 1990 };
+    await http().patch(`/usuarios/${id.caixa}`).set('Cookie', cookie.gerente!).send({ papel: 'personalizado', permissoes: ['vender'], nome: 'Bruno Silva' }).expect(200);
+    await http().post('/produtos').set('Cookie', cookie.caixa!).send(produto).expect(403); // sem "cadastrar produto"
+    await http().patch(`/usuarios/${id.caixa}`).set('Cookie', cookie.gerente!).send({ permissoes: ['vender', 'produtos.cadastrar'] }).expect(200);
+    await http().post('/produtos').set('Cookie', cookie.caixa!).send(produto).expect(201);
+    const [alterou, funcoes] = await acoes();
+    expect(alterou.detalhes).toEqual({ campos: ['nome', 'papel', 'permissoes'], papelAntes: 'vendedor', papelDepois: 'personalizado', permissoes: ['vender'] });
+    expect(funcoes.detalhes).toEqual({ campos: ['permissoes'], permissoes: ['vender', 'produtos.cadastrar'] });
     expect(JSON.stringify(alterou)).not.toMatch(/Bruno/);
+    // voltou a Vendedor: as funções somem
+    const r = await http().patch(`/usuarios/${id.caixa}`).set('Cookie', cookie.gerente!).send({ papel: 'vendedor' }).expect(200);
+    expect(r.body.permissoes).toEqual([]);
   });
 
   it('sem mudança de verdade, não grava nada', async () => {
@@ -236,11 +248,28 @@ describe('Trava de usuários no banco (mesmo que a API seja contornada)', () => 
   });
 
   it('Administrador não cria Dono, não promove a Dono e não mexe em Dono', async () => {
-    await expect(comoApp(app, lojaA, (c) => inserir(c, 'dono'), id.gerente)).rejects.toThrow(/só um Dono/);
+    await expect(comoApp(app, lojaA, (c) => inserir(c, 'dono'), id.gerente)).rejects.toThrow(/só o suporte/);
     await expect(comoApp(app, lojaA, (c) => c.query(`UPDATE usuarios SET papel = 'dono' WHERE id = $1`, [id.caixa]), id.gerente)).rejects.toMatchObject(NEGADO);
     await expect(comoApp(app, lojaA, (c) => c.query(`UPDATE usuarios SET nome = 'X' WHERE id = $1`, [id.dona]), id.gerente)).rejects.toMatchObject(NEGADO);
     // vendedor ele cadastra
     await comoApp(app, lojaA, (c) => inserir(c), id.gerente);
+  });
+
+  it('Dono e Administrador só o suporte cadastra (nem o Dono, por fora da API); o Personalizado precisa de funções', async () => {
+    await expect(comoApp(app, lojaA, (c) => inserir(c, 'administrador'), id.dona)).rejects.toThrow(/só o suporte/);
+    await expect(comoApp(app, lojaA, (c) => inserir(c, 'dono'), id.dona)).rejects.toThrow(/só o suporte/);
+    await expect(comoApp(app, lojaA, (c) => c.query(`UPDATE usuarios SET papel = 'administrador' WHERE id = $1`, [id.caixa]), id.dona)).rejects.toThrow(/só o suporte/);
+    await expect(comoApp(app, lojaA, (c) => inserir(c, 'personalizado'), id.dona)).rejects.toThrow(/precisa de pelo menos uma função/);
+    // funções só no Personalizado (CHECK no banco)
+    await expect(
+      comoApp(app, lojaA, (c) => c.query(`UPDATE usuarios SET permissoes = ARRAY['vender'] WHERE id = $1`, [id.caixa]), id.dona),
+    ).rejects.toThrow(/usuarios_permissoes_so_personalizado/);
+    await comoApp(
+      app,
+      lojaA,
+      (c) => c.query(`INSERT INTO usuarios (id, loja_id, usuario, nome, papel, permissoes) VALUES (gen_random_uuid(), $1, 'gil', 'Gil', 'personalizado', ARRAY['vender'])`, [lojaA]),
+      id.dona,
+    );
   });
 
   it('ninguém se desativa nem muda o próprio papel', async () => {
@@ -257,7 +286,7 @@ describe('Trava de usuários no banco (mesmo que a API seja contornada)', () => 
         await c.query('BEGIN');
         await c.query(`SELECT set_config('app.loja_id', $1, true), set_config('app.usuario_id', $2, true)`, [lojaA, quem]);
       }
-      await c1.query(`UPDATE usuarios SET papel = 'administrador' WHERE id = $1`, [id.dono2]); // segura a trava
+      await c1.query(`UPDATE usuarios SET papel = 'vendedor' WHERE id = $1`, [id.dono2]); // segura a trava
       const segundo = c2.query(`UPDATE usuarios SET ativo = false WHERE id = $1`, [id.dona]); // espera a trava
       await new Promise((ok) => setTimeout(ok, 200));
       await c1.query('COMMIT');

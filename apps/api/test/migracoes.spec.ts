@@ -14,6 +14,7 @@ const URL = urlDoBanco(BANCO);
 const M1 = '20261111180000_fase_menos_1_esqueleto';
 const M2 = '20261111190000_cadastro_pelo_dono_e_codigos';
 const M3 = '20261118120000_login_proprio_sessoes_auditoria';
+const M4 = '20261123210000_adm_sup_e_personalizado';
 
 async function comCliente<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
   const c = new pg.Client({ connectionString: url });
@@ -76,14 +77,34 @@ describe('Migrations reversíveis', () => {
     const final = await estado();
     expect(final).toMatchObject({
       tabelas: ['auditoria', 'lojas', 'produtos', 'sessoes', 'usuarios'],
-      policies: ['auditoria:auditoria_isolamento_loja', 'produtos:produtos_isolamento_loja', 'sessoes:sessoes_isolamento_loja', 'usuarios:usuarios_isolamento_loja'],
+      policies: [
+        'auditoria:auditoria_isolamento_loja',
+        'produtos:produtos_isolamento_loja',
+        'sessoes:sessoes_isolamento_loja',
+        'usuarios:usuarios_isolamento_loja',
+        'usuarios:usuarios_suporte_dono_do_schema',
+      ],
       triggers: ['usuarios_trava_api'],
-      funcoes: ['app_loja_atual', 'usuarios_trava_api'],
-      migrations: [M1, M2, M3],
+      funcoes: ['app_loja_atual', 'app_suporte_para_login', 'app_suporte_por_id', 'app_suporte_registrar', 'usuarios_trava_api'],
+      migrations: [M1, M2, M3, M4],
     });
+    expect(final.colunas).toEqual(expect.arrayContaining(['usuarios.permissoes:ARRAY:NO']));
     expect(final.colunas).toEqual(expect.arrayContaining(['lojas.subdominio:character varying:NO', 'usuarios.usuario:character varying:NO', 'usuarios.senha_hash:character varying:YES']));
     expect(final.colunas.filter((c) => /auth0|email/.test(c))).toEqual([]);
     expect(final.rls).toEqual(['auditoria:true:true', 'lojas:false:false', 'produtos:true:true', 'sessoes:true:true', 'usuarios:true:true']);
+
+    // a 4 (Adm. Sup e Personalizado) vai e volta sem sobras: o papel some do enum e a trava volta a anterior
+    expect(await reverterUltimaMigration(URL)).toBe(M4);
+    const ateM3 = await estado();
+    expect(ateM3).toMatchObject({
+      policies: ['auditoria:auditoria_isolamento_loja', 'produtos:produtos_isolamento_loja', 'sessoes:sessoes_isolamento_loja', 'usuarios:usuarios_isolamento_loja'],
+      funcoes: ['app_loja_atual', 'usuarios_trava_api'],
+      migrations: [M1, M2, M3],
+    });
+    expect(ateM3.colunas.filter((c) => c.startsWith('usuarios.permissoes'))).toEqual([]);
+    aplicarMigrations(URL);
+    expect(await reverterUltimaMigration(URL)).toBe(M4);
+    expect(await estado()).toEqual(ateM3);
 
     expect(await reverterUltimaMigration(URL)).toBe(M3);
     const ateM2 = await estado();
@@ -102,8 +123,9 @@ describe('Migrations reversíveis', () => {
     expect(ateM2.colunas.filter((c) => /subdominio|senha|tentativas|bloqueado|acesso|usuarios\.usuario:/.test(c))).toEqual([]);
     expect(ateM2.indices).toEqual(expect.arrayContaining(['lojas_auth0_org_id_key', 'usuarios_loja_id_auth0_sub_key']));
 
-    // reaplicar só a 3 e reverter de novo dá exatamente o mesmo retrato (ida e volta sem sobras)
+    // reaplicar a 3 (e a 4) e reverter de novo dá exatamente o mesmo retrato (ida e volta sem sobras)
     aplicarMigrations(URL);
+    expect(await reverterUltimaMigration(URL)).toBe(M4);
     expect(await reverterUltimaMigration(URL)).toBe(M3);
     expect(await estado()).toEqual(ateM2);
 
@@ -122,6 +144,7 @@ describe('Migrations reversíveis', () => {
   });
 
   it('migration 2 dá código interno aos produtos que já existiam (por loja, na ordem de cadastro)', async () => {
+    await reverterUltimaMigration(URL); // 4
     await reverterUltimaMigration(URL); // 3
     await reverterUltimaMigration(URL); // 2 -> formato da Fase -1
     await comCliente(URL, async (c) => {
@@ -144,6 +167,7 @@ describe('Migrations reversíveis', () => {
   });
 
   it('migration 3 dá endereço às lojas e login às pessoas que vieram do Auth0 (sem senha: o Dono define)', async () => {
+    await reverterUltimaMigration(URL); // 4
     await reverterUltimaMigration(URL); // 3
     await comCliente(URL, async (c) => {
       await c.query(`INSERT INTO lojas (id, nome, auth0_org_id, criado_em) VALUES
@@ -190,6 +214,7 @@ describe('Migrations reversíveis', () => {
   });
 
   it('migration 2 para, sem apagar nada, se houver código com letra (último teste: deixa o banco com migration falha)', async () => {
+    await reverterUltimaMigration(URL); // 4
     await reverterUltimaMigration(URL); // 3
     await reverterUltimaMigration(URL); // 2
     await comCliente(URL, (c) => c.query(`UPDATE produtos SET codigo = 'COL-01' WHERE nome = 'A-segundo'`));

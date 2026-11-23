@@ -12,7 +12,7 @@
 // WhatsApp, a autorização para receber mensagens da loja (com a data) e o "não incomodar".
 import { formatarCentavos } from './dinheiro';
 import { CONTROLE, ehObjeto, soDigitos } from './interno';
-import { mensagemSemPermissao, pode } from './permissoes';
+import { mensagemSemPermissao, pode, type QuemAcessa } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 import { semAcento } from './texto';
 import type { Recebivel } from './financeiro';
@@ -256,7 +256,7 @@ export function resumirCliente(vendas: readonly Venda[], clienteId: string): Res
 export const NOME_CLIENTE_REMOVIDO = 'Cliente removido';
 
 export function conferirExclusaoDeCliente(
-  papel: string,
+  papel: QuemAcessa,
   cliente: Pick<Cliente, 'nome' | 'ativo'> | null,
   fiadoEmAbertoCentavos: number,
 ): Resultado<null> {

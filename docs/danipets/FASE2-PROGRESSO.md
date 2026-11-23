@@ -17,7 +17,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 8. Vale-troca | **Concluído** (20/11/2026) |
 | 9. Financeiro | **Concluído** (23/11/2026) |
 | 10. Relatórios | **Concluído** (23/11/2026) |
-| 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer |
+| 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer (Usuários: suporte e Personalizado adiantados em 23/11/2026, a pedido do Luan) |
 | 15. Consolidação (Fase 3) | a fazer |
 
 ---
@@ -758,4 +758,68 @@ para procurar produto?"*. Resposta do Luan: **uma barra só**.
   - a lista abre logo embaixo da barra, alinhada; seta para baixo e Enter põem o produto, e o foco volta para a
     barra; "3*código" põe 3;
   - celular (390 px) sem rolagem para o lado, com a lista aberta;
+  - console sem erros.
+
+---
+
+## Usuários — ajustes pedidos pelo Luan
+
+### 23/11/2026: o suporte (Adm. Sup) em todas as lojas, o Personalizado e o Dono só pelo suporte
+
+O pedido (4ª imagem): *"na opção de criar usuários, desapareça o perfil dono e adm. O perfil dono vai ser criado
+apenas na implantação, e só pode ser criado pelo Adm. Sup. O perfil Adm. Sup é o perfil que deve estar presente em
+tudo e ter acesso a tudo mas de forma invisível."* Respostas do Luan: usuário mestre em todos os sistemas e vendas;
+o Dono cria **Vendedor** e **Personalizado** (que edita as funções); aparece como **"Suporte"**; demonstração e
+servidor agora. Decisão completa: [`../decisoes/0006-adm-sup-e-personalizado.md`](../decisoes/0006-adm-sup-e-personalizado.md).
+
+- **Criar usuário:** o Dono e o Administrador só veem **Vendedor** e **Personalizado**, com a dica "O Dono e o
+  Administrador são cadastrados pelo suporte (Adm. Sup), na implantação do sistema." O suporte vê os quatro papéis.
+- **Personalizado:** ao escolher, abre "Funções do Personalizado", com as funções que quem cadastra pode dar
+  (as que ele mesmo tem, menos as só do Dono e a de cadastrar usuários); pelo menos uma. A pessoa vê no menu e
+  consegue fazer **só** o que foi marcado (a tela, a demonstração e o servidor usam a mesma regra, `pode()` de
+  `@saas/core`). Na lista: "Personalizado · 3 funções". Editar: dá para mudar as funções; trocar o papel apaga as
+  funções. Na tabela de permissões da aba, a coluna Personalizado diz "se marcada".
+- **Menu de cada um:** "Frente de caixa" passou a pedir a função **Vender** e "Clientes", a função **Clientes**
+  (antes apareciam para todos). Para o Dono, o Administrador e o Vendedor nada muda (eles têm as duas); o
+  Personalizado só vê o que foi marcado. No card de pendências da Visão geral, as listas de cashback e de
+  promoções (que têm nomes de clientes) também só aparecem para quem tem a função Clientes.
+- **Editar papel:** dar o papel de Dono ou de Administrador é só do suporte. O Dono pode tirar alguém de
+  Administrador (para Vendedor ou Personalizado). Ninguém muda o próprio papel nem as próprias funções.
+- **O suporte (Adm. Sup):**
+  - entra em **qualquer loja** com o mesmo usuário e senha; tem tudo liberado; a barra lateral mostra
+    "Suporte · Adm. Sup";
+  - **não aparece** na lista de usuários da loja; no histórico, nas vendas e no caixa aparece como **"Suporte"**;
+  - ninguém da loja pode usar o login dele; a senha dele não muda pela tela (só pelo script `db:suporte`);
+  - na demonstração: login `suporte`, senha `demo1234` (a faixa amarela explica em "Usuários de teste").
+- **Servidor:**
+  - migration `20261123210000_adm_sup_e_personalizado`: papel `personalizado`, coluna `permissoes` (só no
+    Personalizado, CHECK no banco), três funções estreitas para a API chegar ao suporte sem enxergar a linha dele
+    (`app_suporte_para_login`, `app_suporte_por_id`, `app_suporte_registrar`) e a trava `usuarios_trava_api` com as
+    regras novas (Dono e Administrador só pelo suporte; Personalizado com funções; ninguém muda as próprias funções).
+    O `down.sql` desfaz tudo (Personalizado volta a Vendedor);
+  - o login procura a pessoa na loja e, se não achar, o suporte (mesma conferência de senha, mesmo bloqueio, mesma
+    resposta para quem não existe); a sessão dele fica na loja do endereço;
+  - script novo `npm run db:suporte -w @saas/api -- --usuario suporte` (cadastrar, `--redefinir-senha`,
+    `--desativar`, `--reativar`; senha sorteada de 20 caracteres, mostrada uma vez; encerra as sessões dele em
+    todas as lojas). O `db:usuario` passou a recusar o login do suporte e o papel Personalizado (pela tela);
+  - documentado em `docs/LOGIN.md`, `docs/SEGURANCA.md` (seção 7), `docs/deploy.md` e no README.
+- **Testes:**
+  - núcleo 409 (+3): quem cria quem, Personalizado (funções que se podem dar, pelo menos uma, só as que quem
+    cadastra tem), o suporte como alvo ("Usuário não encontrado"), próprio papel e funções;
+  - servidor (+7): `adm-sup.spec.ts` (novo, 5: entra em qualquer loja; não aparece na lista; cadastra Dono e
+    Administrador; "Suporte" no histórico; a API não enxerga a linha; ninguém usa o login dele; senha só pelo
+    script; desativar e nova senha encerram as sessões em todas as lojas), `usuarios.spec.ts` (regras novas e a
+    trava no banco conectando como `saas_app`), `scripts.spec.ts` (login do suporte e Personalizado no
+    `db:usuario`), `vigilancia.spec.ts` (a policy da dona do schema é a única exceção; a coluna `permissoes` na
+    lista fechada de privilégios), `migracoes.spec.ts` (aplica, reverte e reaplica a migration nova);
+  - tela 399 (+6): aba Usuários (Dono só vê Vendedor e Personalizado; funções do Personalizado), demonstração
+    (o suporte entra em qualquer loja, fica fora da lista, aparece como "Suporte"; login dele recusado na loja),
+    menu do Personalizado (sem Vender, sem Frente de caixa; sem Clientes, sem Clientes) e o card de pendências
+    sem nomes de clientes para quem não tem a função Clientes.
+- **Navegador:**
+  - a Ana (Dono) só vê Vendedor e Personalizado, com a dica do suporte; o Personalizado abre a lista de funções;
+  - um Personalizado com "Vender" e "Relatórios" vê a Frente de caixa e, no menu, só Visão geral, Produtos e
+    estoque (consulta), Relatórios e Suporte;
+  - o suporte entra na Loja B, aparece como "Suporte · Adm. Sup", cadastra um Dono, não aparece na lista, e o
+    histórico diz "Suporte";
   - console sem erros.

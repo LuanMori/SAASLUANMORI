@@ -7,20 +7,7 @@
 //     motivos da loja e estoque mínimo; "Como o saldo é calculado"; Regras do estoque (un/kg e motivos);
 //   - últimos movimentos, com a venda de origem, o motivo e quem lançou.
 // O Vendedor cadastra produto novo e consulta, como no DaniPets.
-import {
-  diaNoFuso,
-  type ConfiguracaoDaLoja,
-  type Fornecedor,
-  formatarCentavos,
-  formatarNumeroVenda,
-  formatarQuantidade,
-  NOME_MOVIMENTO_ESTOQUE,
-  type PapelDeLoja,
-  pode,
-  regrasPadrao,
-  type SituacaoEstoque,
-  unidadeDe,
-} from '@saas/core';
+import { diaNoFuso, type ConfiguracaoDaLoja, type Fornecedor, formatarCentavos, formatarNumeroVenda, formatarQuantidade, NOME_MOVIMENTO_ESTOQUE, pode, regrasPadrao, type SituacaoEstoque, unidadeDe, type QuemAcessa } from '@saas/core';
 import { useMemo, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto, type SaldoEstoque } from '../api';
 import { dataNoFuso, horaNoFuso, plural } from './formato';
@@ -48,7 +35,7 @@ type ApiDaTela = Pick<
 
 interface Props {
   api: ApiDaTela;
-  papel: PapelDeLoja;
+  papel: QuemAcessa;
   fuso: string;
   /** Atualização automática (ms): o saldo muda quando alguém vende. */
   intervaloMs?: number;

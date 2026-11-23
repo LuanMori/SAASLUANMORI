@@ -27,6 +27,8 @@ import {
   validarNovoUsuario,
   validarSenhaNova,
   type NomesDasContas,
+  NOME_SUPORTE,
+  ehPapelDeLoja,
 } from '@saas/core';
 import { type ApiConta, type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
 import { comTrava, gravar, gravarDaLoja, ler, lerDaLoja, transacao } from './armazenamento';
@@ -46,7 +48,15 @@ const EQUIPE_INICIAL: { usuario: string; nome: string; papel: PapelDeLoja; ativo
   { usuario: 'carla', nome: 'Carla', papel: 'vendedor', ativo: false },
 ];
 
-const CHAVES = { usuarios: 'saas-demo:usuarios:v1', auditoria: 'saas-demo:auditoria:v1' } as const;
+const CHAVES = { usuarios: 'saas-demo:usuarios:v1', auditoria: 'saas-demo:auditoria:v1', suporte: 'saas-demo:suporte:v1' } as const;
+
+/**
+ * O Adm. Sup da demonstração (pedido do Luan, 23/11/2026): o usuário mestre, o mesmo em todas as lojas (login
+ * "suporte", senha demo1234). Não aparece na lista de usuários de loja nenhuma; no histórico e nas vendas, aparece
+ * como "Suporte". Fica guardado fora das lojas (como o super_admin do servidor, sem loja).
+ */
+export const LOGIN_SUPORTE = 'suporte';
+const ID_SUPORTE = 'adm-sup';
 /** O histórico da demonstração guarda só os últimos registros de cada loja. */
 export const MAX_AUDITORIA = 2000;
 
@@ -137,10 +147,39 @@ async function prepararLoja(lojaId: string): Promise<void> {
   await p;
 }
 
+let preparandoSuporte: Promise<UsuarioGuardado> | null = null;
+
+/** O Adm. Sup (criado na primeira vez, com a senha demo1234). */
+async function suporte(): Promise<UsuarioGuardado> {
+  const guardado = ler<UsuarioGuardado | null>(CHAVES.suporte, null);
+  if (guardado) return guardado;
+  preparandoSuporte ??= (async () => {
+    const u: UsuarioGuardado = {
+      id: ID_SUPORTE,
+      usuario: LOGIN_SUPORTE,
+      nome: NOME_SUPORTE,
+      papel: 'super_admin',
+      ativo: true,
+      senhaHash: await gerarHashDemo(SENHA_DEMO),
+      senhaProvisoria: false,
+      tentativasErradas: 0,
+      bloqueadoAte: null,
+      ultimoAcessoEm: null,
+      criadoEm: new Date().toISOString(),
+    };
+    if (!ler<UsuarioGuardado | null>(CHAVES.suporte, null)) gravar(CHAVES.suporte, u);
+    return ler<UsuarioGuardado | null>(CHAVES.suporte, null) ?? u;
+  })().finally(() => (preparandoSuporte = null));
+  return preparandoSuporte;
+}
+
+const ehSuporte = (id: string | null | undefined) => id === ID_SUPORTE;
+
 /** Volta à equipe inicial (Ana, Caio, Bruno e Carla, senha demo1234) e apaga o histórico, nas duas lojas. */
 export function apagarUsuariosDemo(): void {
   gravar(CHAVES.usuarios, {});
   gravar(CHAVES.auditoria, {});
+  gravar(CHAVES.suporte, null);
   semUsuario.clear();
 }
 
@@ -195,6 +234,7 @@ export async function entrarDemo(
 async function entrarNaLoja(lojaId: string, usuario: string, senha: string, agora: () => Date): Promise<ResultadoEntradaDemo> {
   const loja = { id: lojaId };
   const login = normalizarLogin(usuario);
+  if (login === LOGIN_SUPORTE) return entrarComoSuporte(lojaId, senha, agora);
   const u = (await usuariosDaLoja(loja.id)).find((x) => x.usuario === login);
 
   if (!u) {
@@ -227,6 +267,24 @@ async function entrarNaLoja(lojaId: string, usuario: string, senha: string, agor
   return { ok: true, lojaId: loja.id, usuario: publico(entrou) };
 }
 
+/** O Adm. Sup entra em qualquer loja; as senhas erradas contam no cadastro dele (o mesmo bloqueio de todos). */
+async function entrarComoSuporte(lojaId: string, senha: string, agora: () => Date): Promise<ResultadoEntradaDemo> {
+  const u = await suporte();
+  const sit = situacaoBloqueio(estadoDe(u), agora());
+  if (sit.bloqueado) return { ok: false, mensagem: mensagemBloqueado(sit.restanteSegundos) };
+  if (!(await conferirHashDemo(senha, u.senhaHash))) {
+    const r = aposSenhaErrada(estadoDe(u), agora());
+    gravar(CHAVES.suporte, comEstado(u, r.estado));
+    return { ok: false, mensagem: r.bloqueou ? MENSAGEM_ACABOU_DE_BLOQUEAR : MENSAGEM_CREDENCIAIS };
+  }
+  const entrou: UsuarioGuardado = { ...u, tentativasErradas: 0, bloqueadoAte: null, ultimoAcessoEm: agora().toISOString() };
+  transacao(() => {
+    gravar(CHAVES.suporte, entrou);
+    registrarAuditoriaDemo(lojaId, u.id, 'sessao.entrou', null, {}, agora());
+  });
+  return { ok: true, lojaId, usuario: publico(entrou) };
+}
+
 /** Registra a saída no histórico (não espera: sair nunca fica preso numa gravação). */
 export function registrarSaidaDemo(lojaId: string, usuarioId: string): Promise<void> {
   return comTrava(() => registrarAuditoriaDemo(lojaId, usuarioId, 'sessao.saiu')).catch(() => undefined);
@@ -237,6 +295,10 @@ export function registrarSaidaDemo(lojaId: string, usuarioId: string): Promise<v
  * null = não existe mais ou a loja ainda não tem a equipe gravada.
  */
 export function usuarioGuardadoDemo(lojaId: string, usuarioId: string): UsuarioDaLoja | null {
+  if (ehSuporte(usuarioId)) {
+    const sup = ler<UsuarioGuardado | null>(CHAVES.suporte, null);
+    return sup ? publico(sup) : null;
+  }
   const u = lerDaLoja<UsuarioGuardado>(CHAVES.usuarios, lojaId).find((x) => x.id === usuarioId);
   return u ? publico(u) : null;
 }
@@ -249,7 +311,7 @@ export const equipeGravadaDemo = (lojaId: string): boolean => Boolean(ler<Record
 /** Dono e Administrador ativos: quem pode autorizar desconto, brinde, cancelamento e devolução. */
 export async function autorizadoresDemo(lojaId: string): Promise<{ id: string; nome: string; papel: PapelDeLoja }[]> {
   return (await usuariosDaLoja(lojaId))
-    .filter((u) => u.ativo && pode(u.papel, 'desconto.acima_do_limite'))
+    .filter((u): u is UsuarioGuardado & { papel: PapelDeLoja } => u.ativo && ehPapelDeLoja(u.papel) && pode(u, 'desconto.acima_do_limite'))
     .map((u) => ({ id: u.id, nome: u.nome, papel: u.papel }));
 }
 
@@ -263,7 +325,7 @@ export async function conferirAutorizadorDemo(
   senha: string,
   agora: () => Date = () => new Date(),
 ): Promise<{ id: string; nome: string; papel: PapelDeLoja }> {
-  const u = (await usuariosDaLoja(lojaId)).find((x) => x.id === usuarioId && x.ativo && pode(x.papel, 'desconto.acima_do_limite'));
+  const u = (await usuariosDaLoja(lojaId)).find((x): x is UsuarioGuardado & { papel: PapelDeLoja } => x.id === usuarioId && x.ativo && ehPapelDeLoja(x.papel) && pode(x, 'desconto.acima_do_limite'));
   if (!u) throw new ErroApi(403, 'Escolha quem vai autorizar (Dono ou Administrador ativo).');
   const sit = situacaoBloqueio(estadoDe(u), agora());
   if (sit.bloqueado) throw new ErroApi(429, mensagemBloqueado(sit.restanteSegundos));
@@ -306,16 +368,16 @@ export function criarApiUsuariosDemo({
     await esperar(atrasoMs);
     if (!operadorId) throw new ErroApi(401, 'Faça login para continuar.');
     const todos = await usuariosDaLoja(lojaId);
-    const eu = todos.find((u) => u.id === operadorId);
+    const eu = ehSuporte(operadorId) ? await suporte() : todos.find((u) => u.id === operadorId);
     if (!eu?.ativo) throw new ErroApi(401, 'Sua sessão terminou. Entre de novo.');
     return { eu, todos };
   };
   const exigirGestao = async () => {
     const r = await ator();
-    if (!pode(r.eu.papel, 'usuarios')) throw new ErroApi(403, mensagemSemPermissao('usuarios'));
+    if (!pode(r.eu, 'usuarios')) throw new ErroApi(403, mensagemSemPermissao('usuarios'));
     return r;
   };
-  const regra = (u: UsuarioGuardado): UsuarioParaRegra => ({ id: u.id, papel: u.papel, ativo: u.ativo });
+  const regra = (u: UsuarioGuardado): UsuarioParaRegra => ({ id: u.id, papel: u.papel, ativo: u.ativo, permissoes: u.permissoes ?? null });
   const conferir = (eu: UsuarioGuardado, alvo: UsuarioGuardado | null, acao: Parameters<typeof conferirGestaoDeUsuario>[2], todos: UsuarioGuardado[]) => {
     const r = conferirGestaoDeUsuario(regra(eu), alvo && regra(alvo), acao, todos.map(regra));
     if (!r.ok) throw new ErroApi(403, r.erros[0]!.mensagem, r.erros);
@@ -339,8 +401,8 @@ export function criarApiUsuariosDemo({
         const { eu, todos } = await exigirGestao();
         const v = validarNovoUsuario(dados);
         if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
-        conferir(eu, null, { tipo: 'criar', papel: v.valor.papel }, todos);
-        if (todos.some((u) => u.usuario === v.valor.usuario)) {
+        conferir(eu, null, { tipo: 'criar', papel: v.valor.papel, ...(v.valor.permissoes ? { permissoes: v.valor.permissoes } : {}) }, todos);
+        if (todos.some((u) => u.usuario === v.valor.usuario) || v.valor.usuario === LOGIN_SUPORTE) {
           throw new ErroApi(409, `Já existe o usuário "${v.valor.usuario}" nesta loja. Escolha outro login.`, [{ campo: 'usuario', mensagem: 'Já usado nesta loja.' }]);
         }
         const novo: UsuarioGuardado = {
@@ -348,6 +410,7 @@ export function criarApiUsuariosDemo({
           nome: v.valor.nome,
           usuario: v.valor.usuario,
           papel: v.valor.papel,
+          ...(v.valor.permissoes ? { permissoes: v.valor.permissoes } : {}),
           ativo: true,
           senhaHash: await gerarHashDemo(v.valor.senha),
           senhaProvisoria: true,
@@ -358,7 +421,7 @@ export function criarApiUsuariosDemo({
         };
         transacao(() => {
           salvarUsuario(lojaId, novo);
-          auditar('usuario.criado', novo.id, { papel: novo.papel });
+          auditar('usuario.criado', novo.id, { papel: novo.papel, ...(novo.permissoes ? { permissoes: novo.permissoes } : {}) });
         });
         return publico(novo);
       });
@@ -371,15 +434,25 @@ export function criarApiUsuariosDemo({
         if (!v.ok) throw new ErroApi(400, 'Dados do usuário inválidos.', v.erros);
         const alvo = acharAlvo(todos, id);
         conferir(eu, alvo, { tipo: 'alterar', mudanca: v.valor }, todos);
-        const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => v.valor[k] !== alvo[k]);
+        const igual = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+        const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => !igual(v.valor[k], alvo[k]));
         if (campos.length === 0) return publico(alvo);
         const salvo: UsuarioGuardado = { ...alvo, ...Object.fromEntries(campos.map((k) => [k, v.valor[k]])) };
+        // funções só no Personalizado: quem deixa de ser Personalizado perde a lista
+        if (salvo.papel !== 'personalizado' && salvo.permissoes) {
+          delete salvo.permissoes;
+          if (alvo.permissoes && !campos.includes('permissoes')) campos.push('permissoes');
+        }
         transacao(() => {
           salvarUsuario(lojaId, salvo);
           if (campos.includes('ativo')) auditar(salvo.ativo ? 'usuario.reativado' : 'usuario.desativado', id);
           const outros = campos.filter((k) => k !== 'ativo');
           if (outros.length > 0) {
-            auditar('usuario.alterado', id, { campos: outros, ...(outros.includes('papel') ? { papelAntes: alvo.papel, papelDepois: salvo.papel } : {}) });
+            auditar('usuario.alterado', id, {
+              campos: outros,
+              ...(outros.includes('papel') ? { papelAntes: alvo.papel, papelDepois: salvo.papel } : {}),
+              ...(outros.includes('permissoes') ? { permissoes: salvo.permissoes ?? [] } : {}),
+            });
           }
         });
         return publico(salvo);
@@ -426,7 +499,7 @@ export function criarApiUsuariosDemo({
 
     async listarAuditoria(limite = 40) {
       const { todos } = await exigirGestao();
-      const nome = new Map(todos.map((u) => [u.id, u.nome]));
+      const nome = new Map<string, string>([[ID_SUPORTE, NOME_SUPORTE], ...todos.map((u): [string, string] => [u.id, u.nome])]);
       const nomeDaPessoa = (id: string) => nome.get(id) ?? null;
       const nomeDe = (tipo: string, id: string) => (tipo === 'usuario' ? nomeDaPessoa(id) : nomeDoAlvo(tipo, id));
       const contas = nomesDasContas();

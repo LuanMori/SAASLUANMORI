@@ -1,7 +1,8 @@
 # Segurança — o que protege o quê, e como conferir
 
-> Atualizado em 18/11/2026 (revisão, itens 2.1, 2.2, 2.4, 3.5, 5.2 e 5.3). Cada proteção abaixo tem
-> um teste automático que roda no CI a cada push: se alguém desligar a proteção, o teste falha.
+> Atualizado em 18/11/2026 (revisão, itens 2.1, 2.2, 2.4, 3.5, 5.2 e 5.3) e em 23/11/2026 (o suporte, Adm. Sup:
+> seção 7). Cada proteção abaixo tem um teste automático que roda no CI a cada push: se alguém desligar a
+> proteção, o teste falha.
 
 ## 1. Uma loja nunca vê os dados de outra (itens 2.1 e 2.2)
 
@@ -18,13 +19,13 @@ navegador ── cookie HttpOnly ──▶ nginx ──▶ API
 
 | Proteção | Teste |
 |---|---|
-| **Toda** tabela com `loja_id` tem RLS ligado **e forçado** e uma policy `loja_id = app_loja_atual()`; tabela nova sem `loja_id` precisa entrar de propósito na lista do que não é de loja (hoje: `lojas` e `_prisma_migrations`) | `apps/api/test/vigilancia.spec.ts` |
+| **Toda** tabela com `loja_id` tem RLS ligado **e forçado** e uma policy `loja_id = app_loja_atual()`; tabela nova sem `loja_id` precisa entrar de propósito na lista do que não é de loja (hoje: `lojas` e `_prisma_migrations`). Uma única policy a mais, revisada e presa no teste: a da linha do suporte, só para a dona do schema (seção 7) | `apps/api/test/vigilancia.spec.ts` |
 | A role da API, **e toda role de que ela faça parte** (mesmo com NOINHERIT), não é superusuário nem tem BYPASSRLS; não é dona de tabela | `vigilancia.spec.ts` |
 | A role da API tem **exatamente** estes privilégios (nada de DELETE nem TRUNCATE): lista fechada no teste | `vigilancia.spec.ts` |
 | **A API se recusa a subir** se a conexão for de superusuário, de role com BYPASSRLS (mesmo herdado), de role dona de tabela, se alguma tabela com `loja_id` estiver sem RLS, ou se o banco não estiver em UTF-8 | `apps/api/src/banco/conferencia.ts` + `vigilancia.spec.ts` |
 | Query sem `app.loja_id` devolve zero linhas; INSERT/UPDATE em outra loja é recusado; o valor não vaza pelo pool de conexões | `rls-banco.spec.ts` |
 | De ponta a ponta pela API: cookie de uma loja não abre outra; 30 pedidos simultâneos de lojas diferentes não se misturam | `isolamento.spec.ts` |
-| Trava no banco para usuários (promover a Dono, desativar a si mesmo, loja sem Dono) | `usuarios.spec.ts` |
+| Trava no banco para usuários (Dono e Administrador só pelo suporte, Personalizado com funções, desativar a si mesmo, mudar o próprio papel, loja sem Dono) | `usuarios.spec.ts` |
 
 **Como conferir na mão** (no servidor): `docker compose -f docker-compose.prod.yml --env-file .env.producao logs api | head`
 — se a API subiu, a conferência do item acima passou. Ela imprime o motivo e para se não passar.
@@ -90,3 +91,32 @@ Apagar do código não basta: o valor continua no histórico do git.
   conferidos no banco) e volta idêntico (`acentos-e-logs.spec.ts`).
 - A demonstração começa com o **BOM** UTF-8: o "demonstraﺣ۶ﺣ۲o" da reunião era um visualizador
   adivinhando a codificação errada; com o BOM, ele não precisa adivinhar.
+
+## 7. O suporte (Adm. Sup) — o usuário mestre (pedido do Luan, 23/11/2026)
+
+O **Adm. Sup** (`super_admin`) entra em qualquer loja com tudo liberado, não aparece na lista de usuários e
+aparece como **"Suporte"** no histórico e nas vendas. Só ele cadastra o Dono (na implantação) e o
+Administrador. Ver [`decisoes/0006-adm-sup-e-personalizado.md`](decisoes/0006-adm-sup-e-personalizado.md).
+
+```
+POST /sessao (loja do endereço, usuário, senha)
+   │ 1. procura o usuário NA LOJA (RLS, como sempre)
+   │ 2. não achou → app_suporte_para_login(usuário)   ← função do banco, estreita
+   │ 3. mesma conferência de senha, mesmo bloqueio (5 erradas = 5 min), mesma resposta para quem não existe
+   ▼
+sessão criada NA LOJA do endereço (loja_id da loja, usuario_id do suporte)
+   └─ a cada pedido: app_suporte_por_id(id) confere se o suporte continua ativo
+```
+
+| Proteção | Teste |
+|---|---|
+| A linha do suporte não tem loja (`loja_id` NULL, CHECK do banco): a API (`saas_app`) **não enxerga** essa linha (RLS) e não consegue listar, alterar nem apagar o suporte | `adm-sup.spec.ts`, `rls-banco.spec.ts` |
+| A API só chega ao suporte por **três funções SECURITY DEFINER**, com `search_path` fixo, sem `EXECUTE` para PUBLIC: `app_suporte_para_login` (o que o login precisa), `app_suporte_por_id` (nome e situação) e `app_suporte_registrar` (senhas erradas, bloqueio, último acesso). Nenhuma lista suportes nem muda nome, papel ou senha | `adm-sup.spec.ts`, `migracoes.spec.ts` |
+| A única policy fora do padrão (`usuarios_suporte_dono_do_schema`) vale **só para a dona do schema** (num banco gerenciado ela não é superusuário e passa pelo RLS forçado): nunca para a `saas_app` nem para PUBLIC | `vigilancia.spec.ts` |
+| Ninguém da loja usa o login do suporte (cadastrar `suporte` numa loja é recusado), e a senha dele não muda pela loja: só pelo script `db:suporte` (sorteada, 20 caracteres, mostrada uma vez) | `adm-sup.spec.ts` |
+| Desativar ou dar nova senha ao suporte pelo script encerra as sessões abertas dele **em todas as lojas** | `adm-sup.spec.ts` |
+| Dono e Administrador: só o suporte cadastra ou dá esses papéis — na API **e** na trava do banco (`usuarios_trava_api`), que reconhece o suporte pela função | `usuarios.spec.ts`, `adm-sup.spec.ts` |
+
+**Cuidado de operação:** a senha do suporte abre todas as lojas. Guarde num cofre de senhas, use uma
+pessoa por login de suporte (`--usuario suporte.joao`, por exemplo) e desative com `--desativar` quem sair
+da equipe. Tudo o que o suporte faz numa loja fica no histórico dela, como "Suporte".
