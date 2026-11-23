@@ -150,12 +150,14 @@ describe('financeiro', () => {
     });
     expect(await ana.resumoFinanceiro()).toEqual({
       contas: [
-        { id: 'caixa', nome: 'Caixa físico', saldoCentavos: 2000 },
-        { id: 'banco', nome: 'Conta bancária', saldoCentavos: 3000 },
+        { id: 'caixa', nome: 'Caixa físico', saldoCentavos: 2000, temSaldoInicial: false },
+        { id: 'banco', nome: 'Conta bancária', saldoCentavos: 3000, temSaldoInicial: false },
       ],
       totalCentavos: 5000,
       aReceber: { totalCentavos: 9700, quantidade: 1, vencidosCentavos: 0, vencidos: 0 },
       fiado: { totalCentavos: 0, quantidade: 0, vencidosCentavos: 0, vencidos: 0 },
+      aPagar: { totalCentavos: 0, quantidade: 0, vencidasCentavos: 0, vencidas: 0 },
+      baixaAutomatica: false,
     });
     expect((await erro(bruno.resumoFinanceiro())).status).toBe(403);
     expect((await erro(bruno.listarLancamentos())).status).toBe(403);

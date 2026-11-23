@@ -1194,3 +1194,65 @@ h2 { font-size: 1.05rem; }
 :root[data-tema='escuro'] .sidebar { box-shadow: inset -1px 0 0 var(--borda); }
 :root[data-tema='escuro'] .modal-caixa { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); }
 :root[data-tema='escuro'] .entrada-botao:disabled { background: #3b403d; border-color: #3b403d; color: #a6ada9; }
+
+/* ------------------------------------------------------------------ Financeiro (Fase 2, módulo 9) */
+.fin-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.fin-card { position: relative; min-width: 0; background: var(--superficie); border: 1px solid var(--borda); border-radius: 12px; }
+.fin-card-total, .fin-card-abrir { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; min-width: 0; }
+.fin-card-total { background: var(--primaria-clara); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
+.fin-card-abrir {
+  width: 100%; height: 100%; border: 0; border-radius: 12px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.fin-card-abrir:hover { background: var(--superficie-verde); }
+.fin-card-abrir:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 40%, transparent); outline-offset: 2px; }
+.fin-card-on { border-color: var(--primaria); box-shadow: inset 0 0 0 1px var(--primaria); }
+.fin-card-on .fin-card-abrir { background: var(--superficie-verde); }
+.fin-card-rotulo { font-size: 0.85rem; font-weight: 600; color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 30px; }
+.fin-card-total .fin-card-rotulo { padding-right: 0; color: var(--primaria-texto-forte); }
+.fin-card-valor { font-size: clamp(1rem, 4.6vw, 1.45rem); line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-card-nota { font-size: 0.78rem; color: var(--suave); }
+.fin-renomear {
+  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--superficie); color: var(--suave); font-size: 0.95rem; line-height: 1; cursor: pointer;
+}
+.fin-renomear:hover { color: var(--primaria-texto); border-color: var(--primaria-texto); }
+.fin-renomear:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 40%, transparent); outline-offset: 1px; }
+.fin-entra { color: var(--primaria-texto); }
+.fin-sai { color: var(--erro); }
+.fin-filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 0 20px 14px; }
+.fin-filtros .campo input, .fin-filtros .campo select {
+  padding: 8px 10px; border: 1px solid var(--borda-campo); border-radius: 10px; background: var(--superficie); color: var(--texto); font: inherit;
+}
+.fin-busca { flex: 1 1 220px; }
+.fin-busca input { width: 100%; }
+.fin-tabela .fin-linha-saldo td { background: var(--superficie-verde); font-weight: 700; }
+.tabela-vendas td.fin-desc { white-space: normal; min-width: 240px; max-width: 520px; }
+.fin-desc b { display: block; font-weight: 600; }
+.fin-desc small { display: block; color: var(--suave); }
+.fin-hora { display: block; color: var(--suave); font-size: 0.75rem; }
+.fin-totais { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; padding: 12px 20px; border-top: 1px solid var(--borda); font-size: 0.92rem; }
+.fin-cabeca-acoes { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.fin-nota { margin: 0; padding: 10px 20px 14px; border-top: 1px solid var(--borda); color: var(--suave); font-size: 0.85rem; }
+.fin-dentro { margin: 0 20px 16px; }
+.fin-check { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+@media (max-width: 1180px) {
+  .fin-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .fin-cards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .fin-card-total { grid-column: 1 / -1; }
+  .fin .card-cabeca { flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .fin-filtros { padding: 0 14px 12px; }
+  .fin-filtros .campo { flex: 1 1 140px; }
+  .fin-tabela td[data-rotulo='Lançamento'] { flex-basis: 100%; order: -1; }
+  .fin-tabela td[data-rotulo='Valor'] { margin-left: auto; font-weight: 700; }
+  .fin-tabela td[data-rotulo='Saldo']::before { content: 'saldo '; color: var(--suave); font-weight: 400; font-size: 0.8rem; }
+  .fin-tabela td[data-rotulo='Saldo'] { flex-basis: 100%; text-align: right; }
+  .tabela-vendas td.fin-desc { min-width: 0; max-width: none; }
+  .fin-tabela-receber td[data-rotulo='Bruto']::before, .fin-tabela-receber td[data-rotulo='Taxa']::before, .fin-tabela-receber td[data-rotulo='Líquido']::before {
+    content: attr(data-rotulo) ' '; color: var(--suave); font-weight: 400; font-size: 0.8rem;
+  }
+  .fin-totais { padding: 12px 14px; }
+}

@@ -82,7 +82,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
     expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Clientes', 'Relatórios', 'Usuários', 'Dados e backup'];
+    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Clientes', 'Financeiro', 'Relatórios', 'Usuários', 'Dados e backup'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
@@ -194,6 +194,25 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     await userEvent.click(within(menu).getByRole('button', { name: 'Visão geral' }));
     await userEvent.click(await screen.findByRole('button', { name: /Saldo das contas/ }));
     expect(within(menu).getByRole('button', { name: 'Financeiro' }).getAttribute('aria-current')).toBe('page');
+    expect(await screen.findByRole('heading', { name: 'Financeiro' })).toBeTruthy();
+  });
+
+  it('o nome que a loja dá à conta no Financeiro vale nas outras abas (Compras: "Sai de")', async () => {
+    const api = criarApiLocal({ lojaId: 'loja-nomes', operador: { id: 'a', nome: 'Ana', papel: 'dono' }, exemplos: false, atrasoMs: 0 });
+    await api.cadastrarContaAPagar({ descricao: 'Energia', valorCentavos: 9000, vencimento: '2026-12-10', categoria: null });
+    render(<TelaPainel api={api} loja={{ nome: 'Loja N' }} pessoa={{ nome: 'Ana', papel: 'dono' }} aoSair={vi.fn()} />);
+    const menu = screen.getByRole('navigation', { name: 'Menu principal' });
+    await userEvent.click(within(menu).getByRole('button', { name: 'Financeiro' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Trocar o nome de Conta bancária' }));
+    const campo = within(screen.getByRole('dialog')).getByLabelText('Nome da conta (Conta bancária)');
+    await userEvent.clear(campo);
+    await userEvent.type(campo, 'Banco Itaú');
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Salvar nome' }));
+    expect(await screen.findByText('Conta renomeada: “Conta bancária” agora é “Banco Itaú”.')).toBeTruthy();
+    await userEvent.click(within(menu).getByRole('button', { name: 'Compras' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pagar Energia' }));
+    const opcoes = within(within(screen.getByRole('dialog')).getByLabelText('Sai de')).getAllByRole('option');
+    await waitFor(() => expect(opcoes.map((o) => o.textContent)).toEqual(['Banco Itaú', 'Caixa físico']));
   });
 
   it('Pendências: botão leva para a aba; Vendedor não vê as "só gestor" e as "só Dono" nem botão para aba sem acesso', async () => {

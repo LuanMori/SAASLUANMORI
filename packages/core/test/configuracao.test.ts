@@ -201,3 +201,32 @@ describe('uso das regras', () => {
     expect(pode('vendedor', 'loja.configurar')).toBe(false);
   });
 });
+
+describe('nomes das contas do Financeiro (pedido do Luan, 23/11/2026)', () => {
+  it('padrão: Caixa físico e Conta bancária; muda só a que veio; vazio volta ao padrão', () => {
+    const base = regrasPadrao();
+    expect(base.financeiro.nomesContas).toEqual({ caixa: 'Caixa físico', banco: 'Conta bancária' });
+    const r = aplicarMudancaNasRegras(base, { financeiro: { nomesContas: { banco: '  Banco   Itaú ' } } });
+    expect(r.ok && r.valor.regras.financeiro.nomesContas).toEqual({ caixa: 'Caixa físico', banco: 'Banco Itaú' });
+    expect(r.ok && r.valor.secoes).toEqual(['financeiro']);
+    expect(r.ok && r.valor.regras.financeiro.categoriasDespesa).toEqual(CATEGORIAS_DESPESA_PADRAO); // as categorias ficam
+    const volta = r.ok ? aplicarMudancaNasRegras(r.valor.regras, { financeiro: { nomesContas: { banco: '' } } }) : r;
+    expect(volta.ok && volta.valor.regras.financeiro.nomesContas.banco).toBe('Conta bancária');
+  });
+
+  it('de 2 a 30 caracteres, conta conhecida e nomes diferentes', () => {
+    const base = regrasPadrao();
+    expect(mensagem(aplicarMudancaNasRegras(base, { financeiro: { nomesContas: { banco: 'B' } } }))).toBe('O nome da conta tem de 2 a 30 caracteres.');
+    expect(campos(aplicarMudancaNasRegras(base, { financeiro: { nomesContas: { banco: 'x'.repeat(31) } } }))).toEqual(['financeiro.nomesContas.banco']);
+    expect(campos(aplicarMudancaNasRegras(base, { financeiro: { nomesContas: { poupanca: 'Poupança' } } }))).toEqual(['financeiro.nomesContas.poupanca']);
+    expect(mensagem(aplicarMudancaNasRegras(base, { financeiro: { nomesContas: { banco: 'caixa físico' } } }))).toBe('As duas contas precisam de nomes diferentes.');
+    expect(mensagem(aplicarMudancaNasRegras(base, { financeiro: { nomesContas: 'Banco' } }))).toMatch(/caixa, banco/);
+  });
+
+  it('guardado por outra versão sem os nomes (ou com nome inválido): volta ao padrão, sem perder o resto', () => {
+    const antigas = { financeiro: { categoriasDespesa: ['Aluguel', 'Outras'] } };
+    expect(normalizarRegras(antigas).financeiro).toEqual({ categoriasDespesa: ['Aluguel', 'Outras'], nomesContas: { caixa: 'Caixa físico', banco: 'Conta bancária' } });
+    const ruins = { financeiro: { nomesContas: { banco: 'B', caixa: 'Gaveta' } } };
+    expect(normalizarRegras(ruins).financeiro.nomesContas).toEqual({ caixa: 'Caixa físico', banco: 'Conta bancária' });
+  });
+});

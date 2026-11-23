@@ -6,6 +6,10 @@ import {
   baixaAutomaticaDoCartao,
   baixarCartaoNaHora,
   conferirSaida,
+  contaNaFrase,
+  extratoDaConta,
+  type Lancamento,
+  nomeDaConta,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
   fiadoEmAberto,
@@ -297,3 +301,59 @@ describe('baixa do cartão: automática (padrão) ou manual, escolha do Dono (pe
     expect(baixarCartaoNaHora({ ...r, forma: 'fiado' }, { em: r.criadoEm, por: { id: 'b', nome: 'B' } }).ok).toBe(false);
   });
 });
+
+describe('nomes das contas e extrato (módulo 9, pedido do Luan em 23/11/2026)', () => {
+  it('nome da loja no lugar do padrão; vazio volta ao padrão', () => {
+    expect(nomeDaConta('banco', { banco: 'Banco Itaú' })).toBe('Banco Itaú');
+    expect(nomeDaConta('banco', { banco: '  ' })).toBe('Conta bancária');
+    expect(nomeDaConta('caixa', null)).toBe('Caixa físico');
+  });
+
+  it('na frase: com o nome padrão, o artigo de sempre; com o nome da loja, entre aspas e sem artigo', () => {
+    expect(['em', 'de', 'para', 'artigo'].map((f) => contaNaFrase('banco', null, f as 'em'))).toEqual(['na Conta bancária', 'da Conta bancária', 'para a Conta bancária', 'a Conta bancária']);
+    expect(['em', 'de', 'para', 'artigo'].map((f) => contaNaFrase('caixa', undefined, f as 'em'))).toEqual(['no Caixa físico', 'do Caixa físico', 'para o Caixa físico', 'o Caixa físico']);
+    const nomes = { banco: 'Banco Itaú', caixa: 'Gaveta' };
+    expect(['em', 'de', 'para', 'artigo'].map((f) => contaNaFrase('banco', nomes, f as 'em'))).toEqual(['em “Banco Itaú”', 'de “Banco Itaú”', 'para “Banco Itaú”', '“Banco Itaú”']);
+    const r = conferirSaida([{ ...base('caixa', -5000) }], saldosDasContas([{ conta: 'caixa', valorCentavos: 1000 }]), null, nomes);
+    expect(r.ok ? '' : txt(r.erros[0]!.mensagem)).toBe('O valor (R$ 50,00) é maior que o saldo de “Gaveta” (R$ 10,00). Confira o valor digitado.');
+  });
+
+  const l = (id: string, conta: 'caixa' | 'banco', valorCentavos: number, criadoEm: string, dia: string | null = null) =>
+    ({ ...base(conta, valorCentavos), id, criadoEm, dia }) as Lancamento;
+
+  it('extrato: saldo anterior, cada lançamento com o saldo depois dele, entradas, saídas e saldo final', () => {
+    const lancs = [
+      l('a', 'banco', 10000, '2026-10-30T15:00:00Z'), // antes do período
+      l('b', 'banco', -2500, '2026-11-05T13:00:00Z'),
+      l('c', 'caixa', 9999, '2026-11-05T13:30:00Z'), // outra conta
+      l('d', 'banco', 4000, '2026-11-10T02:00:00Z'), // 23:00 de 09/11 em Brasília
+      l('e', 'banco', -1000, '2026-11-20T18:00:00Z', '2026-11-03'), // compra com a data de um dia anterior
+      l('f', 'banco', 700, '2026-12-01T15:00:00Z'), // depois do período
+    ];
+    const x = extratoDaConta(lancs, 'banco', { de: '2026-11-01', ate: '2026-11-30' }, 'America/Sao_Paulo', { banco: 'Banco Itaú' });
+    expect(x.nome).toBe('Banco Itaú');
+    expect(x.saldoAnteriorCentavos).toBe(10000);
+    expect(x.linhas.map((y) => [y.lancamento.id, y.dia, y.saldoCentavos])).toEqual([
+      ['e', '2026-11-03', 9000],
+      ['b', '2026-11-05', 6500],
+      ['d', '2026-11-09', 10500],
+    ]);
+    expect([x.entradasCentavos, x.saidasCentavos, x.saldoFinalCentavos]).toEqual([4000, 3500, 10500]);
+    // período vazio: o saldo final é o anterior
+    const vazio = extratoDaConta(lancs, 'banco', { de: '2026-11-21', ate: '2026-11-25' });
+    expect([vazio.saldoAnteriorCentavos, vazio.linhas.length, vazio.saldoFinalCentavos, vazio.nome]).toEqual([10500, 0, 10500, 'Conta bancária']);
+  });
+
+  it('extrato: no mesmo instante, fica a ordem em que foi gravado (a transferência e o estorno não trocam de lugar)', () => {
+    const lancs = [l('1', 'caixa', 500, '2026-11-05T13:00:00Z'), l('2', 'caixa', -200, '2026-11-05T13:00:00Z'), l('3', 'caixa', 100, '2026-11-05T13:00:00Z')];
+    expect(extratoDaConta(lancs, 'caixa', { de: '2026-11-05', ate: '2026-11-05' }).linhas.map((y) => [y.lancamento.id, y.saldoCentavos])).toEqual([
+      ['1', 500],
+      ['2', 300],
+      ['3', 400],
+    ]);
+  });
+});
+
+function base(conta: 'caixa' | 'banco', valorCentavos: number): NovoLancamento {
+  return { conta, tipo: valorCentavos >= 0 ? 'entrada' : 'despesa', valorCentavos, descricao: 'teste', criadoEm: '2026-11-05T13:00:00Z', vendaId: null, vendaNumero: null, recebivelId: null, categoria: null, por: ANA };
+}

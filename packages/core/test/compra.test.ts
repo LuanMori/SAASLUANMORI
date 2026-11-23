@@ -17,7 +17,9 @@ import {
   type MovimentoEstoque,
   notaRepetida,
   type Operador,
+  contaAPagarAvulsa,
   pagarConta,
+  validarNovaContaAPagar,
   precoSugerido,
   resumirAuditoria,
   resumirContasAPagar,
@@ -178,6 +180,30 @@ describe('contas a pagar', () => {
     expect(mensagem(pagarConta({ ...cp, situacao: 'paga' }, { conta: 'banco', em: 'x', por: ANA, saldoCaixaCentavos: 0 }))).toBe('Esta conta já foi paga.');
     expect(mensagem(pagarConta({ ...cp, situacao: 'cancelada' }, { conta: 'banco', em: 'x', por: ANA, saldoCaixaCentavos: 0 }))).toMatch(/cancelada/);
     expect(mensagem(pagarConta(cp, { conta: 'x', em: 'x', por: ANA, saldoCaixaCentavos: 0 }))).toBe('Escolha a conta de pagamento.');
+  });
+  it('conta a pagar avulsa (Financeiro): descrição, valor, vencimento e categoria; paga leva a categoria ao lançamento', () => {
+    const v = validarNovaContaAPagar({ descricao: '  Aluguel   de dezembro ', valorCentavos: 180000, vencimento: '2026-12-10', categoria: 'Aluguel' }, { hoje: HOJE });
+    expect(v.ok && v.valor).toEqual({ descricao: 'Aluguel de dezembro', valorCentavos: 180000, vencimento: '2026-12-10', categoria: 'Aluguel' });
+    const nova = v.ok ? { id: 'cp9', ...contaAPagarAvulsa(v.valor, { em: '2026-11-19T12:00:00Z', por: ANA }) } : cp;
+    expect(nova).toMatchObject({ compraId: null, situacao: 'aberta', valorOriginalCentavos: 180000, categoria: 'Aluguel', pagamento: null, ajustes: [] });
+    const paga = pagarConta(nova, { conta: 'banco', em: 'agora', por: ANA, saldoCaixaCentavos: 0 });
+    expect(paga.ok && paga.valor.lancamento).toMatchObject({ tipo: 'pagamento_conta', valorCentavos: -180000, descricao: 'Aluguel de dezembro', categoria: 'Aluguel', compraId: null });
+    // sem categoria, a conta e o lançamento ficam sem
+    const semCat = validarNovaContaAPagar({ descricao: 'Boleto', valorCentavos: 100, vencimento: '2026-11-01' }, { hoje: HOJE });
+    expect(semCat.ok && semCat.valor.categoria).toBeNull();
+  });
+  it('conta a pagar avulsa: recusa sem descrição, valor zero, data inválida ou fora do prazo e campo estranho', () => {
+    const r = validarNovaContaAPagar({ descricao: 'A', valorCentavos: 0, vencimento: '2026-02-30', categoria: 'x'.repeat(61), juros: 1 }, { hoje: HOJE });
+    expect(r.ok ? [] : r.erros.map((e) => e.campo)).toEqual(['juros', 'descricao', 'valorCentavos', 'vencimento', 'categoria']);
+    expect(mensagem(validarNovaContaAPagar({ descricao: 'Aluguel', valorCentavos: 100, vencimento: '2025-11-18' }, { hoje: HOJE }))).toMatch(/fora do prazo/);
+    expect(validarNovaContaAPagar({ descricao: 'Aluguel', valorCentavos: 100, vencimento: '2025-11-19' }, { hoje: HOJE }).ok).toBe(true); // um ano atrás
+    expect(mensagem(validarNovaContaAPagar({ descricao: 'Aluguel', valorCentavos: 100, vencimento: '2036-11-20' }, { hoje: HOJE }))).toMatch(/fora do prazo/);
+    expect(mensagem(validarNovaContaAPagar(null, { hoje: HOJE }))).toMatch(/objeto/);
+  });
+  it('pagar pelo caixa com o nome da loja na mensagem', () => {
+    expect(limpo(mensagem(pagarConta(cp, { conta: 'caixa', em: 'agora', por: ANA, saldoCaixaCentavos: 1000, nomes: { caixa: 'Gaveta' } })))).toBe(
+      'O valor (R$ 1.500,00) é maior que o saldo de “Gaveta” (R$ 10,00).',
+    );
   });
   it('resumo: em aberto e vencidas', () => {
     expect(resumirContasAPagar([cp, { ...cp, id: 'cp2', vencimento: '2026-12-01' }, { ...cp, id: 'cp3', situacao: 'paga' }], HOJE)).toEqual({

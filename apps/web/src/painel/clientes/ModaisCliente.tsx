@@ -10,6 +10,8 @@
 //   - excluir cliente sem histórico, com motivo (CLI-07).
 // As regras (campo extra, fiado, cashback, cupom, mensagens) ficam na aba Regras do programa (clientes/AbaRegras.tsx).
 import {
+  contaNaFrase,
+  type NomesDasContas,
   baixaAutomaticaDoCartao,
   type Cliente,
   type CotacaoRecebimento,
@@ -34,6 +36,7 @@ import {
 import { type FormEvent, useRef, useState } from 'react';
 import { type ApiPainel, type ClienteSemCpf, type ContaDoCliente, ErroApi } from '../../api';
 import { Modal } from '../caixa/Modal';
+import { usarNomesDasContas } from '../nomesDasContas';
 import { usarCarga } from '../usarCarga';
 
 const mensagemDe = (e: unknown) => (e instanceof ErroApi ? e.message : 'Não foi possível gravar. Tente de novo.');
@@ -189,12 +192,12 @@ export function ModalCadastroCliente({
   );
 }
 
-/** Para onde vai o dinheiro, por forma (e, no cartão, pela baixa escolhida pelo Dono). */
-function dicaDaForma(forma: FormaReceberFiado, baixaAutomatica: boolean): string {
+/** Para onde vai o dinheiro, por forma (e, no cartão, pela baixa escolhida pelo Dono), com o nome que a loja deu à conta. */
+function dicaDaForma(forma: FormaReceberFiado, baixaAutomatica: boolean, nomes: NomesDasContas): string {
   if (forma === 'dinheiro') return 'Em dinheiro, entra no esperado do Caixa do dia só o valor da baixa (com o caixa de hoje aberto); o troco sai da gaveta.';
-  if (forma === 'pix') return 'Em Pix, o valor entra na Conta bancária.';
+  if (forma === 'pix') return `Em Pix, o valor entra ${contaNaFrase('banco', nomes, 'em')}.`;
   return `No cartão, a taxa da maquininha é cobrada do cliente: a loja recebe o valor cheio. ${
-    baixaAutomatica ? 'Baixa automática: entra na Conta bancária na hora.' : 'Baixa manual: fica a receber da operadora até alguém confirmar o depósito.'
+    baixaAutomatica ? `Baixa automática: entra ${contaNaFrase('banco', nomes, 'em')} na hora.` : 'Baixa manual: fica a receber da operadora até alguém confirmar o depósito.'
   }`;
 }
 
@@ -220,6 +223,7 @@ export function ModalReceberFiado({
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
+  const nomes = usarNomesDasContas();
   const { cliente, fiado } = conta;
   const abertos = vencimento ? fiado.abertos.filter((a) => a.venceEm === vencimento) : fiado.abertos;
   const limite = abertos.reduce((t, a) => t + a.abertoCentavos, 0);
@@ -354,7 +358,7 @@ export function ModalReceberFiado({
             {taxas.tipo === 'carregando' ? 'Consultando a taxa da maquininha…' : taxas.mensagem}
           </p>
         )}
-        <p className="modal-dica">{dicaDaForma(forma, baixaAutomatica)}</p>
+        <p className="modal-dica">{dicaDaForma(forma, baixaAutomatica, nomes)}</p>
         <Erro texto={erro ?? problema} />
         <div className="modal-acoes">
           <button type="submit" className="botao botao-primario" disabled={enviando || !cotacao}>
@@ -392,8 +396,11 @@ export function ModalTaxasMaquininha({
   const [debito, setDebito] = useState<string | null>(null);
   const [credito, setCredito] = useState<string | null>(null);
   const [baixa, setBaixa] = useState<boolean | null>(null);
+  const [diasDebito, setDiasDebito] = useState<string | null>(null);
+  const [diasCredito, setDiasCredito] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const nomes = usarNomesDasContas();
   const escolheBaixa = pode(papel, 'financeiro.baixa_cartao');
   const atual = estado.tipo === 'pronto' ? estado.dados : null;
 
@@ -405,11 +412,17 @@ export function ModalTaxasMaquininha({
     for (const f of ['debito', 'credito'] as const) {
       if (!PCT.test(textos[f].trim())) return setErro(`${NOME_FORMA_PAGAMENTO[f]}: informe um percentual de 0 a 99,99.`);
     }
+    // prazo para a operadora depositar (vale na baixa manual): dias inteiros de 0 a 365
+    const prazos = { debito: (diasDebito ?? String(atual.dias.debito)).trim(), credito: (diasCredito ?? String(atual.dias.credito)).trim() };
+    for (const f of ['debito', 'credito'] as const) {
+      if (!/^\d{1,3}$/.test(prazos[f]) || Number(prazos[f]) > 365) return setErro(`Prazo do ${f === 'debito' ? 'débito' : 'crédito'}: informe de 0 a 365 dias.`);
+    }
     setEnviando(true);
     try {
       await api.salvarTaxasCartao({
         ...atual,
         taxaPct: { debito: Number(textos.debito.trim().replace(',', '.')), credito: Number(textos.credito.trim().replace(',', '.')) },
+        dias: { debito: Number(prazos.debito), credito: Number(prazos.credito) },
         ...(escolheBaixa && baixa !== null ? { baixaAutomatica: baixa } : {}),
       });
       aoConcluir('Taxas da maquininha atualizadas.');
@@ -445,13 +458,27 @@ export function ModalTaxasMaquininha({
           <fieldset className="tx-baixa" disabled={!escolheBaixa}>
             <legend>Baixa do cartão</legend>
             <label>
-              <input type="radio" name="tx-baixa" checked={automatica} onChange={() => setBaixa(true)} disabled={!escolheBaixa} /> Automática: entra na Conta bancária na hora, já sem a taxa
+              <input type="radio" name="tx-baixa" checked={automatica} onChange={() => setBaixa(true)} disabled={!escolheBaixa} /> Automática: entra{' '}
+              {contaNaFrase('banco', nomes, 'em')} na hora, já sem a taxa
             </label>
             <label>
               <input type="radio" name="tx-baixa" checked={!automatica} onChange={() => setBaixa(false)} disabled={!escolheBaixa} /> Manual: fica a receber da operadora até confirmar o depósito
+              (Financeiro → A receber)
             </label>
             {!escolheBaixa && <small className="suave">Só o Dono escolhe a baixa do cartão.</small>}
           </fieldset>
+          {!automatica && (
+            <div className="cli-form">
+              <div className="campo">
+                <label htmlFor="tx-dias-debito">Débito cai em (dias)</label>
+                <input id="tx-dias-debito" value={diasDebito ?? String(atual.dias.debito)} onChange={(e) => setDiasDebito(e.target.value)} inputMode="numeric" maxLength={3} />
+              </div>
+              <div className="campo">
+                <label htmlFor="tx-dias-credito">Crédito cai em (dias)</label>
+                <input id="tx-dias-credito" value={diasCredito ?? String(atual.dias.credito)} onChange={(e) => setDiasCredito(e.target.value)} inputMode="numeric" maxLength={3} />
+              </div>
+            </div>
+          )}
           <Erro texto={erro} />
           <Acoes enviando={enviando} rotulo="Salvar taxas" aoFechar={aoFechar} />
         </form>

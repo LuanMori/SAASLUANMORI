@@ -15,7 +15,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 6. Clientes | **Concluído** (20/11/2026; arquivo fiado-caixa do Luan passado para o código em 23/11/2026) |
 | 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | **Concluído** (20/11/2026) |
-| 9. Financeiro | a fazer |
+| 9. Financeiro | **Concluído** (23/11/2026) |
 | 10. Relatórios | a fazer |
 | 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer |
 | 15. Consolidação (Fase 3) | a fazer |
@@ -563,6 +563,90 @@ Sem tabela nova (decisão P3): os vales ficam na demonstração. No sistema real
   - console sem erros nem avisos.
   - As conferências dos módulos 4, 5, 6 e 7 rodaram de novo e passaram.
 
+
+---
+
+## Módulo 9 — Financeiro
+
+O pedido do Luan (23/11/2026, 2ª imagem): *"Quero que traga as informações dos saldos das contas, contas a pagar, a
+receber, caixa físico e conta bancária. Trazendo como se fosse um extrato bancário, deixando também com nomes
+editáveis (ex.: ao invés de ser conta bancária o cliente poder colocar Banco Itaú), confirmar recebimentos automáticos
+ou manuais ao definir taxa."*
+
+### O que veio do DaniPets (FIN-01 a FIN-10)
+
+- **Cards** (FIN-01): Saldo total, Caixa físico, Conta bancária, A receber (cartão + fiado) e A pagar. Clicar num card
+  abre a parte dele logo abaixo. O saldo é a soma dos lançamentos; nada é apagado.
+- **Extrato de cada conta, como o do banco** (FIN-08):
+  - período: hoje, últimos 7 dias, este mês (o padrão), mês passado ou escolher as datas (até um ano);
+  - "Saldo anterior" em cima, cada lançamento com data, hora, o que foi, quem lançou e o **saldo depois dele**, e o
+    "Saldo em …" embaixo; entradas em verde (+), saídas em vermelho (−);
+  - filtro "Mostrar" (tudo, só entradas, só saídas) e busca por descrição, categoria ou quem lançou;
+  - estorno é uma linha própria; compra com a data da nota entra no dia da nota ("lançado em …").
+- **Saldo inicial** (FIN-02): uma vez por conta; o botão some quando as duas contas já têm. A Conta bancária pode
+  começar negativa (cheque especial).
+- **Novo lançamento** (FIN-03 e FIN-04): entrada, despesa (com as categorias da loja), retirada do dono e
+  transferência. O Caixa físico não fica negativo (o sistema recusa); a Conta bancária pode, mas a tela avisa
+  "vai ficar negativa em R$ …" e pede "Lançar mesmo assim".
+- **A receber** (FIN-05 e FIN-06):
+  - cartão: venda, forma, bruto, taxa, líquido e "cai em", com **Confirmar** (escolhendo a conta) e **Confirmar os
+    vencidos (N)** de uma vez (tudo ou nada);
+  - fiado por cliente (deve, vencido, vence primeiro), com **Receber** (a mesma janela de Clientes → Fiado, com troco e
+    taxa do cartão).
+- **A pagar** (FIN-07): as compras a prazo e, agora, as **contas avulsas** (aluguel, energia, boleto: descrição, valor,
+  vencimento e categoria), com **Pagar** (escolhendo a conta), filtro Em aberto / Pagas / Todas e "vencida" ou
+  "vence hoje". A conta avulsa paga leva a categoria para o lançamento.
+- **Taxas da maquininha** (FIN-10): o botão também fica no Financeiro (continua em Clientes → Fiado). Na **baixa
+  manual**, a janela mostra o prazo de cada cartão ("Débito cai em N dias", "Crédito cai em N dias").
+
+### Nomes das contas (pedido do Luan)
+
+- O ✎ em cada card troca o nome da conta ("Banco Itaú" no lugar de "Conta bancária"), de 2 a 30 caracteres; as duas
+  contas não podem ter o mesmo nome; "Voltar para “Conta bancária”" desfaz. Quem troca: Dono e Administrador.
+- O nome vale em todo o sistema: cards, extrato, Visão geral, escolhas de conta (pagar conta, compra à vista,
+  confirmar recebimento), Caixa do dia (sangria, fechamento), receber fiado, taxas da maquininha, mensagens de erro
+  e o histórico (aba Usuários).
+- Português sem erro de concordância: com o nome padrão, a frase de sempre ("na Conta bancária", "do Caixa físico");
+  com o nome da loja, entre aspas e sem artigo ("em “Banco Itaú”"), que serve para qualquer nome.
+- O nome fica nas regras da loja (`regras.financeiro.nomesContas`); o histórico registra "regras da loja alteradas:
+  categorias de despesa e nomes das contas", sem o nome novo (texto livre não vai para o histórico).
+
+### Baixa do cartão: automática ou manual
+
+- Automática (o padrão): o aviso da parte A receber diz que o cartão entra na conta na hora, já sem a taxa, e que não
+  há o que confirmar.
+- Manual (escolha do Dono nas taxas): o cartão fica a receber até alguém **Confirmar** o depósito da operadora.
+
+### O que ficou para outro módulo (e por quê)
+
+- **Exportar o extrato para Excel**: no módulo 10 (Relatórios), junto com "exportar tudo".
+- **Lançamento com data de um dia anterior** (DaniPets: retroativo com liberação): por enquanto, só a data de hoje.
+- **Pendências do Financeiro** (8, 9 e 10 de `docs/PENDENCIAS.md`): já dá para ligar, mas continuam A DEFINIR.
+
+### Servidor
+
+Sem tabela nova (decisão P3): o Financeiro fica na demonstração (o contrato `ApiFinanceiro` ganhou `extratoDaConta`,
+`receberRecebiveis` e `cadastrarContaAPagar`). No sistema real, essa parte responde 501 até o servidor ganhá-la.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 406 (+10): nome da conta e a frase com artigo ou aspas, extrato (saldo anterior, saldo corrido, dia da
+    nota, ordem gravada, período vazio), nomes nas regras (limites, iguais, padrão, versão antiga), conta a pagar
+    avulsa (validação, prazo, categoria no lançamento) e os nomes no histórico;
+  - servidor 134;
+  - tela 376 (+19): 9 da API (nomes no resumo, no extrato, nas mensagens e no histórico; extrato e período;
+    confirmar vários; fiado recusado; conta avulsa; resumo), 9 da tela (cards, extrato e filtros, renomear e voltar
+    ao padrão, Administrador renomeia, despesa com banco negativo, transferência, saldo inicial, confirmar um e os
+    vencidos, baixa automática, a pagar) e 1 do painel (o nome novo aparece em Compras).
+- **Navegador**:
+  - 5 cards; extrato do banco com saldo anterior e saldo final;
+  - "Banco Itaú" no card, no extrato, na dica da sangria do Caixa do dia e no "Sai de" ao pagar;
+  - despesa lançada aparece na hora no extrato;
+  - a receber com baixa automática e, depois de mudar para manual, os prazos de cada cartão;
+  - conta de energia (exemplo) paga pelo Banco Itaú;
+  - tema escuro; celular (390 px) sem rolagem para o lado e os cards em duas colunas;
+  - console sem erros.
 
 ---
 

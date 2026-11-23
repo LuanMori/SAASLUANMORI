@@ -6,6 +6,7 @@
 //     é buscado na hora de mostrar (assim a exclusão de dados da LGPD vale também para o histórico);
 //   - o texto de cada ação e o resumo dos detalhes saem daqui, iguais no servidor e na demonstração.
 import { formatarCentavos } from './dinheiro';
+import { contaNaFrase, ehConta, nomeDaConta, type NomesDasContas } from './financeiro';
 import { ehObjeto } from './interno';
 import { ehPapelDeLoja, NOME_PAPEL } from './papeis';
 import { formatarQuantidade, unidadeDe } from './quantidade';
@@ -47,6 +48,7 @@ export const ACOES_AUDITORIA = {
   'compra.estornada': 'Compra estornada',
   'compra.lote_baixado': 'Baixa de lote (validade)',
   'conta_pagar.paga': 'Conta paga',
+  'conta_pagar.criada': 'Conta a pagar lançada',
   // caixa do dia
   'caixa.aberto': 'Abertura de caixa',
   'caixa.sangria': 'Sangria',
@@ -109,14 +111,13 @@ const NOME_SECAO_REGRAS: Record<string, string> = {
   retorno: 'cupom de retorno',
   mensagens: 'mensagens',
   estoque: 'motivos de ajuste',
-  financeiro: 'categorias de despesa',
+  financeiro: 'categorias de despesa e nomes das contas',
   produtos: 'unidades de venda',
   clientes: 'campo extra do cliente',
 };
 
 const NOME_CAMPO_LOJA: Record<string, string> = { nome: 'nome', descricao: 'descrição', logo: 'logo' };
 
-const NOME_CONTA_CURTO: Record<string, string> = { caixa: 'Caixa físico', banco: 'Conta bancária' };
 
 const NOME_CAMPO_PRODUTO: Record<string, string> = {
   nome: 'nome',
@@ -163,8 +164,18 @@ const lista = (v: unknown, nomes: Record<string, string>) =>
  * Resumo dos detalhes de uma linha do histórico ("venda nº 00012 • R$ 5,00 • autorizado por Ana").
  * `nomeDoUsuario` resolve o id de quem autorizou (null = não achou: não aparece). '' = sem resumo.
  */
-export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario: (id: string) => string | null = () => null): string {
+/**
+ * O resumo de uma linha do histórico. `nomesContas`: os nomes que a loja deu às contas ("Banco Itaú"); o histórico
+ * guarda só o id da conta, e o nome sai na hora de mostrar (como o nome de quem fez).
+ */
+export function resumirAuditoria(
+  acao: string,
+  detalhes: unknown,
+  nomeDoUsuario: (id: string) => string | null = () => null,
+  nomesContas?: Partial<NomesDasContas> | null,
+): string {
   const d = ehObjeto(detalhes) ? detalhes : {};
+  const conta = (v: unknown): string | null => (ehConta(v) ? nomeDaConta(v, nomesContas) : null);
   const autorizou = typeof d.autorizadoPor === 'string' ? nomeDoUsuario(d.autorizadoPor) : null;
   const partes: (string | null)[] = [];
   switch (acao) {
@@ -213,7 +224,10 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
       break;
     }
     case 'conta_pagar.paga':
-      partes.push(dinheiro(d.valorCentavos), typeof d.conta === 'string' ? (NOME_CONTA_CURTO[d.conta] ?? null) : null);
+      partes.push(dinheiro(d.valorCentavos), conta(d.conta));
+      break;
+    case 'conta_pagar.criada':
+      partes.push(dinheiro(d.valorCentavos), diaBr(d.vencimento) && `vence ${diaBr(d.vencimento)}`, typeof d.categoria === 'string' && d.categoria ? d.categoria : null);
       break;
     case 'fornecedor.alterado':
       partes.push(lista(d.campos, NOME_CAMPO_FORNECEDOR));
@@ -292,7 +306,7 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
       partes.push(diaBr(d.dia), dinheiro(d.fundoCentavos) && `fundo de troco ${dinheiro(d.fundoCentavos)}`);
       break;
     case 'caixa.sangria':
-      partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} da gaveta para a Conta bancária`);
+      partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} da gaveta ${contaNaFrase('banco', nomesContas, 'para')}`);
       break;
     case 'caixa.retirada':
       partes.push(dinheiro(d.valorCentavos) && `${dinheiro(d.valorCentavos)} da gaveta`);
@@ -306,7 +320,7 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
         diaBr(d.dia),
         dinheiro(d.esperadoCentavos) && `esperado ${dinheiro(d.esperadoCentavos)}`,
         dinheiro(d.contadoCentavos) && `contado ${dinheiro(d.contadoCentavos)}`,
-        dif === null ? null : dif === 0 ? 'sem diferença' : `${dif < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(dif))} (ajuste no Caixa físico)`,
+        dif === null ? null : dif === 0 ? 'sem diferença' : `${dif < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(dif))} (ajuste ${contaNaFrase('caixa', nomesContas, 'em')})`,
       );
       break;
     }
@@ -350,12 +364,12 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'financeiro.retirada':
     case 'financeiro.saldo_inicial':
     case 'financeiro.recebimento':
-      partes.push(dinheiro(d.valorCentavos), typeof d.conta === 'string' ? (NOME_CONTA_CURTO[d.conta] ?? null) : null, typeof d.categoria === 'string' && d.categoria ? d.categoria : null);
+      partes.push(dinheiro(d.valorCentavos), conta(d.conta), typeof d.categoria === 'string' && d.categoria ? d.categoria : null);
       break;
     case 'financeiro.transferencia':
       partes.push(
         dinheiro(d.valorCentavos),
-        typeof d.de === 'string' && typeof d.para === 'string' && NOME_CONTA_CURTO[d.de] && NOME_CONTA_CURTO[d.para] ? `${NOME_CONTA_CURTO[d.de]} → ${NOME_CONTA_CURTO[d.para]}` : null,
+        conta(d.de) && conta(d.para) ? `${conta(d.de)} → ${conta(d.para)}` : null,
       );
       break;
     default:

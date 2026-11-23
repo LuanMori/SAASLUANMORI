@@ -19,7 +19,6 @@ import {
   itemValendo,
   LIMITES_FORNECEDOR,
   type LoteVencendo,
-  NOME_CONTA,
   type NovoFornecedor,
   resumirContasAPagar,
   totalValendo,
@@ -31,6 +30,7 @@ import { Modal } from './caixa/Modal';
 import { ModalCompra } from './compras/ModalCompra';
 import { ModalBaixaLote, ModalEstornoItem, ModalPagarConta } from './compras/ModaisCompra';
 import { plural } from './formato';
+import { usarNomesDasContas } from './nomesDasContas';
 import { usarCarga } from './usarCarga';
 
 interface Props {
@@ -65,6 +65,7 @@ export function TelaCompras({ api, fuso = FUSO_PADRAO, agora = () => new Date(),
     ]);
     return { fornecedores, compras, contas, lotes, produtos };
   }, [api]);
+  const nomes = usarNomesDasContas();
   const [janela, setJanela] = useState<Janela | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -292,7 +293,7 @@ export function TelaCompras({ api, fuso = FUSO_PADRAO, agora = () => new Date(),
                           </td>
                           <td data-rotulo="Pagamento">
                             {c.pagamento.tipo === 'avista'
-                              ? `À vista • ${NOME_CONTA[c.pagamento.conta]}`
+                              ? `À vista • ${nomes[c.pagamento.conta]}`
                               : `A prazo • ${cp?.situacao === 'paga' ? 'paga' : cp?.situacao === 'cancelada' ? 'cancelada' : `vence ${dataBr(c.pagamento.vencimento)}`}`}
                           </td>
                         </tr>

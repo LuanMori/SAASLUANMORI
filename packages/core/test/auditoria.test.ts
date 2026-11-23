@@ -48,6 +48,18 @@ describe('resumo dos detalhes', () => {
     expect(limpo(resumirAuditoria('financeiro.despesa', { valorCentavos: 12000, conta: 'caixa', categoria: 'Aluguel' }))).toBe('R$ 120,00 • Caixa físico • Aluguel');
     expect(limpo(resumirAuditoria('financeiro.transferencia', { valorCentavos: 5000, de: 'caixa', para: 'banco' }))).toBe('R$ 50,00 • Caixa físico → Conta bancária');
     expect(limpo(resumirAuditoria('financeiro.transferencia', { valorCentavos: 5000, de: 'x', para: 'banco' }))).toBe('R$ 50,00');
+    // os nomes que a loja deu às contas saem na hora de mostrar (o histórico guarda só o id)
+    const nomes = { banco: 'Banco Itaú', caixa: 'Gaveta' };
+    expect(limpo(resumirAuditoria('financeiro.transferencia', { valorCentavos: 5000, de: 'caixa', para: 'banco' }, () => null, nomes))).toBe('R$ 50,00 • Gaveta → Banco Itaú');
+    expect(limpo(resumirAuditoria('conta_pagar.paga', { valorCentavos: 5000, conta: 'banco' }, () => null, nomes))).toBe('R$ 50,00 • Banco Itaú');
+    expect(limpo(resumirAuditoria('caixa.sangria', { valorCentavos: 5000 }, () => null, nomes))).toBe('R$ 50,00 da gaveta para “Banco Itaú”');
+    expect(limpo(resumirAuditoria('caixa.sangria', { valorCentavos: 5000 }))).toBe('R$ 50,00 da gaveta para a Conta bancária');
+    expect(limpo(resumirAuditoria('caixa.fechado', { dia: '2026-11-20', esperadoCentavos: 1000, contadoCentavos: 900, diferencaCentavos: -100 }, () => null, nomes))).toBe(
+      '20/11/2026 • esperado R$ 10,00 • contado R$ 9,00 • falta de R$ 1,00 (ajuste em “Gaveta”)',
+    );
+    // conta a pagar avulsa do Financeiro: valor, vencimento e categoria (a descrição fica na própria conta)
+    expect(limpo(resumirAuditoria('conta_pagar.criada', { valorCentavos: 180000, vencimento: '2026-12-10', categoria: 'Aluguel' }))).toBe('R$ 1.800,00 • vence 10/12/2026 • Aluguel');
+    expect(ACOES_AUDITORIA['conta_pagar.criada']).toBe('Conta a pagar lançada');
   });
 
   it('detalhes estranhos ou vazios não quebram o histórico', () => {

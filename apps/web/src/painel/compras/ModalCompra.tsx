@@ -16,7 +16,6 @@ import {
   type Fornecedor,
   lerQuantidade,
   margemPct,
-  NOME_CONTA,
   type NovaCompra,
   type PedidoLiberacao,
   precoSugerido,
@@ -31,6 +30,7 @@ import { type FormEvent, useState } from 'react';
 import { type ApiCompras, type ApiVendas, ErroApi, type Produto } from '../../api';
 import { Modal } from '../caixa/Modal';
 import { ModalSenha } from '../caixa/ModalSenha';
+import { usarNomesDasContas } from '../nomesDasContas';
 
 interface Props {
   /** listarAutorizadores e autorizar: a liberação do Dono para a data de um dia já fechado. */
@@ -69,6 +69,7 @@ interface Mudanca {
 }
 
 export function ModalCompra({ api, produtos, fornecedores, compras, hoje, aoSalvar, aoFechar, confirmar = (t) => window.confirm(t) }: Props) {
+  const nomes = usarNomesDasContas();
   const [fornecedorId, setFornecedorId] = useState('');
   const [nota, setNota] = useState('');
   const [data, setData] = useState(hoje);
@@ -378,8 +379,8 @@ export function ModalCompra({ api, produtos, fornecedores, compras, hoje, aoSalv
           <label>
             <input type="radio" name="compra-tipo" checked={tipo === 'avista'} onChange={() => setTipo('avista')} /> À vista, saindo de{' '}
             <select value={conta} onChange={(e) => setConta(e.target.value as ContaId)} disabled={tipo !== 'avista'} aria-label="Conta de pagamento">
-              <option value="banco">{NOME_CONTA.banco}</option>
-              <option value="caixa">{NOME_CONTA.caixa}</option>
+              <option value="banco">{nomes.banco}</option>
+              <option value="caixa">{nomes.caixa}</option>
             </select>
           </label>
           <label>

@@ -13,12 +13,12 @@ import {
   LIMITES_COMPRA,
   type LoteVencendo,
   lerQuantidade,
-  NOME_CONTA,
   quantidadeParaTexto,
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiCompras, ErroApi } from '../../api';
 import { Modal } from '../caixa/Modal';
+import { usarNomesDasContas } from '../nomesDasContas';
 
 const mensagemDe = (e: unknown) => (e instanceof ErroApi ? e.message : 'Não foi possível concluir. Tente de novo.');
 
@@ -51,14 +51,15 @@ export function ModalEstornoItem({
   aoFechar: () => void;
 }) {
   const item = compra.itens[linha]!;
+  const nomes = usarNomesDasContas();
   const [motivo, setMotivo] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const volta =
     compra.pagamento.tipo === 'avista'
-      ? `Volta para ${NOME_CONTA[compra.pagamento.conta]}: ${formatarCentavos(item.totalCentavos)}.`
+      ? `Volta para ${nomes[compra.pagamento.conta]}: ${formatarCentavos(item.totalCentavos)}.`
       : contaPagar?.situacao === 'paga'
-        ? `Volta para ${NOME_CONTA[contaPagar.pagamento!.conta]}: ${formatarCentavos(item.totalCentavos)} (a conta já tinha sido paga).`
+        ? `Volta para ${nomes[contaPagar.pagamento!.conta]}: ${formatarCentavos(item.totalCentavos)} (a conta já tinha sido paga).`
         : contaPagar?.situacao === 'aberta'
           ? contaPagar.valorCentavos - item.totalCentavos <= 0
             ? `A conta a pagar (${formatarCentavos(contaPagar.valorCentavos)}) é cancelada.`
@@ -119,6 +120,7 @@ export function ModalPagarConta({
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
+  const nomes = usarNomesDasContas();
   const [de, setDe] = useState<ContaId>('banco');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -129,7 +131,7 @@ export function ModalPagarConta({
     setEnviando(true);
     try {
       await api.pagarContaAPagar(conta.id, de);
-      aoConcluir(`Conta paga: ${formatarCentavos(conta.valorCentavos)} saíram de ${NOME_CONTA[de]}.`);
+      aoConcluir(`Conta paga: ${formatarCentavos(conta.valorCentavos)} saíram de ${nomes[de]}.`);
     } catch (e) {
       setErro(mensagemDe(e));
     } finally {
@@ -146,8 +148,8 @@ export function ModalPagarConta({
         <div className="campo">
           <label htmlFor="pagar-conta">Sai de</label>
           <select id="pagar-conta" value={de} onChange={(e) => setDe(e.target.value as ContaId)}>
-            <option value="banco">{NOME_CONTA.banco}</option>
-            <option value="caixa">{NOME_CONTA.caixa}</option>
+            <option value="banco">{nomes.banco}</option>
+            <option value="caixa">{nomes.caixa}</option>
           </select>
         </div>
         {erro && (

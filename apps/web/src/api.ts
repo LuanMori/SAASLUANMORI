@@ -35,6 +35,8 @@ import type {
   NovoFornecedor,
   Compra,
   ContaPagar,
+  ExtratoDaConta,
+  NovaContaAPagar,
   LoteVencendo,
   NovaCompra,
   SituacaoContaPagar,
@@ -389,16 +391,22 @@ export interface PendenciasDeClientes {
 }
 
 // ---- Financeiro (só Dono e Administrador; Vendedor recebe 403)
-// A aba Financeiro ainda não tem tela; a Visão geral usa o resumo no card "Saldo das contas".
+// Aba Financeiro (Fase 2, módulo 9): saldos, extrato de cada conta, a receber, a pagar, lançamentos e os nomes que a
+// loja dá às contas (regras.financeiro.nomesContas, salvos por salvarRegrasDaLoja). A Visão geral usa o resumo.
 
 export interface ResumoFinanceiro {
-  contas: { id: ContaId; nome: string; saldoCentavos: number }[];
+  /** Cada conta com o nome que a loja deu a ela ("Banco Itaú") e se o saldo inicial já foi definido. */
+  contas: { id: ContaId; nome: string; saldoCentavos: number; temSaldoInicial: boolean }[];
   /** Caixa físico + Conta bancária. */
   totalCentavos: number;
   /** Vendas no cartão que a operadora ainda vai depositar (líquido, já sem a taxa). */
   aReceber: ResumoAReceber;
   /** Compras no fiado que os clientes ainda vão pagar (vencidos = passou do prazo de 30 dias). */
   fiado: ResumoAReceber;
+  /** Contas a pagar em aberto (compras a prazo e contas avulsas); vencidas = venceram antes de hoje. */
+  aPagar: { totalCentavos: number; quantidade: number; vencidasCentavos: number; vencidas: number };
+  /** O cartão entra na Conta bancária na hora (true) ou fica a receber até alguém confirmar (false). */
+  baixaAutomatica: boolean;
 }
 
 export interface FiltroLancamentos extends FiltroVendas {
@@ -413,6 +421,12 @@ export interface ApiFinanceiro {
   listarRecebiveis(filtro?: { situacao?: SituacaoRecebivel | null }): Promise<Recebivel[]>;
   /** Confirma que a operadora depositou: o líquido entra na conta. */
   receberRecebivel(id: string, conta: ContaId): Promise<Recebivel>;
+  /** Confirma vários de uma vez (os vencidos, por exemplo). Tudo ou nada; fiado não entra (é na conta do cliente). */
+  receberRecebiveis(ids: string[], conta: ContaId): Promise<Recebivel[]>;
+  /** Extrato da conta no período (até um ano), como o do banco: saldo anterior, linhas com o saldo e o saldo final. */
+  extratoDaConta(filtro: { conta: ContaId; de: string; ate: string }): Promise<ExtratoDaConta>;
+  /** Conta a pagar sem compra (aluguel, energia, boleto). */
+  cadastrarContaAPagar(dados: NovaContaAPagar): Promise<ContaPagar>;
   /** Entrada, despesa, retirada do dono ou transferência entre contas. */
   lancarNoFinanceiro(dados: NovoLancamentoManual): Promise<Lancamento[]>;
   /** Uma vez por conta. */

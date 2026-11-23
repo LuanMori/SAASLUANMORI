@@ -1,7 +1,9 @@
 // packages/core/src/financeiro.ts
-// Financeiro alimentado pela Frente de caixa (regras do DaniPets V9.3.3). A aba Financeiro ainda
-// não tem tela: estas regras já ficam prontas para ela.
-//   - Duas contas: Caixa físico e Conta bancária. O saldo é a soma dos lançamentos; nada é apagado.
+// Financeiro alimentado pela Frente de caixa (regras do DaniPets V9.3.3), com a aba Financeiro (módulo 9).
+//   - Duas contas: Caixa físico e Conta bancária. O saldo é a soma dos lançamentos; nada é apagado. A loja
+//     pode dar o nome dela a cada conta ("Banco Itaú" no lugar de "Conta bancária"; pedido do Luan, 23/11/2026).
+//   - Extrato de cada conta como o do banco: saldo anterior, cada lançamento com o saldo depois dele e o saldo
+//     final do período.
 //   - Venda: Dinheiro entra no Caixa; Pix entra no Banco; cartão vira "a receber", com a taxa e o prazo
 //     da operadora (padrão: débito 1,5% em 1 dia, crédito 3% em 30 dias), e só entra no Banco quando o
 //     Dono ou o Administrador confirma que a operadora depositou. Fiado vira "a receber" na conta do
@@ -37,6 +39,29 @@ export type ContaId = (typeof CONTAS)[number];
 export const NOME_CONTA: Record<ContaId, string> = { caixa: 'Caixa físico', banco: 'Conta bancária' };
 
 export const ehConta = (valor: unknown): valor is ContaId => typeof valor === 'string' && (CONTAS as readonly string[]).includes(valor);
+
+// ------------------------------------------------------------------ nomes das contas (pedido do Luan, 23/11/2026)
+/** O nome que a loja deu a cada conta ("Banco Itaú" no lugar de "Conta bancária"). */
+export type NomesDasContas = Record<ContaId, string>;
+export const LIMITES_NOME_CONTA = { min: 2, max: 30 } as const;
+
+/** O nome da conta na loja; sem nome próprio (ou vazio), o padrão. */
+export const nomeDaConta = (id: ContaId, nomes?: Partial<NomesDasContas> | null): string => nomes?.[id]?.trim() || NOME_CONTA[id];
+
+const GENERO_PADRAO: Record<ContaId, 'o' | 'a'> = { caixa: 'o', banco: 'a' };
+const COM_ARTIGO = { em: { o: 'no', a: 'na' }, de: { o: 'do', a: 'da' }, para: { o: 'para o', a: 'para a' }, artigo: { o: 'o', a: 'a' } } as const;
+export type ContaNaFrase = keyof typeof COM_ARTIGO;
+
+/**
+ * A conta no meio de uma frase. Com o nome padrão, com o artigo de sempre ("na Conta bancária", "do Caixa
+ * físico"); com o nome da loja, entre aspas e sem artigo ("em “Banco Itaú”"), que serve para qualquer nome
+ * (masculino ou feminino) sem errar a concordância.
+ */
+export function contaNaFrase(id: ContaId, nomes: Partial<NomesDasContas> | null | undefined, forma: ContaNaFrase): string {
+  const nome = nomeDaConta(id, nomes);
+  if (nome === NOME_CONTA[id]) return `${COM_ARTIGO[forma][GENERO_PADRAO[id]]} ${nome}`;
+  return forma === 'artigo' ? `“${nome}”` : `${forma} “${nome}”`;
+}
 
 export type FormaCartao = Extract<FormaPagamento, 'debito' | 'credito'>;
 export const ehCartao = (forma: FormaPagamento): forma is FormaCartao => forma === 'debito' || forma === 'credito';
@@ -235,6 +260,75 @@ export function saldosDasContas(lancamentos: readonly Pick<Lancamento, 'conta' |
   return { porConta, totalCentavos: porConta.caixa + porConta.banco };
 }
 
+// ------------------------------------------------------------------ extrato (DaniPets FIN-08; pedido do Luan, 23/11/2026)
+export interface LinhaDoExtrato {
+  lancamento: Lancamento;
+  /** Dia do lançamento no fuso da loja. */
+  dia: string;
+  /** Saldo da conta logo depois deste lançamento. */
+  saldoCentavos: number;
+}
+
+export interface ExtratoDaConta {
+  conta: ContaId;
+  nome: string;
+  /** Período (AAAA-MM-DD, inclusive). */
+  de: string;
+  ate: string;
+  /** Saldo no fim do dia anterior ao `de`. */
+  saldoAnteriorCentavos: number;
+  /** Do mais antigo para o mais novo, como no extrato do banco. */
+  linhas: LinhaDoExtrato[];
+  /** Soma do que entrou no período. */
+  entradasCentavos: number;
+  /** Soma do que saiu no período (positivo). */
+  saidasCentavos: number;
+  /** Saldo no fim do `ate`. */
+  saldoFinalCentavos: number;
+}
+
+/**
+ * Extrato da conta no período, como o do banco: o saldo anterior, cada lançamento na ordem em que aconteceu (pelo
+ * dia dele e pela hora em que foi gravado) com o saldo depois dele, e o saldo final. Estorno é uma linha própria:
+ * nada é apagado. Lançamento com data de um dia anterior (compra com a data da nota) entra naquele dia.
+ */
+export function extratoDaConta(
+  lancamentos: readonly Lancamento[],
+  conta: ContaId,
+  periodo: { de: string; ate: string },
+  fuso: string = FUSO_PADRAO,
+  nomes?: Partial<NomesDasContas> | null,
+): ExtratoDaConta {
+  const daConta = lancamentos
+    .filter((l) => l.conta === conta)
+    .map((l) => ({ l, dia: diaDoLancamento(l, fuso) }))
+    .sort((a, b) => a.dia.localeCompare(b.dia) || a.l.criadoEm.localeCompare(b.l.criadoEm)); // estável: empate fica na ordem gravada
+  let saldoAnterior = 0;
+  for (const x of daConta) if (x.dia < periodo.de) saldoAnterior += x.l.valorCentavos;
+  let saldo = saldoAnterior;
+  let entradas = 0;
+  let saidas = 0;
+  const linhas: LinhaDoExtrato[] = [];
+  for (const { l, dia } of daConta) {
+    if (dia < periodo.de || dia > periodo.ate) continue;
+    saldo += l.valorCentavos;
+    if (l.valorCentavos >= 0) entradas += l.valorCentavos;
+    else saidas -= l.valorCentavos;
+    linhas.push({ lancamento: l, dia, saldoCentavos: saldo });
+  }
+  return {
+    conta,
+    nome: nomeDaConta(conta, nomes),
+    de: periodo.de,
+    ate: periodo.ate,
+    saldoAnteriorCentavos: saldoAnterior,
+    linhas,
+    entradasCentavos: entradas,
+    saidasCentavos: saidas,
+    saldoFinalCentavos: saldo,
+  };
+}
+
 export interface ResumoAReceber {
   /** Líquido que ainda vai cair (bruto - taxa). */
   totalCentavos: number;
@@ -349,6 +443,8 @@ export interface ContextoEstornoFinanceiro {
   saldoCaixaCentavos?: number;
   /** Com o caixa de hoje aberto: o dinheiro esperado na gaveta (vale no lugar do saldo do Caixa físico). */
   gavetaCentavos?: number;
+  /** Os nomes que a loja deu às contas (para as mensagens). */
+  nomes?: Partial<NomesDasContas> | null;
 }
 
 export interface EfeitosFinanceirosDoEstorno {
@@ -383,7 +479,7 @@ export function efeitosFinanceirosDoEstorno(
           erros: [
             {
               campo: 'estornos',
-              mensagem: `A devolução em dinheiro (${formatarCentavos(e.valorCentavos)}) é maior que o saldo do Caixa físico (${formatarCentavos(Math.max(0, ctx.saldoCaixaCentavos))}). Confira o caixa ou lance uma entrada no Financeiro antes.`,
+              mensagem: `A devolução em dinheiro (${formatarCentavos(e.valorCentavos)}) é maior que o saldo ${contaNaFrase('caixa', ctx.nomes, 'de')} (${formatarCentavos(Math.max(0, ctx.saldoCaixaCentavos))}). Confira o caixa ou lance uma entrada no Financeiro antes.`,
             },
           ],
         };
@@ -521,6 +617,7 @@ export function conferirSaida(
   saldos: SaldosContas,
   /** Com o caixa de hoje aberto, o limite é o dinheiro esperado na gaveta (DaniPets confirmNegative). */
   gaveta: { esperadoCentavos: number } | null = null,
+  nomes?: Partial<NomesDasContas> | null,
 ): Resultado<null> {
   const saiDoCaixa = -lancamentos.filter((l) => l.conta === 'caixa').reduce((s, l) => s + l.valorCentavos, 0);
   if (gaveta && saiDoCaixa > 0 && saiDoCaixa > gaveta.esperadoCentavos) {
@@ -529,7 +626,12 @@ export function conferirSaida(
   if (!gaveta && saiDoCaixa > 0 && saiDoCaixa > saldos.porConta.caixa) {
     return {
       ok: false,
-      erros: [{ campo: 'valorCentavos', mensagem: `O valor (${formatarCentavos(saiDoCaixa)}) é maior que o saldo do Caixa físico (${formatarCentavos(Math.max(0, saldos.porConta.caixa))}). Confira o valor digitado.` }],
+      erros: [
+        {
+          campo: 'valorCentavos',
+          mensagem: `O valor (${formatarCentavos(saiDoCaixa)}) é maior que o saldo ${contaNaFrase('caixa', nomes, 'de')} (${formatarCentavos(Math.max(0, saldos.porConta.caixa))}). Confira o valor digitado.`,
+        },
+      ],
     };
   }
   return { ok: true, valor: null };

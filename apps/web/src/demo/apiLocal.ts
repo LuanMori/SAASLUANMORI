@@ -176,6 +176,13 @@ import {
   movimentosDoCancelamento,
   NOME_CLIENTE_REMOVIDO,
   NOME_CONTA,
+  nomeDaConta,
+  type NomesDasContas,
+  ehConta,
+  extratoDaConta,
+  contaAPagarAvulsa,
+  validarNovaContaAPagar,
+  resumirContasAPagar,
   normalizarDadosDaLoja,
   normalizarRegras,
   type NovoCliente,
@@ -643,6 +650,15 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
     }
     gravarDaLoja(CHAVES.vendas, lojaId, vendas);
     gravarDaLoja(CHAVES.caixas, lojaId, caixas);
+    // Financeiro dos exemplos (módulo 9): duas contas a pagar avulsas para a parte "A pagar" não abrir vazia
+    if (lerDaLoja<ContaPagar>(CHAVES.contasPagar, lojaId).length === 0) {
+      const ultimoDia = dias[dias.length - 1]!;
+      const em = instanteNoFuso(ultimoDia, 18, 40, opcoes.fuso).toISOString();
+      gravarDaLoja(CHAVES.contasPagar, lojaId, [
+        { id: novoId(), ...contaAPagarAvulsa({ descricao: 'Conta de energia', valorCentavos: 28640, vencimento: somarDias(ultimoDia, 3), categoria: 'Energia e água' }, { em, por: DONO_EXEMPLO }) },
+        { id: novoId(), ...contaAPagarAvulsa({ descricao: 'Aluguel da loja', valorCentavos: 180000, vencimento: somarDias(ultimoDia, 12), categoria: 'Aluguel' }, { em, por: DONO_EXEMPLO }) },
+      ]);
+    }
   }
   gravarDaLoja(CHAVES.estoque, lojaId, [...iniciais, ...lerDaLoja<MovimentoEstoque>(CHAVES.estoque, lojaId), ...movimentos]);
   gravarDaLoja(CHAVES.lancamentos, lojaId, [...lerDaLoja<Lancamento>(CHAVES.lancamentos, lojaId), ...lancamentos]);
@@ -722,6 +738,8 @@ export function criarApiLocal({
   };
   const config = () => configuracaoDemo(lojaId);
   const regras = (): RegrasDaLoja => config().regras;
+  /** Os nomes que a loja deu às contas ("Banco Itaú" no lugar de "Conta bancária"). */
+  const nomesContas = (): NomesDasContas => regras().financeiro.nomesContas;
   /** Histórico: quem está logado fez. Sem dado pessoal nos detalhes. */
   const auditar = (acao: AcaoAuditoria, alvo: { tipo: string; id: string } | null = null, detalhes: Record<string, unknown> = {}) =>
     registrarAuditoriaDemo(lojaId, operador?.id ?? null, acao, alvo, detalhes, agora());
@@ -1040,7 +1058,7 @@ export function criarApiLocal({
       estornos,
       todos.filter((x) => x.vendaId === venda.id),
       // com o caixa de hoje aberto, a devolução em dinheiro não passa do esperado na gaveta (DaniPets DEV-05)
-      { rotulo, em, por, saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa, ...(gaveta ? { gavetaCentavos: gaveta.esperadoCentavos } : {}) },
+      { rotulo, em, por, saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa, ...(gaveta ? { gavetaCentavos: gaveta.esperadoCentavos } : {}), nomes: nomesContas() },
     );
     if (!r.ok) throw new ErroApi(409, r.erros[0]?.mensagem ?? 'Não foi possível estornar no financeiro.', r.erros);
     return () => {
@@ -1063,6 +1081,7 @@ export function criarApiLocal({
           : tipo === 'fornecedor'
             ? (lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId).find((f) => f.id === id)?.nome ?? null)
             : null,
+    nomesDasContas: () => nomesContas(),
   });
 
   return {
@@ -2234,13 +2253,18 @@ export function criarApiLocal({
     async resumoFinanceiro() {
       await preparar();
       exigir('financeiro');
-      const saldos = saldosDasContas(lancamentosDaLoja());
+      const lancs = lancamentosDaLoja();
+      const saldos = saldosDasContas(lancs);
+      const nomes = nomesContas();
+      const hoje = diaNoFuso(agora(), fuso);
       return {
-        contas: CONTAS.map((id) => ({ id, nome: NOME_CONTA[id], saldoCentavos: saldos.porConta[id] })),
+        contas: CONTAS.map((id) => ({ id, nome: nomeDaConta(id, nomes), saldoCentavos: saldos.porConta[id], temSaldoInicial: lancs.some((l) => l.conta === id && l.tipo === 'saldo_inicial') })),
         totalCentavos: saldos.totalCentavos,
-        aReceber: resumirAReceber(recebiveisDeCartao(recebiveisDaLoja()), diaNoFuso(agora(), fuso)),
+        aReceber: resumirAReceber(recebiveisDeCartao(recebiveisDaLoja()), hoje),
         // fiado vencido = passou do prazo (no dia do vencimento ainda não está atrasado)
-        fiado: resumirAReceber(recebiveisDeFiado(recebiveisDaLoja()), somarDias(diaNoFuso(agora(), fuso), -1)),
+        fiado: resumirAReceber(recebiveisDeFiado(recebiveisDaLoja()), somarDias(hoje, -1)),
+        aPagar: resumirContasAPagar(contasPagarDaLoja(), hoje),
+        baixaAutomatica: baixaAutomaticaDoCartao(taxasDaLoja()),
       };
     },
 
@@ -2256,6 +2280,45 @@ export function criarApiLocal({
       return recebiveisDaLoja()
         .filter((r) => !filtro.situacao || r.situacao === filtro.situacao)
         .sort((a, b) => a.venceEm.localeCompare(b.venceEm) || a.criadoEm.localeCompare(b.criadoEm));
+    },
+
+    async extratoDaConta(filtro) {
+      await preparar();
+      exigir('financeiro');
+      const f = (filtro ?? {}) as { conta?: unknown; de?: unknown; ate?: unknown };
+      if (!ehConta(f.conta)) throw new ErroApi(400, 'Escolha a conta do extrato.');
+      if (!dataValida(f.de) || !dataValida(f.ate)) throw new ErroApi(400, 'Escolha o período do extrato (de e até).');
+      if (f.de > f.ate) throw new ErroApi(400, 'A data inicial é depois da final.');
+      if (somarDias(f.de, 366) <= f.ate) throw new ErroApi(400, 'Escolha um período de até um ano.');
+      return extratoDaConta(lancamentosDaLoja(), f.conta, { de: f.de, ate: f.ate }, fuso, nomesContas());
+    },
+
+    /** Confirma de uma vez os recebimentos de cartão escolhidos (DaniPets: "confirmar todos os vencidos"). Tudo ou nada. */
+    async receberRecebiveis(ids, conta) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        exigirHojeNaoFechado();
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || new Set(ids).size !== ids.length) throw new ErroApi(400, 'Escolha os recebimentos a confirmar.');
+        if (conta === 'caixa') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
+        const todos = recebiveisDaLoja();
+        const em = agora().toISOString();
+        const feitos = new Map<string, Recebivel>();
+        const lancs: NovoLancamento[] = [];
+        for (const id of ids) {
+          const atual = todos.find((r) => r.id === id);
+          if (!atual) throw new ErroApi(404, 'Recebimento não encontrado.');
+          if (atual.forma === 'fiado') throw new ErroApi(409, 'O fiado é recebido na conta do cliente (Clientes → Fiado).');
+          const r = receberRecebivel(atual, { conta, em, por: pessoa(quem) });
+          if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
+          feitos.set(id, r.valor.recebivel);
+          lancs.push(r.valor.lancamento);
+        }
+        gravarDaLoja(CHAVES.recebiveis, lojaId, todos.map((x) => feitos.get(x.id) ?? x));
+        juntarLancamentos(lancs);
+        for (const l of lancs) auditar('financeiro.recebimento', null, { valorCentavos: l.valorCentavos, conta: l.conta });
+        return [...feitos.values()];
+      });
     },
 
     async receberRecebivel(id, conta) {
@@ -2285,7 +2348,7 @@ export function criarApiLocal({
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
         exigirHojeNaoFechado();
         const novos = lancamentosManuais(validacao.valor, { em: agora().toISOString(), por: pessoa(quem) });
-        const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje());
+        const saida = conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje(), nomesContas());
         if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
         const v = validacao.valor;
         auditar(
@@ -2450,7 +2513,7 @@ export function criarApiLocal({
         }
         const novos = lancamentosDaOperacao(op, { caixa: s.caixa, em: agora().toISOString(), por: pessoa(quem), autorizadoPor });
         // ninguém tira da gaveta mais do que o esperado nela (DaniPets CX-07)
-        exigirOk(conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje()));
+        exigirOk(conferirSaida(novos, saldosDasContas(lancamentosDaLoja()), gavetaDeHoje(), nomesContas()));
         const gravados = juntarLancamentos(novos);
         if (usada) autorizacoes.delete(usada);
         if (op.tipo === 'sangria') auditar('caixa.sangria', null, { valorCentavos: op.valorCentavos });
@@ -2605,7 +2668,7 @@ export function criarApiLocal({
         const efeitos = efeitosDaCompra(compra);
         if (efeitos.lancamentos.length) {
           // à vista hoje pelo Caixa físico, com o caixa aberto: não passa do esperado na gaveta
-          const saida = conferirSaida(efeitos.lancamentos, saldosDasContas(lancamentosDaLoja()), pedido.data === hoje ? gavetaDeHoje() : null);
+          const saida = conferirSaida(efeitos.lancamentos, saldosDasContas(lancamentosDaLoja()), pedido.data === hoje ? gavetaDeHoje() : null, nomesContas());
           if (!saida.ok) throw new ErroApi(409, saida.erros[0]!.mensagem, saida.erros);
           juntarLancamentos(efeitos.lancamentos);
         }
@@ -2678,6 +2741,20 @@ export function criarApiLocal({
         .sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.criadoEm.localeCompare(b.criadoEm));
     },
 
+    /** Conta a pagar sem compra (aluguel, energia, boleto): Dono e Administrador. */
+    async cadastrarContaAPagar(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('financeiro');
+        const v = validarNovaContaAPagar(dados, { hoje: hojeNaLoja() });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const nova: ContaPagar = { id: novoId(), ...contaAPagarAvulsa(v.valor, { em: agora().toISOString(), por: pessoa(quem) }) };
+        gravarDaLoja(CHAVES.contasPagar, lojaId, [...contasPagarDaLoja(), nova]);
+        auditar('conta_pagar.criada', null, { valorCentavos: nova.valorCentavos, vencimento: nova.vencimento, categoria: nova.categoria ?? null });
+        return nova;
+      });
+    },
+
     async pagarContaAPagar(id, conta) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
@@ -2692,6 +2769,7 @@ export function criarApiLocal({
           por: pessoa(quem),
           saldoCaixaCentavos: saldosDasContas(lancamentosDaLoja()).porConta.caixa,
           gavetaCentavos: gavetaDeHoje()?.esperadoCentavos ?? null,
+          nomes: nomesContas(),
         });
         if (!r.ok) throw new ErroApi(409, r.erros[0]!.mensagem, r.erros);
         gravarDaLoja(CHAVES.contasPagar, lojaId, contas.map((x) => (x.id === id ? r.valor.contaPagar : x)));

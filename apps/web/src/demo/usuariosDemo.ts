@@ -26,6 +26,7 @@ import {
   validarAlteracaoUsuario,
   validarNovoUsuario,
   validarSenhaNova,
+  type NomesDasContas,
 } from '@saas/core';
 import { type ApiConta, type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
 import { comTrava, gravar, gravarDaLoja, ler, lerDaLoja, transacao } from './armazenamento';
@@ -289,9 +290,18 @@ export interface OpcoesUsuariosDemo {
   atrasoMs?: number;
   /** Nome de um produto ou cliente (para o histórico mostrar "Produto cadastrado: Ração 1kg"). */
   nomeDoAlvo?: (tipo: string, id: string) => string | null;
+  /** Os nomes que a loja deu às contas do Financeiro ("Banco Itaú"), lidos na hora de mostrar o histórico. */
+  nomesDasContas?: () => Partial<NomesDasContas> | null;
 }
 
-export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Date(), atrasoMs = 120, nomeDoAlvo = () => null }: OpcoesUsuariosDemo): ApiUsuarios & ApiConta {
+export function criarApiUsuariosDemo({
+  lojaId,
+  operadorId,
+  agora = () => new Date(),
+  atrasoMs = 120,
+  nomeDoAlvo = () => null,
+  nomesDasContas = () => null,
+}: OpcoesUsuariosDemo): ApiUsuarios & ApiConta {
   const ator = async (): Promise<{ eu: UsuarioGuardado; todos: UsuarioGuardado[] }> => {
     await esperar(atrasoMs);
     if (!operadorId) throw new ErroApi(401, 'Faça login para continuar.');
@@ -419,6 +429,7 @@ export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Dat
       const nome = new Map(todos.map((u) => [u.id, u.nome]));
       const nomeDaPessoa = (id: string) => nome.get(id) ?? null;
       const nomeDe = (tipo: string, id: string) => (tipo === 'usuario' ? nomeDaPessoa(id) : nomeDoAlvo(tipo, id));
+      const contas = nomesDasContas();
       return lerDaLoja<RegistroAuditoria>(CHAVES.auditoria, lojaId)
         .slice(-limite)
         .reverse()
@@ -430,7 +441,7 @@ export function criarApiUsuariosDemo({ lojaId, operadorId, agora = () => new Dat
             quem: r.usuarioId ? nomeDaPessoa(r.usuarioId) : null,
             alvo: r.alvoTipo && r.alvoId ? { tipo: r.alvoTipo, id: r.alvoId, nome: nomeDe(r.alvoTipo, r.alvoId) } : null,
             detalhes: r.detalhes,
-            resumo: resumirAuditoria(r.acao, r.detalhes, nomeDaPessoa),
+            resumo: resumirAuditoria(r.acao, r.detalhes, nomeDaPessoa, contas),
             criadoEm: r.criadoEm,
           }),
         );

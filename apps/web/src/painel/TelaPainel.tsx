@@ -1,8 +1,9 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
 // Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Caixa do dia, Produtos e estoque,
-// Compras, Clientes, Relatórios (todas as vendas), Usuários e Dados e backup (dados da loja). As outras
-// seções ficam em branco até chegar a vez delas.
+// Compras, Clientes, Financeiro, Relatórios (todas as vendas), Usuários e Dados e backup (dados da loja). As
+// outras seções ficam em branco até chegar a vez delas.
+// Os nomes que a loja deu às contas ("Banco Itaú") vão para todas as telas (ContextoNomesDasContas).
 // Os dados da loja (nome, descrição, logo) e as regras (desconto sem senha...) vêm da API
 // (lerConfiguracao); enquanto não chegam, ou se o servidor ainda não tiver essa parte, valem o nome
 // da sessão e os padrões do DaniPets.
@@ -11,7 +12,7 @@
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
 // À meia-noite com o sistema aberto (usarViradaDoDia), o caixa que ficou aberto fecha sozinho, as telas
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
-import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
+import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelDeLoja } from '@saas/core';
 import { useCallback, useEffect, useState } from 'react';
 import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
@@ -19,11 +20,13 @@ import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
 import { AvisoComIcone } from './AvisoComIcone';
 import { type IdSecao, ITENS_MENU, podeVer } from './menu';
+import { ContextoNomesDasContas } from './nomesDasContas';
 import type { Pendencia } from './pendencias';
 import { TelaCaixaDoDia } from './TelaCaixaDoDia';
 import { TelaClientes } from './TelaClientes';
 import { TelaCompras } from './TelaCompras';
 import { TelaDadosBackup } from './TelaDadosBackup';
+import { TelaFinanceiro } from './TelaFinanceiro';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
@@ -106,6 +109,7 @@ export function TelaPainel({
     return aoMudaremOsDados(carregarConfig);
   }, [carregarConfig]);
   const lojaDaBarra = config ? { nome: config.dados.nome, descricao: config.dados.descricao, logo: config.dados.logo } : loja;
+  const nomesDasContas = config?.regras.financeiro.nomesContas ?? NOME_CONTA;
 
   const item = ITENS_MENU.find((i) => i.id === secao);
   // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
@@ -151,85 +155,90 @@ export function TelaPainel({
 
   const ver = (id: IdSecao) => permitido && secao === id && disponivel(id);
   return (
-    <div className="painel-app">
-      <BarraLateral loja={lojaDaBarra} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
-      <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
-        {aviso && (
-          <p className="alerta painel-aviso" role="status">
-            {aviso}
-          </p>
-        )}
-        {avisoDaVirada && (
-          <AvisoComIcone
-            tipo="atencao"
-            papel="status"
-            className="painel-aviso"
-            acao={
-              <span className="cx-aviso-acoes">
-                {pode('caixa-do-dia') && secao !== 'caixa-do-dia' && (
-                  <button type="button" className="botao" onClick={() => escolher('caixa-do-dia')}>
-                    Ir para Caixa do dia
+    <ContextoNomesDasContas.Provider value={nomesDasContas}>
+      <div className="painel-app">
+        <BarraLateral loja={lojaDaBarra} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
+        <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
+          {aviso && (
+            <p className="alerta painel-aviso" role="status">
+              {aviso}
+            </p>
+          )}
+          {avisoDaVirada && (
+            <AvisoComIcone
+              tipo="atencao"
+              papel="status"
+              className="painel-aviso"
+              acao={
+                <span className="cx-aviso-acoes">
+                  {pode('caixa-do-dia') && secao !== 'caixa-do-dia' && (
+                    <button type="button" className="botao" onClick={() => escolher('caixa-do-dia')}>
+                      Ir para Caixa do dia
+                    </button>
+                  )}
+                  <button type="button" className="botao" onClick={() => setFechouSozinho(null)}>
+                    Entendi
                   </button>
-                )}
-                <button type="button" className="botao" onClick={() => setFechouSozinho(null)}>
-                  Entendi
-                </button>
-              </span>
-            }
-          >
-            {avisoDaVirada} Abra o caixa de hoje para voltar a vender.
-          </AvisoComIcone>
-        )}
-        {permitido && !disponivel(secao) && (
-          <div className="rel">
-            <header className="vg-topo">
-              <div>
-                <h1>{item?.rotulo}</h1>
-                <p className="alerta" role="status">
-                  {MENSAGEM_SEM_SERVIDOR}
-                </p>
-              </div>
-            </header>
-          </div>
-        )}
-        {ver('visao-geral') && (
-          <TelaVisaoGeral
+                </span>
+              }
+            >
+              {avisoDaVirada} Abra o caixa de hoje para voltar a vender.
+            </AvisoComIcone>
+          )}
+          {permitido && !disponivel(secao) && (
+            <div className="rel">
+              <header className="vg-topo">
+                <div>
+                  <h1>{item?.rotulo}</h1>
+                  <p className="alerta" role="status">
+                    {MENSAGEM_SEM_SERVIDOR}
+                  </p>
+                </div>
+              </header>
+            </div>
+          )}
+          {ver('visao-geral') && (
+            <TelaVisaoGeral
+              api={api}
+              nome={pessoa.nome}
+              fuso={fuso}
+              agora={agora}
+              intervaloMs={intervaloMs}
+              aoVerProdutos={pode('produtos-e-estoque') ? () => escolher('produtos-e-estoque') : undefined}
+              aoVerFinanceiro={pode('financeiro') ? () => escolher('financeiro') : undefined}
+              aoVerRelatorios={pode('relatorios') ? () => escolher('relatorios') : undefined}
+              aoVerCaixa={pode('caixa-do-dia') ? () => escolher('caixa-do-dia') : undefined}
+              pendencias={pendenciasVisiveis}
+              aoIrPara={escolher}
+            />
+          )}
+          {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
+          {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
+          {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
+          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
+          {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
+          {ver('financeiro') && <TelaFinanceiro api={api} papel={pessoa.papel} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
+          {ver('clientes') && (
+            <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />
+          )}
+          {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} aoMudarRegras={carregarConfig} />}
+        </main>
+        {trocandoSenha && (
+          <ModalTrocarSenha
             api={api}
-            nome={pessoa.nome}
-            fuso={fuso}
-            agora={agora}
-            intervaloMs={intervaloMs}
-            aoVerProdutos={pode('produtos-e-estoque') ? () => escolher('produtos-e-estoque') : undefined}
-            aoVerFinanceiro={pode('financeiro') ? () => escolher('financeiro') : undefined}
-            aoVerRelatorios={pode('relatorios') ? () => escolher('relatorios') : undefined}
-            aoVerCaixa={pode('caixa-do-dia') ? () => escolher('caixa-do-dia') : undefined}
-            pendencias={pendenciasVisiveis}
-            aoIrPara={escolher}
+            pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '' }}
+            aoFechar={() => setTrocandoSenha(false)}
+            aoTrocar={() => {
+              setTrocandoSenha(false);
+              setAviso('Senha trocada. Use a senha nova no próximo acesso e nas autorizações do caixa.');
+            }}
+            aoBloquear={(mensagem) => {
+              setTrocandoSenha(false);
+              (aoSessaoEncerrada ?? (() => aoSair()))(mensagem);
+            }}
           />
         )}
-        {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={pessoa.papel} fuso={fuso} intervaloMs={intervaloMs} />}
-        {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
-        {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel }} fuso={fuso} agora={agora} />}
-        {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={pessoa.papel} aoMudar={carregarConfig} />}
-        {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
-        {ver('clientes') && <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
-        {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel }} fuso={fuso} aoMudarRegras={carregarConfig} />}
-      </main>
-      {trocandoSenha && (
-        <ModalTrocarSenha
-          api={api}
-          pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '' }}
-          aoFechar={() => setTrocandoSenha(false)}
-          aoTrocar={() => {
-            setTrocandoSenha(false);
-            setAviso('Senha trocada. Use a senha nova no próximo acesso e nas autorizações do caixa.');
-          }}
-          aoBloquear={(mensagem) => {
-            setTrocandoSenha(false);
-            (aoSessaoEncerrada ?? (() => aoSair()))(mensagem);
-          }}
-        />
-      )}
-    </div>
+      </div>
+    </ContextoNomesDasContas.Provider>
   );
 }

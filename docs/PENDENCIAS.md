@@ -79,9 +79,9 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | 6 | Estoque baixo (no mínimo ou abaixo) | média | todos | Compras ("Fazer pedido") | **pronta, desligada** (o mínimo já se define na aba Produtos e estoque) |
 | 7 | Estoque negativo (vendeu mais do que tinha) | alta | gestor | Produtos e estoque ("Ajustar") | **pronta, desligada** |
 | **Financeiro** | | | | | |
-| 8 | Contas a pagar vencidas | alta | gestor | Financeiro | contas a pagar |
-| 9 | Contas a pagar vencendo hoje ou amanhã | média | gestor | Financeiro | contas a pagar |
-| 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada** (falta a tela do Financeiro para confirmar) |
+| 8 | Contas a pagar vencidas | alta | gestor | Financeiro | **dá para ligar** (o Financeiro já lista e paga, desde 23/11/2026) |
+| 9 | Contas a pagar vencendo hoje ou amanhã | média | gestor | Financeiro | **dá para ligar** (idem; inclui as contas avulsas: aluguel, energia) |
+| 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada**; só aparece na baixa manual (o Financeiro já tem "Confirmar os vencidos") |
 | **Clientes** | | | | | |
 | 11 | Fiado vencido | média | gestor | Clientes | **pronta, desligada** (o fiado já existe na Frente de caixa) |
 | 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes (aba Retorno) | substituída pela 18 e pela 19 (23/11/2026) |

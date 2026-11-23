@@ -15,6 +15,7 @@
 //   - histórico de caixa e movimentos em dinheiro (as tabelas sempre com o cabeçalho; vazias: "Nenhum registro.");
 //   - Regras do caixa (Dono e Administrador): a diferença que fecha sem senha (padrão R$ 10,00).
 import {
+  contaNaFrase,
   acimaDaTolerancia,
   type CaixaDoDia,
   dataBr,
@@ -33,6 +34,7 @@ import {
 import { type FormEvent, useState } from 'react';
 import { type ApiCaixa, type ApiLoja, type ApiVendas, ErroApi, type PainelCaixa } from '../api';
 import { AvisoComIcone as Aviso } from './AvisoComIcone';
+import { usarNomesDasContas } from './nomesDasContas';
 import { Modal } from './caixa/Modal';
 import { type Autorizado, ModalSenha } from './caixa/ModalSenha';
 import { dataNoFuso, diaPorExtenso, horaNoFuso } from './formato';
@@ -303,6 +305,7 @@ function CardAbrir({
   aoConcluir: (t: string) => void;
   aoFalhar: (e: unknown) => void;
 }) {
+  const nomes = usarNomesDasContas();
   const [fundo, setFundo] = useState('');
   const [observacao, setObservacao] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -355,7 +358,7 @@ function CardAbrir({
       </form>
       <p className="caixa-dica">
         Informe todo o dinheiro que está na gaveta agora. O esperado no fechamento parte deste valor.
-        {dados.saldoCaixaFisicoCentavos !== null && ` No sistema, o Caixa físico tem ${formatarCentavos(dados.saldoCaixaFisicoCentavos)}.`}
+        {dados.saldoCaixaFisicoCentavos !== null && ` No sistema, ${contaNaFrase('caixa', nomes, 'artigo')} tem ${formatarCentavos(dados.saldoCaixaFisicoCentavos)}.`}
       </p>
     </section>
   );
@@ -376,6 +379,7 @@ function CardOperacao({
   aoFalhar: (e: unknown) => void;
   comSenha: (acao: { tipo: 'retirada'; valorCentavos: number }, texto: string, depois: (a: Autorizado) => Promise<void>) => void;
 }) {
+  const nomes = usarNomesDasContas();
   const [operacao, setOperacao] = useState<'sangria' | 'suprimento'>('sangria');
   const [destino, setDestino] = useState<'banco' | 'retirada'>('banco');
   const [valor, setValor] = useState('');
@@ -401,7 +405,7 @@ function CardOperacao({
       setDescricao('');
       aoConcluir(
         tipo === 'sangria'
-          ? `Sangria registrada: ${formatarCentavos(centavos)} da gaveta para a Conta bancária.`
+          ? `Sangria registrada: ${formatarCentavos(centavos)} da gaveta ${contaNaFrase('banco', nomes, 'para')}.`
           : tipo === 'retirada'
             ? `Retirada do dono registrada: ${formatarCentavos(centavos)} da gaveta.`
             : `Suprimento registrado: ${formatarCentavos(centavos)} na gaveta.`,
@@ -465,7 +469,7 @@ function CardOperacao({
           </p>
         )}
       </form>
-      <p className="caixa-dica">O destino vale só para a sangria: vai para a Conta bancária ou é a retirada do dono. Suprimento põe troco na gaveta.</p>
+      <p className="caixa-dica">O destino vale só para a sangria: vai {contaNaFrase('banco', nomes, 'para')} ou é a retirada do dono. Suprimento põe troco na gaveta.</p>
     </section>
   );
 }
@@ -485,6 +489,7 @@ function CardFechar({
   aoFalhar: (e: unknown) => void;
   comSenha: (acao: { tipo: 'fechamento'; dia: string; contadoCentavos: number }, texto: string, depois: (a: Autorizado) => Promise<void>) => void;
 }) {
+  const nomes = usarNomesDasContas();
   const alvo = dados.aFechar!;
   const g = alvo.gaveta;
   const [contado, setContado] = useState('');
@@ -565,7 +570,7 @@ function CardFechar({
       </form>
       <p className="caixa-dica">
         = fundo de troco {formatarCentavos(g.fundoCentavos)} + entradas {formatarCentavos(g.entradasCentavos)} − saídas {formatarCentavos(g.saidasCentavos)} em dinheiro desde a abertura. Conte a
-        gaveta inteira, incluindo o troco. Se o contado for diferente do esperado, a falta ou a sobra é lançada como ajuste no saldo do Caixa físico, com a sua justificativa. Acima de{' '}
+        gaveta inteira, incluindo o troco. Se o contado for diferente do esperado, a falta ou a sobra é lançada como ajuste no saldo {contaNaFrase('caixa', nomes, 'de')}, com a sua justificativa. Acima de{' '}
         {formatarCentavos(dados.toleranciaCentavos)}, o vendedor precisa da senha do Dono ou do Administrador.
       </p>
     </section>
@@ -742,6 +747,7 @@ function ModalVerificar({
   aoDesfazer: () => void;
   aoFechar: () => void;
 }) {
+  const nomes = usarNomesDasContas();
   const f = caixa.fechamento!;
   const r = f.resumo;
   const [observacao, setObservacao] = useState('');
@@ -781,7 +787,7 @@ function ModalVerificar({
       </dl>
       <p className="modal-sub cx-conferir-dica">
         {podeDesfazer
-          ? 'Conte a gaveta. Bateu com o esperado? Marque como verificado. Não bateu? Desfaça o fechamento e feche o dia com a contagem: a diferença vira ajuste no Caixa físico, com justificativa.'
+          ? `Conte a gaveta. Bateu com o esperado? Marque como verificado. Não bateu? Desfaça o fechamento e feche o dia com a contagem: a diferença vira ajuste ${contaNaFrase('caixa', nomes, 'em')}, com justificativa.`
           : 'Conte a gaveta e compare com o esperado. Este fechamento não pode mais ser desfeito (já há caixa aberto ou fechado depois dele): anote na observação o que encontrou.'}
       </p>
       <form className="modal-form" onSubmit={confirmar} noValidate autoComplete="off">
@@ -813,6 +819,7 @@ function ModalVerificar({
 }
 
 function ModalDesfazer({ api, caixa, aoConcluir, aoFechar }: { api: Pick<ApiCaixa, 'desfazerFechamento'>; caixa: CaixaDoDia; aoConcluir: (t: string) => void; aoFechar: () => void }) {
+  const nomes = usarNomesDasContas();
   const automatico = caixa.fechamento?.automatico === true;
   const [motivo, setMotivo] = useState('');
   const [explicacao, setExplicacao] = useState('');
@@ -845,7 +852,7 @@ function ModalDesfazer({ api, caixa, aoConcluir, aoFechar }: { api: Pick<ApiCaix
       <p className="modal-sub">
         {automatico
           ? 'Fechamento automático (sem contagem). Desfeito, o dia volta a ficar aberto para ser fechado com a contagem da gaveta.'
-          : `Esperado ${formatarCentavos(f?.esperadoCentavos ?? 0)}, contado ${formatarCentavos(f?.contadoCentavos ?? 0)}.${f?.ajusteCentavos ? ` O ajuste de ${formatarCentavos(f.ajusteCentavos)} no Caixa físico é estornado.` : ''} O dia volta a ficar aberto.`}
+          : `Esperado ${formatarCentavos(f?.esperadoCentavos ?? 0)}, contado ${formatarCentavos(f?.contadoCentavos ?? 0)}.${f?.ajusteCentavos ? ` O ajuste de ${formatarCentavos(f.ajusteCentavos)} ${contaNaFrase('caixa', nomes, 'em')} é estornado.` : ''} O dia volta a ficar aberto.`}
       </p>
       <form className="modal-form" onSubmit={confirmar} noValidate autoComplete="off">
         <div className="campo">

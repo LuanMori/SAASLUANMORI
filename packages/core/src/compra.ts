@@ -13,10 +13,12 @@
 //   - LOTES E VALIDADE: pela regra "o mais antigo sai primeiro", o estoque de hoje pertence às compras mais
 //     novas; lotes vencidos ou vencendo aparecem para "dar baixa" (o que ainda estiver na prateleira sai
 //     do estoque como "Produto vencido").
+//   - CONTA A PAGAR AVULSA (Financeiro, módulo 9): aluguel, energia, boleto... sem compra, com descrição, valor,
+//     vencimento e a categoria de despesa da loja; paga como as outras.
 // Quantidades na unidade do produto (unidades, ou gramas no kg) e custo por unidade ou por kg (quantidade.ts).
 import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import type { MovimentoEstoque, NovoMovimentoEstoque } from './estoque';
-import { type ContaId, ehConta, mensagemGaveta, type NovoLancamento } from './financeiro';
+import { type ContaId, contaNaFrase, ehConta, LIMITES_FINANCEIRO, mensagemGaveta, type NomesDasContas, type NovoLancamento } from './financeiro';
 import { CONTROLE, ehObjeto } from './interno';
 import { formatarQuantidade, QUANTIDADE_MAX, type UnidadeVenda, unidadeDe, valorDaQuantidade } from './quantidade';
 import type { ErroCampo, Resultado } from './resultado';
@@ -110,6 +112,8 @@ export interface ContaPagar {
   por: Operador;
   pagamento: { em: string; conta: ContaId; por: Operador } | null;
   ajustes: { em: string; valorCentavos: number; descricao: string; por: Operador }[];
+  /** Categoria de despesa (conta avulsa do Financeiro); vai para o lançamento quando a conta é paga. */
+  categoria?: string | null;
 }
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -408,6 +412,8 @@ export function pagarConta(
     saldoCaixaCentavos: number;
     /** Com o caixa de hoje aberto: o dinheiro esperado na gaveta (vale no lugar do saldo do Caixa físico). */
     gavetaCentavos?: number | null;
+    /** Os nomes que a loja deu às contas (para as mensagens). */
+    nomes?: Partial<NomesDasContas> | null;
   },
 ): Resultado<{ contaPagar: ContaPagar; lancamento: NovoLancamento }> {
   const erro = (mensagem: string, campo = '_'): Resultado<never> => ({ ok: false, erros: [{ campo, mensagem }] });
@@ -416,7 +422,7 @@ export function pagarConta(
   if (!ehConta(ctx.conta)) return erro('Escolha a conta de pagamento.', 'conta');
   if (ctx.conta === 'caixa' && ctx.gavetaCentavos != null && cp.valorCentavos > ctx.gavetaCentavos) return erro(mensagemGaveta(cp.valorCentavos, ctx.gavetaCentavos), 'conta');
   if (ctx.conta === 'caixa' && ctx.gavetaCentavos == null && cp.valorCentavos > ctx.saldoCaixaCentavos) {
-    return erro(`O valor (${formatarCentavos(cp.valorCentavos)}) é maior que o saldo do Caixa físico (${formatarCentavos(Math.max(0, ctx.saldoCaixaCentavos))}).`, 'conta');
+    return erro(`O valor (${formatarCentavos(cp.valorCentavos)}) é maior que o saldo ${contaNaFrase('caixa', ctx.nomes, 'de')} (${formatarCentavos(Math.max(0, ctx.saldoCaixaCentavos))}).`, 'conta');
   }
   return {
     ok: true,
@@ -431,7 +437,7 @@ export function pagarConta(
         vendaId: null,
         vendaNumero: null,
         recebivelId: null,
-        categoria: null,
+        categoria: cp.categoria ?? null,
         por: ctx.por,
         compraId: cp.compraId,
         contaPagarId: cp.id,
@@ -439,6 +445,55 @@ export function pagarConta(
     },
   };
 }
+
+// ------------------------------------------------------------------ conta a pagar avulsa (Financeiro)
+export interface NovaContaAPagar {
+  descricao: string;
+  valorCentavos: number;
+  /** AAAA-MM-DD. */
+  vencimento: string;
+  categoria: string | null;
+}
+
+/**
+ * Conta a pagar sem compra (aluguel, energia, boleto): descrição, valor, vencimento (de até um ano atrás, para
+ * lançar uma conta já vencida, a dez anos à frente) e a categoria de despesa (opcional).
+ */
+export function validarNovaContaAPagar(entrada: unknown, ctx: { hoje: string }): Resultado<NovaContaAPagar> {
+  if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com a conta a pagar.' }] };
+  const erros: ErroCampo[] = [];
+  for (const k of Object.keys(entrada)) if (!['descricao', 'valorCentavos', 'vencimento', 'categoria'].includes(k)) erros.push({ campo: k, mensagem: 'Campo não permitido.' });
+  const descricao = texto(entrada.descricao);
+  if (descricao.length < 2) erros.push({ campo: 'descricao', mensagem: 'Descreva a conta (ex.: Aluguel de dezembro).' });
+  else if (descricao.length > LIMITES_COMPRA.descricaoMax || CONTROLE.test(descricao)) erros.push({ campo: 'descricao', mensagem: `Use até ${LIMITES_COMPRA.descricaoMax} caracteres.` });
+  const v = entrada.valorCentavos;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0 || v > CENTAVOS_MAX) erros.push({ campo: 'valorCentavos', mensagem: 'Informe um valor maior que zero.' });
+  const venc = entrada.vencimento;
+  const [a, m, d] = ctx.hoje.split('-').map(Number);
+  const umAnoAtras = `${a! - 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const dezAnos = `${a! + 10}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  if (!dataValida(venc)) erros.push({ campo: 'vencimento', mensagem: 'Informe o vencimento.' });
+  else if (venc < umAnoAtras || venc > dezAnos) erros.push({ campo: 'vencimento', mensagem: 'Vencimento fora do prazo aceito (de um ano atrás a dez anos à frente).' });
+  const categoria = texto(entrada.categoria);
+  if (categoria.length > LIMITES_FINANCEIRO.categoriaMax || CONTROLE.test(categoria)) erros.push({ campo: 'categoria', mensagem: `Use até ${LIMITES_FINANCEIRO.categoriaMax} caracteres.` });
+  if (erros.length) return { ok: false, erros };
+  return { ok: true, valor: { descricao, valorCentavos: v as number, vencimento: venc as string, categoria: categoria || null } };
+}
+
+/** A conta a pagar avulsa pronta para gravar (sem compra). */
+export const contaAPagarAvulsa = (c: NovaContaAPagar, ctx: { em: string; por: Operador }): Omit<ContaPagar, 'id'> => ({
+  compraId: null,
+  descricao: c.descricao,
+  valorCentavos: c.valorCentavos,
+  valorOriginalCentavos: c.valorCentavos,
+  vencimento: c.vencimento,
+  situacao: 'aberta',
+  criadoEm: ctx.em,
+  por: ctx.por,
+  pagamento: null,
+  ajustes: [],
+  categoria: c.categoria,
+});
 
 /** Contas a pagar em aberto: total, quantas e as vencidas (vence antes de hoje). */
 export function resumirContasAPagar(contas: readonly ContaPagar[], hoje: string) {

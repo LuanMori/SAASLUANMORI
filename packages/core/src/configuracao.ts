@@ -3,12 +3,13 @@
 // configuração da loja, com os valores do DaniPets como padrão (diagnóstico ESP-01, 05 a 08, 10):
 //   - dados da loja: nome, descrição e logo (vão na barra lateral, na entrada, nas mensagens e no regulamento);
 //   - regras: desconto que o Vendedor dá sem senha, diferença aceita no caixa, fiado, cashback, cupom de
-//     retorno, mensagens de WhatsApp, motivos de ajuste de estoque, categorias de despesa, unidades de venda
-//     e o campo extra do cliente (o "Pet" do DaniPets, desligado por padrão).
+//     retorno, mensagens de WhatsApp, motivos de ajuste de estoque, categorias de despesa, unidades de venda,
+//     o campo extra do cliente (o "Pet" do DaniPets, desligado por padrão) e o nome de cada conta do Financeiro
+//     ("Banco Itaú" no lugar de "Conta bancária"; pedido do Luan, 23/11/2026).
 // Cada número tem os limites do DaniPets (REGRAS_LIMITES). O que vem guardado de outra versão, ou alterado
 // por fora, é completado com o padrão (normalizar*), nunca recusado — como o cliNormalizar do DaniPets.
 // Quem altera: Dono e Administrador (permissão 'loja.configurar'); todos os logados leem.
-import { PRAZO_FIADO_PADRAO_DIAS } from './financeiro';
+import { CONTAS, LIMITES_NOME_CONTA, NOME_CONTA, type NomesDasContas, PRAZO_FIADO_PADRAO_DIAS } from './financeiro';
 import { CONTROLE, ehObjeto } from './interno';
 import { UNIDADES_VENDA, type UnidadeVenda } from './quantidade';
 import type { ErroCampo, Resultado } from './resultado';
@@ -133,7 +134,8 @@ export interface RegrasDaLoja {
   /** Mensagens de WhatsApp (com {nome}, {loja}, {valor}...). */
   mensagens: { retorno: string; cashback: string; cobranca: string };
   estoque: { motivosAjuste: string[] };
-  financeiro: { categoriasDespesa: string[] };
+  /** Categorias de despesa e o nome que a loja deu a cada conta (Caixa físico e Conta bancária). */
+  financeiro: { categoriasDespesa: string[]; nomesContas: NomesDasContas };
   /** Como os produtos podem ser vendidos: por unidade e/ou por quilo. */
   produtos: { unidades: UnidadeVenda[] };
   /** Campo extra no cadastro do cliente, com o nome que a loja escolher ("Pet", "Veículo"...). */
@@ -182,7 +184,7 @@ export function regrasPadrao(): RegrasDaLoja {
     retorno: { diasSemComprar: 30, cupomPct: 5, cupomValidadeDias: 7 },
     mensagens: { ...MENSAGENS_PADRAO },
     estoque: { motivosAjuste: [...MOTIVOS_AJUSTE_PADRAO] },
-    financeiro: { categoriasDespesa: [...CATEGORIAS_DESPESA_PADRAO] },
+    financeiro: { categoriasDespesa: [...CATEGORIAS_DESPESA_PADRAO], nomesContas: { ...NOME_CONTA } },
     produtos: { unidades: [...UNIDADES_VENDA] },
     clientes: { campoExtra: { ativo: false, rotulo: 'Pet' } },
   };
@@ -272,6 +274,33 @@ function lerUnidades(v: unknown, erros: ErroCampo[]): UnidadeVenda[] {
   return validas;
 }
 
+/**
+ * Nomes das contas: { caixa?, banco? }, cada um de 2 a 30 caracteres; vazio volta ao nome padrão. As duas contas
+ * não podem ficar com o mesmo nome (a tela e o extrato ficariam confusos).
+ */
+function lerNomesContas(v: unknown, atuais: NomesDasContas, erros: ErroCampo[]): NomesDasContas {
+  const campo = 'financeiro.nomesContas';
+  if (!ehObjeto(v)) {
+    erros.push({ campo, mensagem: 'Envie { caixa, banco } com os nomes das contas.' });
+    return atuais;
+  }
+  const r: NomesDasContas = { ...atuais };
+  for (const k of Object.keys(v)) {
+    if (!(CONTAS as readonly string[]).includes(k)) {
+      erros.push({ campo: `${campo}.${k}`, mensagem: 'Conta desconhecida.' });
+      continue;
+    }
+    const id = k as keyof NomesDasContas;
+    const nome = linha(v[k]);
+    if (!nome) r[id] = NOME_CONTA[id];
+    else if (nome.length < LIMITES_NOME_CONTA.min || nome.length > LIMITES_NOME_CONTA.max || CONTROLE.test(nome)) {
+      erros.push({ campo: `${campo}.${k}`, mensagem: `O nome da conta tem de ${LIMITES_NOME_CONTA.min} a ${LIMITES_NOME_CONTA.max} caracteres.` });
+    } else r[id] = nome;
+  }
+  if (r.caixa.toLocaleLowerCase('pt-BR') === r.banco.toLocaleLowerCase('pt-BR')) erros.push({ campo, mensagem: 'As duas contas precisam de nomes diferentes.' });
+  return r;
+}
+
 function lerRotulo(v: unknown, erros: ErroCampo[]): string {
   const r = linha(v);
   if (r.length < LIMITES_LOJA.rotuloMin || r.length > LIMITES_LOJA.rotuloMax || CONTROLE.test(r)) {
@@ -297,6 +326,7 @@ function lerSecao<S extends SecaoRegras>(secao: S, mudanca: unknown, base: Regra
     else if (secao === 'mensagens') r[k] = lerMensagem(k as keyof RegrasDaLoja['mensagens'], v, erros);
     else if (campo === 'estoque.motivosAjuste' || campo === 'financeiro.categoriasDespesa') r[k] = lerLista(campo, v, erros);
     else if (campo === 'produtos.unidades') r[k] = lerUnidades(v, erros);
+    else if (campo === 'financeiro.nomesContas') r[k] = lerNomesContas(v, (base as RegrasDaLoja['financeiro']).nomesContas, erros);
     else if (campo === 'clientes.campoExtra') {
       const atual = (base as RegrasDaLoja['clientes']).campoExtra;
       if (!ehObjeto(v)) {

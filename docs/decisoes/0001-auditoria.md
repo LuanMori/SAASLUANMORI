@@ -65,6 +65,11 @@ para o histórico (pode ter dado pessoal); fica só o que o lembrete registrou.
 Módulo 8 (Vale-troca, 20/11/2026): vale-troca emitido (código, valor e a venda da devolução). O código do vale
 não é dado pessoal; o cliente do vale fica no alvo da linha (o nome é buscado na hora de mostrar).
 
+Módulo 9 (Financeiro, 23/11/2026): conta a pagar lançada (valor, vencimento e categoria; a descrição fica na própria
+conta). Os nomes que a loja dá às contas ("Banco Itaú") são lidos na hora de mostrar o histórico, como o nome de quem
+fez: nos detalhes fica só o id da conta (`caixa` ou `banco`). Trocar o nome entra como "regras da loja alteradas"
+(categorias de despesa e nomes das contas), sem o nome novo.
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,
