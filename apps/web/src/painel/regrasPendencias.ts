@@ -6,16 +6,19 @@
 // (docs/PENDENCIAS.md). Nada aqui é passado para o card até o Luan escolher o que entra.
 // Para ligar: chamar estas funções com os dados da loja e passar o resultado para
 // `TelaPainel` em `pendencias`.
-// ✔ LIGADA (definida pelo Luan em 21/11/2026): a #16, caixa fechado sozinho à meia-noite (pendenciasDoCaixa),
+// ✔ LIGADAS (definidas pelo Luan em 21 e 22/11/2026): as do caixa, #1, #2, #3 e #16 (pendenciasDoCaixa),
 // que a Visão geral calcula com a situação do caixa.
 //   - #6 estoque baixo (no mínimo ou abaixo) ........ média · todos · "Fazer pedido" (Compras)
 //   - #7 estoque negativo ............................ alta  · gestor · "Ajustar" (Produtos e estoque)
 //   - #10 recebimento de cartão vencido sem confirmar  média · gestor · "Confirmar" (Financeiro)
 //   - #11 fiado vencido (passou do prazo de 30 dias) ... média · gestor · "Ver clientes" (Clientes)
 //   - #12 clientes para lembrar hoje (módulo 7) ........ média · todos  · "Ver lista" (Clientes → Retorno)
+//   - #1 caixa de hoje não aberto (LIGADA) ............ média · todos  · "Abrir caixa" (Caixa do dia)
+//   - #2 dia anterior com caixa aberto (LIGADA) ........ média · todos  · "Ir ao caixa" (Caixa do dia)
+//   - #3 diferença acima da tolerância (LIGADA) ........ alta  · só Dono · "Conferir" (Caixa do dia)
 //   - #16 caixa fechado sozinho, a verificar (LIGADA) .. média · gestor · "Verificar" (Caixa do dia)
 import { dataBr, formatarCentavos, liquidoAReceber, type Recebivel, recebiveisDeCartao, recebiveisDeFiado, recebiveisVencidos } from '@saas/core';
-import type { FechamentoAVerificar, PainelRetorno, Produto, SaldoEstoque } from '../api';
+import type { PainelRetorno, Produto, SaldoEstoque, SituacaoDoCaixaHoje } from '../api';
 import { plural } from './formato';
 import type { Pendencia } from './pendencias';
 
@@ -98,15 +101,47 @@ export function pendenciasDeRetorno(painel: Pick<PainelRetorno, 'hoje' | 'retorn
 }
 
 /**
- * #16 (definida pelo Luan em 21/11/2026, LIGADA): o caixa que ninguém fechou fechou sozinho à meia-noite, sem
- * contagem da gaveta. Fica até o Dono ou o Administrador verificar no Caixa do dia (a lista só vem para eles).
+ * Pendências do CAIXA (definidas pelo Luan em 21 e 22/11/2026, LIGADAS), com a situação do caixa de hoje.
+ * As listas da #3 e da #16 só vêm da API para quem pode agir (null para os outros papéis).
+ *   - #3: fechamento contado com falta ou sobra acima da tolerância, até o Dono dar ciência (só o Dono);
+ *   - #16: o caixa que ninguém fechou fechou sozinho à meia-noite, sem contagem: "Deseja verificar?";
+ *   - #2: dia anterior com o caixa aberto (o dia reaberto para contar a gaveta e ainda não fechado);
+ *   - #1: o caixa de hoje não foi aberto (quando não há dia anterior aberto, que vem antes).
  */
-export function pendenciasDoCaixa(aVerificar: readonly FechamentoAVerificar[]): Pendencia[] {
-  return aVerificar.map((f) => ({
-    id: `caixa-automatico:${f.dia}`,
-    gravidade: 'media',
-    texto: `O caixa de ${dataBr(f.dia)} fechou sozinho à meia-noite, sem contagem da gaveta (esperado ${formatarCentavos(f.esperadoCentavos)}). Deseja verificar?`,
-    acao: { rotulo: 'Verificar', secao: 'caixa-do-dia' },
-    soGestor: true,
-  }));
+export function pendenciasDoCaixa(s: Pick<SituacaoDoCaixaHoje, 'hoje' | 'estado' | 'atrasado' | 'aVerificar' | 'diferencasAConferir'>): Pendencia[] {
+  const lista: Pendencia[] = [];
+  for (const d of s.diferencasAConferir ?? []) {
+    lista.push({
+      id: `caixa-diferenca:${d.caixaId}`,
+      gravidade: 'alta',
+      texto: `Fechamento de ${dataBr(d.dia)} com ${d.diferencaCentavos < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(d.diferencaCentavos))}, acima da tolerância de ${formatarCentavos(d.toleranciaCentavos)} (fechou: ${d.fechouPor ?? '—'}${d.autorizadoPor ? ` • autorizou: ${d.autorizadoPor}` : ''}).`,
+      acao: { rotulo: 'Conferir', secao: 'caixa-do-dia' },
+      soDono: true,
+    });
+  }
+  for (const f of s.aVerificar ?? []) {
+    lista.push({
+      id: `caixa-automatico:${f.dia}`,
+      gravidade: 'media',
+      texto: `O caixa de ${dataBr(f.dia)} fechou sozinho à meia-noite, sem contagem da gaveta (esperado ${formatarCentavos(f.esperadoCentavos)}). Deseja verificar?`,
+      acao: { rotulo: 'Verificar', secao: 'caixa-do-dia' },
+      soGestor: true,
+    });
+  }
+  if (s.atrasado) {
+    lista.push({
+      id: `caixa-dia-aberto:${s.atrasado}`,
+      gravidade: 'media',
+      texto: `Dia com caixa aberto e sem fechamento: ${dataBr(s.atrasado)}. Feche esse dia para abrir o caixa de hoje.`,
+      acao: { rotulo: 'Ir ao caixa', secao: 'caixa-do-dia' },
+    });
+  } else if (s.estado === 'nao_aberto') {
+    lista.push({
+      id: `caixa-nao-aberto:${s.hoje}`,
+      gravidade: 'media',
+      texto: 'O caixa de hoje não foi aberto: vendas ficam bloqueadas.',
+      acao: { rotulo: 'Abrir caixa', secao: 'caixa-do-dia' },
+    });
+  }
+  return lista;
 }

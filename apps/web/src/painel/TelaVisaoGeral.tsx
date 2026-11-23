@@ -2,8 +2,9 @@
 // Visão geral no formato do DaniPets V9.3.3, só com o essencial:
 //   [ VENDAS DE HOJE (card grande) ] [ Produtos ativos  ]
 //                                    [ Saldo das contas ]
-// Embaixo, o card Pendências (o que entra nele ainda está A DEFINIR: docs/PENDENCIAS.md). Já ligada: a #16,
-// caixa fechado sozinho à meia-noite ("Deseja verificar?"), para o Dono e o Administrador.
+// Embaixo, o card Pendências (o que entra nele ainda está A DEFINIR: docs/PENDENCIAS.md). Já ligadas: as do
+// caixa (#1 não aberto, #2 dia anterior aberto, #3 diferença acima da tolerância só para o Dono, #16 "Deseja
+// verificar?"), calculadas com a situação do caixa.
 // Nada mais aparece na tela. Mais informação só ao clicar:
 //   - card grande: abre logo abaixo o relatório das vendas de hoje (de onde vem
 //     o número, por forma de pagamento, por quem vendeu e venda por venda);
@@ -106,9 +107,9 @@ export function TelaVisaoGeral({
         ? 'Caixa de hoje fechado'
         : 'Caixa de hoje não aberto';
   const classeCaixa = `caixa-situacao vg-caixa${caixa?.estado === 'aberto' ? ' caixa-aberto' : caixa?.estado === 'nao_aberto' ? ' caixa-nao-aberto' : ''}`;
-  // #16: fechamento automático a verificar. A lista só vem para quem confere o caixa (Dono e Administrador);
-  // sem ela (Vendedor, ou servidor sem o caixa), ficam só as pendências recebidas (null = nada definido).
-  const doCaixa = caixa?.aVerificar ? pendenciasDoCaixa(caixa.aVerificar).map((p) => (aoVerCaixa ? p : { ...p, acao: undefined })) : null;
+  // Pendências do caixa (#1, #2, #3 e #16). As da #3 e da #16 só vêm da API para quem pode agir. Sem a situação
+  // do caixa (servidor sem essa parte), ficam só as pendências recebidas (null = nada definido).
+  const doCaixa = caixa ? pendenciasDoCaixa(caixa).map((p) => (aoVerCaixa ? p : { ...p, acao: undefined })) : null;
   const todasPendencias = doCaixa === null ? pendencias : [...doCaixa, ...(pendencias ?? [])];
   const lendoCaixa = Boolean(api.lerSituacaoDoCaixa) && estadoCaixa.tipo === 'carregando';
 

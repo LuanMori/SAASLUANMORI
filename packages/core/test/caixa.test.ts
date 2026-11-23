@@ -2,20 +2,24 @@
 import { describe, expect, it } from 'vitest';
 import {
   abrirCaixa,
+  acimaDaTolerancia,
   type Autorizacao,
   autorizacaoServe,
   type CaixaDoDia,
   calcularCancelamento,
   conferirCaixaAberto,
   conferirCaixaParaVender,
+  conferirCiencia,
   conferirDesfazer,
   conferirFechamento,
   conferirHojeNaoFechado,
   conferirLiberacao,
   conferirSaida,
   conferirVerificacao,
+  darCiencia,
   desfazerFechamento,
   diaTravado,
+  diferencasAConferir,
   efeitosDaCompra,
   efeitosFinanceirosDoEstorno,
   fecharCaixa,
@@ -286,6 +290,57 @@ describe('fechar o caixa (CX-04)', () => {
   });
 });
 
+describe('diferença acima da tolerância: ciência do Dono (pendência 3, pedido do Luan em 22/11/2026)', () => {
+  const ctxBase = { hoje: HOJE, fuso: FUSO, toleranciaCentavos: 1000, podeQualquerDiferenca: true };
+  const lancamentos = [lanc({ conta: 'caixa', tipo: 'venda', valorCentavos: 5000, criadoEm: `${HOJE}T13:00:00.000Z` })];
+  /** Fecha o caixa de `dia` (esperado R$ 150,00) com o contado e quem fechou/autorizou. */
+  function fechar(dia: string, contadoCentavos: number, extra: { donoCiente?: Operador | null; toleranciaCentavos?: number | null } = {}) {
+    const c = caixa(dia, 10000);
+    const lanc2 = lancamentos.map((l) => ({ ...l, criadoEm: `${dia}T13:00:00.000Z` }));
+    const conferido = conferirFechamento({ dia, contadoCentavos, justificativa: 'troco errado', autorizacao: null }, { ...ctxBase, caixas: [c], lancamentos: lanc2 });
+    if (!conferido.ok) throw new Error('não conferiu');
+    return fecharCaixa(conferido.valor, { em: `${dia}T21:30:00.000Z`, por: BRUNO, autorizadoPor: null, vendas: [], lancamentos: lanc2, fuso: FUSO, toleranciaCentavos: 1000, ...extra }).caixa;
+  }
+
+  it('o fechamento guarda a tolerância; falta ou sobra acima dela fica para o Dono dar ciência', () => {
+    const falta = fechar(HOJE, 12500); // falta de R$ 25,00 (tolerância R$ 10,00)
+    expect(falta.fechamento).toMatchObject({ diferencaCentavos: -2500, toleranciaCentavos: 1000 });
+    expect(falta.fechamento!.ciencia).toBeUndefined();
+    expect(acimaDaTolerancia(falta.fechamento!, 1000)).toBe(true);
+    const noLimite = fechar(ONTEM, 14000); // falta de R$ 10,00: igual à tolerância não conta
+    expect(acimaDaTolerancia(noLimite.fechamento!, 1000)).toBe(false);
+    // a tolerância guardada vale mesmo que a da loja mude depois; o fechamento antigo (sem ela) usa a de agora
+    expect(acimaDaTolerancia(falta.fechamento!, 5000)).toBe(true);
+    const antigo: CaixaDoDia = { ...noLimite, fechamento: { ...noLimite.fechamento!, toleranciaCentavos: undefined } };
+    expect(acimaDaTolerancia(antigo.fechamento!, 500)).toBe(true);
+    // o automático não teve contagem: não entra
+    expect(acimaDaTolerancia(fechado(caixa('2026-11-17'), true).fechamento!, 0)).toBe(false);
+    const sobra = fechar('2026-11-16', 17000); // sobra de R$ 20,00
+    expect(diferencasAConferir([falta, noLimite, sobra, caixa('2026-11-20')], 1000).map((c) => c.dia)).toEqual(['2026-11-16', HOJE]);
+  });
+
+  it('se foi o Dono que fechou ou autorizou, a diferença já entra com a ciência dele', () => {
+    const c = fechar(HOJE, 12500, { donoCiente: ANA });
+    expect(c.fechamento!.ciencia).toEqual({ em: `${HOJE}T21:30:00.000Z`, por: ANA });
+    expect(diferencasAConferir([c], 1000)).toEqual([]);
+    // dentro da tolerância não há o que dar ciência
+    expect(fechar(ONTEM, 14500, { donoCiente: ANA }).fechamento!.ciencia).toBeUndefined();
+  });
+
+  it('dar ciência: só fechamento com diferença acima da tolerância, uma vez só', () => {
+    const falta = fechar(HOJE, 12500);
+    expect(mensagem(conferirCiencia([falta], 'nenhum', 1000))).toBe('Caixa não encontrado.');
+    expect(mensagem(conferirCiencia([caixa(ONTEM)], `cx-${ONTEM}`, 1000))).toBe('Este caixa não está fechado.');
+    expect(mensagem(conferirCiencia([fechado(caixa(ONTEM))], `cx-${ONTEM}`, 1000))).toBe('Este fechamento não tem diferença acima da tolerância.');
+    const r = conferirCiencia([falta], falta.id, 1000);
+    if (!r.ok) throw new Error('devia aceitar');
+    const ciente = darCiencia(r.valor, { em: '2026-11-20T11:00:00.000Z', por: ANA });
+    expect(ciente.fechamento).toMatchObject({ diferencaCentavos: -2500, ajusteCentavos: -2500, ciencia: { em: '2026-11-20T11:00:00.000Z', por: ANA } });
+    expect(diferencasAConferir([ciente], 1000)).toEqual([]);
+    expect(mensagem(conferirCiencia([ciente], ciente.id, 1000))).toBe('Ana já está ciente deste fechamento.');
+  });
+});
+
 describe('fechamento automático (CX-06)', () => {
   it('o caixa que passou da meia-noite aberto fecha sozinho, sem contagem e sem ajuste', () => {
     const lancamentos = [lanc({ conta: 'caixa', tipo: 'venda', valorCentavos: 2500, criadoEm: `${ONTEM}T15:00:00.000Z` })];
@@ -531,6 +586,8 @@ describe('histórico do caixa', () => {
     expect(resumirAuditoria('caixa.fechamento_desfeito', { dia: ONTEM, automatico: true })).toBe('18/11/2026 • era automático');
     expect(limpo(resumirAuditoria('caixa.fechamento_verificado', { dia: ONTEM, esperadoCentavos: 7500, comObservacao: true }))).toBe('18/11/2026 • esperado R$ 75,00 • com observação');
     expect(limpo(resumirAuditoria('caixa.fechamento_verificado', { dia: ONTEM, esperadoCentavos: 7500, comObservacao: false }))).toBe('18/11/2026 • esperado R$ 75,00');
+    expect(limpo(resumirAuditoria('caixa.diferenca_ciente', { dia: ONTEM, diferencaCentavos: -2500 }))).toBe('18/11/2026 • falta de R$ 25,00');
+    expect(limpo(resumirAuditoria('caixa.diferenca_ciente', { dia: ONTEM, diferencaCentavos: 2000 }))).toBe('18/11/2026 • sobra de R$ 20,00');
     expect(resumirAuditoria('dia_fechado.liberado', { oque: 'compra', dia: ONTEM, autorizadoPor: 'ana' }, nome)).toBe('compra • data 18/11/2026 • liberado por Ana');
   });
 });

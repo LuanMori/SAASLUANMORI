@@ -981,7 +981,9 @@ h2 { font-size: 1.05rem; }
 .caixa-sem-dif { background: var(--primaria-clara); color: var(--primaria-texto-forte); }
 .caixa-historico .pe-situacao { margin-left: 0; }
 /* a justificativa e a verificação (com observação) quebram a linha em vez de empurrar a coluna Quem */
-.caixa-historico td[data-rotulo='Diferença'] { white-space: normal; min-width: 200px; max-width: 280px; }
+.caixa-historico td[data-rotulo='Diferença'] { white-space: normal; min-width: 180px; max-width: 260px; }
+.caixa-historico td[data-rotulo='Quem'] { white-space: normal; min-width: 170px; }
+.caixa-historico td[data-rotulo='Ação'] .botao { padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; }
 .caixa-historico .pe-situacao { white-space: nowrap; }
 .pdv-caixa-aviso { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 16px 0; }
 .pdv-pilula.pdv-caixa-ok { background: #0b5f40; color: #fff; }
@@ -1002,7 +1004,7 @@ h2 { font-size: 1.05rem; }
   .caixa-historico td[data-rotulo='Dia']::before, .caixa-historico td[data-rotulo='Ação']::before { content: none; }
   .caixa-historico td[data-rotulo='Diferença'], .caixa-historico td[data-rotulo='Quem'], .caixa-historico td[data-rotulo='Ação'] { grid-column: 1 / -1; }
   .caixa-historico td[data-rotulo='Ação'] > .suave { display: none; }
-  .caixa-historico td[data-rotulo='Diferença'] { min-width: 0; max-width: none; }
+  .caixa-historico td[data-rotulo='Diferença'], .caixa-historico td[data-rotulo='Quem'] { min-width: 0; max-width: none; }
 }
 
 /* Clientes (Fase 2, módulo 6; DaniPets pageCustomers) */

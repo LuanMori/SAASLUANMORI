@@ -21,6 +21,9 @@ export const NOME_PAPEL: Record<PapelDeLoja, string> = { dono: 'Dono', administr
  */
 export const ehGestor = (papel: PapelDeLoja): boolean => papel === 'dono' || papel === 'administrador';
 
+/** Só o Dono (ex.: pendências que só ele vê). */
+export const ehDono = (papel: PapelDeLoja): boolean => papel === 'dono';
+
 export function ehPapel(valor: unknown): valor is Papel {
   return typeof valor === 'string' && (PAPEIS as readonly string[]).includes(valor);
 }

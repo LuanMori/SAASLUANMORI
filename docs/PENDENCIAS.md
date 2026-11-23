@@ -1,11 +1,12 @@
 # Pendências da Visão geral
 
 > **Status: A DEFINIR.** O card já existe (pedido do Luan em 13/11/2026), mas ainda não escolhemos
-> quais avisos entram nele. **Exceção:** a pendência **16** (caixa fechado sozinho à meia-noite, "Deseja
-> verificar?") foi definida pelo Luan em 21/11/2026 e já aparece no card para o Dono e o Administrador.
+> quais avisos entram nele. **Exceção: as do Caixa do dia já estão definidas e LIGADAS** pelo Luan:
+> a **16** (caixa fechado sozinho à meia-noite, "Deseja verificar?", Dono e Administrador) em 21/11/2026,
+> e a **1** (caixa de hoje não aberto, todos), a **2** (dia anterior com caixa aberto, todos) e a **3**
+> (fechamento com diferença acima da tolerância, **só o Dono**) em 22/11/2026.
 > As outras continuam a definir: sem nenhuma pendência, o card diz "Nada pendente. Tudo em ordem." e
-> explica que só o aviso do caixa está ligado (para o Vendedor, que não vê a 16, continua
-> "Ainda não definimos quais avisos entram aqui."). Nada é inventado.
+> explica que, por enquanto, só os avisos do caixa estão ligados. Nada é inventado.
 
 ## O que já está pronto
 
@@ -26,6 +27,17 @@
 - **20/11/2026 (módulo 7, Fidelidade):** a **12** (clientes para lembrar hoje: sem comprar e cashback vencendo)
   também ficou pronta e desligada, com o texto do DaniPets ("2 clientes para lembrar hoje (1 sem comprar, 1
   cashback vencendo)"). Ela usa a mesma lista da aba Clientes → Retorno.
+- **22/11/2026 (pedido do Luan: "pode ligar todos, o 3 somente para o dono"): a 1, a 2 e a 3 foram LIGADAS.**
+  - **1** "O caixa de hoje não foi aberto: vendas ficam bloqueadas." (todos), botão **Abrir caixa**;
+  - **2** "Dia com caixa aberto e sem fechamento: 21/11/2026. Feche esse dia para abrir o caixa de hoje."
+    (todos), botão **Ir ao caixa**. Com o fechamento automático, isso só acontece quando alguém desfez o
+    fechamento de um dia para contar a gaveta e ainda não fechou; nesse caso ela aparece no lugar da 1;
+  - **3** "Fechamento de 22/11/2026 com falta de R$ 30,00, acima da tolerância de R$ 10,00 (fechou: Bruno •
+    autorizou: Caio)." (urgente, **só o Dono**), botão **Conferir**. No Caixa do dia, o Dono vê o aviso
+    vermelho com a justificativa e clica em **Ciente** (como o "Ciente" do DaniPets para cliente excluído).
+    Se foi o próprio Dono que fechou ou autorizou, já fica ciente. O fechamento guarda a tolerância daquele
+    momento, e mudar a regra depois não muda o que já fechou. Permissão nova: "Dar ciência do fechamento
+    com diferença acima da tolerância" (só o Dono).
 - **21/11/2026 (pedido do Luan): a 16 foi DEFINIDA e LIGADA.** Quando ninguém fecha o caixa, ele fecha
   sozinho à meia-noite (inclusive com o sistema aberto) e fica a pendência "O caixa de 21/11/2026 fechou
   sozinho à meia-noite, sem contagem da gaveta (esperado R$ 100,00). Deseja verificar?", com o botão
@@ -43,9 +55,9 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | # | Pendência | Gravidade | Quem vê | Botão leva para | Depende de (ainda não existe) |
 |---|---|---|---|---|---|
 | **Caixa do dia** | | | | | |
-| 1 | O caixa de hoje não foi aberto: vendas ficam bloqueadas | média | todos | Caixa do dia ("Abrir caixa") | abertura e fechamento de caixa |
-| 2 | Dia anterior com caixa aberto e sem fechamento | média | todos | Caixa do dia | abertura e fechamento de caixa |
-| 3 | Fechamento com diferença acima do tolerado, aguardando o Dono | alta | gestor | Caixa do dia | fechamento de caixa |
+| **1** | **O caixa de hoje não foi aberto: vendas ficam bloqueadas** | média | todos | Caixa do dia ("Abrir caixa") | **DEFINIDA pelo Luan em 22/11/2026 e LIGADA** |
+| **2** | **Dia anterior com caixa aberto e sem fechamento** | média | todos | Caixa do dia ("Ir ao caixa") | **DEFINIDA pelo Luan em 22/11/2026 e LIGADA** |
+| **3** | **Fechamento com diferença acima da tolerância: o Dono dá ciência** | alta | **só o Dono** | Caixa do dia ("Conferir" → "Ciente") | **DEFINIDA pelo Luan em 22/11/2026 e LIGADA** |
 | **16** | **Caixa fechado sozinho à meia-noite, sem contagem: "Deseja verificar?"** | média | gestor | Caixa do dia ("Verificar") | **DEFINIDA pelo Luan em 21/11/2026 e LIGADA** |
 | **Produtos e estoque / Compras** | | | | | |
 | 4 | Lote com validade **vencida** ainda no estoque | alta | todos (baixa só gestor) | Produtos e estoque | lote e validade na entrada de compras |
@@ -75,5 +87,5 @@ automático do banco: a loja não precisa fazer nada. Sugestão: não incluir es
 ## Como decidir
 
 Para cada pendência: entra ou não? Gravidade? Quem vê? Para qual aba o botão leva?
-Sugestão de ordem: começar pelas que já estão prontas (6, 7, 10, 11 e 12) e pelas que dependem das próximas
-telas (Caixa do dia e Produtos e estoque): 1, 2, 4 e 5. A 16 já está ligada (21/11/2026).
+Já ligadas: as do caixa (1, 2, 3 e 16). Sugestão de ordem para as próximas: as que já estão prontas e só
+esperam o "sim" (6, 7, 10, 11 e 12) e as de validade (4 e 5), que dependem da aba Produtos e estoque.

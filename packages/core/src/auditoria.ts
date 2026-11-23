@@ -55,6 +55,7 @@ export const ACOES_AUDITORIA = {
   'caixa.fechado': 'Fechamento de caixa',
   'caixa.fechamento_automatico': 'Fechamento automático',
   'caixa.fechamento_verificado': 'Fechamento automático verificado',
+  'caixa.diferenca_ciente': 'Ciência de diferença no fechamento',
   'caixa.fechamento_desfeito': 'Fechamento desfeito',
   'dia_fechado.liberado': 'Lançamento retroativo liberado',
   // fornecedores
@@ -294,6 +295,11 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'caixa.fechamento_automatico':
       partes.push(diaBr(d.dia), 'sem contagem e sem ajuste');
       break;
+    case 'caixa.diferenca_ciente': {
+      const dif = typeof d.diferencaCentavos === 'number' && Number.isSafeInteger(d.diferencaCentavos) && d.diferencaCentavos !== 0 ? d.diferencaCentavos : null;
+      partes.push(diaBr(d.dia), dif === null ? null : `${dif < 0 ? 'falta' : 'sobra'} de ${formatarCentavos(Math.abs(dif))}`);
+      break;
+    }
     case 'caixa.fechamento_verificado':
       partes.push(diaBr(d.dia), dinheiro(d.esperadoCentavos) && `esperado ${dinheiro(d.esperadoCentavos)}`, d.comObservacao === true ? 'com observação' : null);
       break;

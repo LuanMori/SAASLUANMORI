@@ -11,7 +11,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 2. Produtos e estoque | **Concluído** (19/11/2026) |
 | 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
-| 5. Caixa do dia | **Concluído** (19/11/2026; ajuste pedido pelo Luan em 21/11/2026) |
+| 5. Caixa do dia | **Concluído** (19/11/2026; ajustes pedidos pelo Luan em 21 e 22/11/2026) |
 | 6. Clientes | **Concluído** (20/11/2026) |
 | 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | **Concluído** (20/11/2026) |
@@ -299,6 +299,42 @@ se deseja verificar."*
     venda gravada);
   - o Vendedor vê só "a verificar";
   - tema escuro;
+  - celular sem rolagem para o lado;
+  - console sem erros.
+
+### Ajuste de 22/11/2026 (pedido do Luan): pendências 1, 2 e 3 do caixa ligadas
+
+O pedido: *"pode ligar todos, o 3 somente para o dono"* (as três sugestões do caixa de `docs/PENDENCIAS.md`).
+
+- **1 — caixa de hoje não aberto** (todos): "O caixa de hoje não foi aberto: vendas ficam bloqueadas.", com
+  **Abrir caixa** (texto do DaniPets).
+- **2 — dia anterior com caixa aberto** (todos): "Dia com caixa aberto e sem fechamento: 21/11/2026. Feche esse
+  dia para abrir o caixa de hoje.", com **Ir ao caixa**. Aparece no lugar da 1, porque é esse dia que precisa
+  fechar antes. Com o fechamento automático, só acontece quando alguém desfez o fechamento para contar a gaveta.
+- **3 — diferença acima da tolerância** (urgente, **só o Dono**): "Fechamento de 22/11/2026 com falta de
+  R$ 30,00, acima da tolerância de R$ 10,00 (fechou: Bruno • autorizou: Caio).", com **Conferir**:
+  - no Caixa do dia, o Dono vê o aviso vermelho com a justificativa e clica em **Ciente** (como o "Ciente" do
+    DaniPets para cliente excluído). O histórico mostra "ciente: Ana em … às …" ou "aguardando a ciência do
+    Dono", e o registro de ações ganha "Ciência de diferença no fechamento";
+  - se foi o próprio Dono que fechou ou autorizou com a senha, já fica ciente;
+  - o fechamento guarda a tolerância do momento: mudar a regra depois não muda o que já fechou;
+  - permissão nova em `packages/core/src/permissoes.ts`: "Dar ciência do fechamento com diferença acima da
+    tolerância" (só o Dono; aparece na tabela de permissões da aba Usuários). O Administrador não vê a 3.
+- O card de Pendências vazio diz "Nada pendente. Tudo em ordem." e "Por enquanto, só os avisos do caixa estão
+  ligados". As outras pendências continuam A DEFINIR.
+- No histórico do caixa, a coluna "Quem" passou a quebrar a linha, para o botão "Desfazer fechamento" não ficar
+  cortado.
+- **Testes:**
+  - núcleo 390 (+3): tolerância guardada, ciência automática do Dono e dar ciência; permissão nova;
+  - servidor 134;
+  - tela 340 (+6): API (só o Dono vê e dá ciência; o Dono que fecha ou autoriza já fica ciente), regras das
+    pendências 1, 2, 3 e 16, Visão geral e Caixa do dia (Administrador e Dono) e o filtro "só o Dono" do painel.
+- **Navegador:**
+  - o Vendedor vê a 1 e "Abrir caixa" leva ao Caixa do dia; com o caixa aberto, "Nada pendente";
+  - o Bruno fecha com falta de R$ 30,00 autorizada pelo Caio;
+  - o Caio (Administrador) não vê a 3;
+  - a Ana vê a 3 em vermelho e dá **Ciente** no Caixa do dia;
+  - a 2 aparece depois de desfazer um fechamento automático, e "Ir ao caixa" leva ao fechamento;
   - celular sem rolagem para o lado;
   - console sem erros.
 

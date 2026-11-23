@@ -44,7 +44,7 @@ async function loja() {
 describe('abrir o caixa e vender', () => {
   it('sem caixa aberto não vende; o Vendedor abre (é o responsável) e a venda fica ligada ao caixa', async () => {
     const { ana, bruno, vender, historico } = await loja();
-    expect(await bruno.lerSituacaoDoCaixa()).toEqual({ hoje: HOJE, estado: 'nao_aberto', abertoEm: null, fechadoEm: null, responsavel: null, atrasado: null, aVerificar: null });
+    expect(await bruno.lerSituacaoDoCaixa()).toEqual({ hoje: HOJE, estado: 'nao_aberto', abertoEm: null, fechadoEm: null, responsavel: null, atrasado: null, aVerificar: null, diferencasAConferir: null });
     const semCaixa = await erro(vender(bruno));
     expect([semCaixa.status, semCaixa.codigo, semCaixa.message]).toEqual([409, 'caixa', 'Abra o caixa de hoje (Caixa do dia) antes de vender.']);
 
@@ -253,6 +253,62 @@ describe('fechar e desfazer', () => {
     expect(fechado.fechamento).toMatchObject({ automatico: false, diferencaCentavos: -500, ajusteCentavos: -500 });
     await bruno.abrirCaixa({ fundoCentavos: 2500 });
     expect((await bruno.lerSituacaoDoCaixa()).estado).toBe('aberto');
+  });
+});
+
+describe('diferença acima da tolerância: ciência do Dono (pendência 3, pedido do Luan em 22/11/2026)', () => {
+  /** Bruno abre com R$ 100,00 e vende R$ 20,00 em dinheiro: esperado R$ 120,00. */
+  async function caixaDoBruno() {
+    const l = await loja();
+    await l.bruno.abrirCaixa({ fundoCentavos: 10000 });
+    await l.vender(l.bruno, 'dinheiro', 2);
+    return l;
+  }
+
+  it('falta acima da tolerância autorizada pelo Administrador fica para o Dono dar ciência (só ele vê e dá)', async () => {
+    const { ana, caio, bruno, historico } = await caixaDoBruno();
+    const { autorizacao } = await bruno.autorizar({ usuarioId: 'caio', senha: 'demo1234', acao: { tipo: 'fechamento', dia: HOJE, contadoCentavos: 9500 } });
+    const fechado = await bruno.fecharCaixa({ dia: HOJE, contadoCentavos: 9500, justificativa: 'troco errado', autorizacao });
+    expect(fechado.fechamento).toMatchObject({ diferencaCentavos: -2500, toleranciaCentavos: 1000, autorizadoPor: { id: 'caio' } });
+    expect(fechado.fechamento!.ciencia).toBeUndefined();
+    const item = { caixaId: fechado.id, dia: HOJE, diferencaCentavos: -2500, toleranciaCentavos: 1000, fechouPor: 'Bruno', autorizadoPor: 'Caio' };
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir).toEqual([item]);
+    expect((await caio.lerSituacaoDoCaixa()).diferencasAConferir).toBeNull(); // o Administrador não vê
+    expect((await bruno.lerSituacaoDoCaixa()).diferencasAConferir).toBeNull();
+    // a tolerância guardada no fechamento vale, mesmo que a loja mude a regra depois
+    await ana.salvarRegrasDaLoja({ caixa: { toleranciaCentavos: 5000 } });
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir).toEqual([item]);
+    expect((await erro(caio.darCienciaDaDiferenca(fechado.id))).status).toBe(403);
+    expect((await erro(ana.darCienciaDaDiferenca('nenhum'))).status).toBe(404);
+
+    const ciente = await ana.darCienciaDaDiferenca(fechado.id);
+    expect(ciente.fechamento!.ciencia).toMatchObject({ por: { id: 'ana', nome: 'Ana' } });
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir).toEqual([]);
+    expect((await erro(ana.darCienciaDaDiferenca(fechado.id))).message).toBe('Ana já está ciente deste fechamento.');
+    expect((await historico()).map((h) => [h.texto, h.quem, txt(h.resumo ?? '')])[0]).toEqual(['Ciência de diferença no fechamento', 'Ana', '19/11/2026 • falta de R$ 25,00']);
+  });
+
+  it('o Dono que autorizou ou fechou já fica ciente; o Administrador que fecha sozinho com diferença gera a pendência', async () => {
+    const { ana, caio, bruno, mudar } = await caixaDoBruno();
+    const { autorizacao } = await bruno.autorizar({ usuarioId: 'ana', senha: 'demo1234', acao: { tipo: 'fechamento', dia: HOJE, contadoCentavos: 9500 } });
+    const fechado = await bruno.fecharCaixa({ dia: HOJE, contadoCentavos: 9500, justificativa: 'troco errado', autorizacao });
+    expect(fechado.fechamento!.ciencia).toMatchObject({ por: { id: 'ana', nome: 'Ana' } });
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir).toEqual([]);
+
+    // 20/11: o Administrador fecha com sobra de R$ 30,00 (não precisa de senha), e o Dono fica sabendo
+    mudar('2026-11-20T12:00:00Z');
+    await bruno.abrirCaixa({ fundoCentavos: 10000 });
+    const sobra = await caio.fecharCaixa({ dia: '2026-11-20', contadoCentavos: 13000, justificativa: 'dinheiro sem registro' });
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir).toEqual([
+      { caixaId: sobra.id, dia: '2026-11-20', diferencaCentavos: 3000, toleranciaCentavos: 1000, fechouPor: 'Caio', autorizadoPor: null },
+    ]);
+
+    // 21/11: o próprio Dono fecha com falta de R$ 30,00: já fica ciente (só a de 20/11 continua)
+    mudar('2026-11-21T12:00:00Z');
+    await ana.abrirCaixa({ fundoCentavos: 10000 });
+    const doDono = await ana.fecharCaixa({ dia: '2026-11-21', contadoCentavos: 7000, justificativa: 'contei depois' });
+    expect(doDono.fechamento!.ciencia).toMatchObject({ por: { id: 'ana' } });
+    expect((await ana.lerSituacaoDoCaixa()).diferencasAConferir!.map((d) => d.dia)).toEqual(['2026-11-20']);
   });
 });
 

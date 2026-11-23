@@ -83,6 +83,9 @@ import {
   conferirCaixaParaVender,
   conferirDesfazer,
   conferirVerificacao,
+  conferirCiencia,
+  darCiencia,
+  diferencasAConferir,
   conferirFechamento,
   conferirHojeNaoFechado,
   conferirLiberacao,
@@ -2231,6 +2234,20 @@ export function criarApiLocal({
         aVerificar: pode(quem.papel, 'caixa.desfazer')
           ? fechamentosAVerificar(caixasDaLoja()).map((c) => ({ caixaId: c.id, dia: c.dia, esperadoCentavos: c.fechamento!.esperadoCentavos }))
           : null,
+        // pendência 3: falta ou sobra acima da tolerância, só para o Dono
+        diferencasAConferir: pode(quem.papel, 'caixa.ciencia')
+          ? diferencasAConferir(caixasDaLoja(), regras().caixa.toleranciaCentavos).map((c) => {
+              const f = c.fechamento!;
+              return {
+                caixaId: c.id,
+                dia: c.dia,
+                diferencaCentavos: f.diferencaCentavos!,
+                toleranciaCentavos: f.toleranciaCentavos ?? regras().caixa.toleranciaCentavos,
+                fechouPor: f.por?.nome ?? null,
+                autorizadoPor: f.autorizadoPor?.nome ?? null,
+              };
+            })
+          : null,
       };
     },
 
@@ -2300,6 +2317,8 @@ export function criarApiLocal({
         // diferença acima da tolerância: o Vendedor precisa da senha do Dono ou do Administrador (DaniPets CX-04)
         let autorizadoPor: Operador | null = null;
         let usada: string | null = null;
+        // a diferença acima da tolerância fica para o Dono dar ciência, a não ser que ele mesmo tenha fechado ou autorizado
+        let donoCiente: Operador | null = pode(quem.papel, 'caixa.ciencia') ? pessoa(quem) : null;
         if (c.valor.precisaAutorizacao) {
           const a = pedido.autorizacao ? (autorizacoesDaLoja().get(pedido.autorizacao) ?? null) : null;
           const serve = autorizacaoServe(a, 'caixa.diferenca', (x) => x.tipo === 'fechamento' && x.dia === pedido.dia && x.contadoCentavos === pedido.contadoCentavos, agora());
@@ -2308,8 +2327,9 @@ export function criarApiLocal({
           }
           autorizadoPor = { id: a.autorizador.id, nome: a.autorizador.nome };
           usada = a.id;
+          if (pode(a.autorizador.papel, 'caixa.ciencia')) donoCiente = autorizadoPor;
         }
-        const r = fecharCaixa(c.valor, { em: agora().toISOString(), por: pessoa(quem), autorizadoPor, vendas: vendasDaLoja(), lancamentos, fuso });
+        const r = fecharCaixa(c.valor, { em: agora().toISOString(), por: pessoa(quem), autorizadoPor, vendas: vendasDaLoja(), lancamentos, fuso, toleranciaCentavos: tolerancia, donoCiente });
         gravarCaixas(caixas.map((x) => (x.id === r.caixa.id ? r.caixa : x)));
         if (r.ajuste) juntarLancamentos([r.ajuste]);
         if (usada) autorizacoes.delete(usada);
@@ -2336,6 +2356,20 @@ export function criarApiLocal({
         const caixa = verificarFechamento(c.valor, { em: agora().toISOString(), por: pessoa(quem), observacao: pedido.observacao });
         gravarCaixas(caixas.map((x) => (x.id === caixa.id ? caixa : x)));
         auditar('caixa.fechamento_verificado', null, { dia: caixa.dia, esperadoCentavos: caixa.fechamento!.esperadoCentavos, comObservacao: pedido.observacao !== null });
+        return caixa;
+      });
+    },
+
+    async darCienciaDaDiferenca(caixaId) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('caixa.ciencia');
+        const caixas = caixasDaLoja();
+        const c = conferirCiencia(caixas, caixaId, regras().caixa.toleranciaCentavos);
+        if (!c.ok) throw new ErroApi(c.erros[0]!.mensagem === 'Caixa não encontrado.' ? 404 : 409, c.erros[0]!.mensagem, c.erros);
+        const caixa = darCiencia(c.valor, { em: agora().toISOString(), por: pessoa(quem) });
+        gravarCaixas(caixas.map((x) => (x.id === caixa.id ? caixa : x)));
+        auditar('caixa.diferenca_ciente', null, { dia: caixa.dia, diferencaCentavos: caixa.fechamento!.diferencaCentavos });
         return caixa;
       });
     },

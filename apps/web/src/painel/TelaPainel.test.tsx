@@ -196,31 +196,41 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     expect(within(menu).getByRole('button', { name: 'Financeiro' }).getAttribute('aria-current')).toBe('page');
   });
 
-  it('Pendências: botão leva para a aba; Vendedor não vê as "só gestor" nem botão para aba sem acesso', async () => {
+  it('Pendências: botão leva para a aba; Vendedor não vê as "só gestor" e as "só Dono" nem botão para aba sem acesso', async () => {
     const pendencias = [
-      { id: 'caixa', gravidade: 'media' as const, texto: 'Caixa não aberto.', acao: { rotulo: 'Abrir caixa', secao: 'caixa-do-dia' as const } },
+      { id: 'validade', gravidade: 'media' as const, texto: 'Lote vencendo.', acao: { rotulo: 'Ver produto', secao: 'produtos-e-estoque' as const } },
       { id: 'estoque', gravidade: 'media' as const, texto: 'Estoque baixo.', acao: { rotulo: 'Fazer pedido', secao: 'compras' as const } },
       { id: 'conta', gravidade: 'alta' as const, texto: 'Conta vencida.', acao: { rotulo: 'Ver contas', secao: 'financeiro' as const }, soGestor: true },
+      { id: 'dono', gravidade: 'alta' as const, texto: 'Só o Dono vê.', soDono: true },
     ];
     const api = criarApiLocal({ lojaId: 'loja-p', operador: { id: 'b', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0 });
+    const textos = (card: HTMLElement) => within(card).getAllByRole('listitem').map((li) => li.querySelector('.pend-texto')?.textContent);
     const { unmount } = render(
       <TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Bruno', papel: 'vendedor' }} aoSair={vi.fn()} pendencias={pendencias} />,
     );
     const card = (await screen.findByRole('heading', { name: /Pendências/ })).closest('section')!;
-    expect(within(card).getAllByRole('listitem').map((li) => li.querySelector('.pend-texto')?.textContent)).toEqual([
-      'Atenção: Caixa não aberto.',
-      'Atenção: Estoque baixo.',
-    ]);
+    // a pendência 1 (caixa de hoje não aberto) vem da situação do caixa, para todos
+    await within(card).findByText(/O caixa de hoje não foi aberto/);
+    expect(textos(card)).toEqual(['Atenção: O caixa de hoje não foi aberto: vendas ficam bloqueadas.', 'Atenção: Lote vencendo.', 'Atenção: Estoque baixo.']);
     expect(within(card).queryByRole('button', { name: 'Fazer pedido' })).toBeNull(); // Vendedor não abre Compras
     await userEvent.click(within(card).getByRole('button', { name: 'Abrir caixa' }));
     const menu = screen.getByRole('navigation', { name: 'Menu principal' });
     expect(within(menu).getByRole('button', { name: 'Caixa do dia' }).getAttribute('aria-current')).toBe('page');
     unmount();
 
+    // o Administrador vê as "só gestor", mas não as "só Dono"
+    const adm = render(<TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Caio', papel: 'administrador' }} aoSair={vi.fn()} pendencias={pendencias} />);
+    const cardAdm = (await screen.findByRole('heading', { name: /Pendências/ })).closest('section')!;
+    await within(cardAdm).findByText(/O caixa de hoje não foi aberto/);
+    expect(textos(cardAdm)).not.toContain('Urgente: Só o Dono vê.');
+    expect(textos(cardAdm)).toContain('Urgente: Conta vencida.');
+    adm.unmount();
+
     render(<TelaPainel api={api} loja={{ nome: 'Loja P' }} pessoa={{ nome: 'Ana', papel: 'dono' }} aoSair={vi.fn()} pendencias={pendencias} />);
     const cardDono = (await screen.findByRole('heading', { name: /Pendências/ })).closest('section')!;
-    expect(within(cardDono).getAllByRole('listitem')).toHaveLength(3);
-    expect(within(cardDono).getAllByRole('listitem')[0]!.textContent).toMatch(/Conta vencida/); // urgente primeiro
+    await within(cardDono).findByText(/O caixa de hoje não foi aberto/);
+    expect(within(cardDono).getAllByRole('listitem')).toHaveLength(5);
+    expect(textos(cardDono).slice(0, 2)).toEqual(['Urgente: Conta vencida.', 'Urgente: Só o Dono vê.']); // urgentes primeiro
     expect(within(cardDono).getByRole('button', { name: 'Fazer pedido' })).toBeTruthy();
   });
 

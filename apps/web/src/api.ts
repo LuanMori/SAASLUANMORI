@@ -454,6 +454,21 @@ export interface SituacaoDoCaixaHoje {
    * Só para quem confere o caixa (Dono e Administrador); null para o Vendedor. Ausente = servidor sem essa parte.
    */
   aVerificar?: FechamentoAVerificar[] | null;
+  /** Falta ou sobra acima da tolerância de que o Dono ainda não está ciente. Só para o Dono; null para os outros. */
+  diferencasAConferir?: DiferencaAConferir[] | null;
+}
+
+/** Fechamento contado com falta ou sobra acima da tolerância de que o Dono ainda não está ciente (pendência 3). */
+export interface DiferencaAConferir {
+  caixaId: string;
+  /** AAAA-MM-DD. */
+  dia: string;
+  /** Negativo = falta; positivo = sobra. */
+  diferencaCentavos: number;
+  /** A tolerância da loja quando o caixa fechou. */
+  toleranciaCentavos: number;
+  fechouPor: string | null;
+  autorizadoPor: string | null;
 }
 
 /** Um fechamento automático que o Dono ou o Administrador ainda não conferiu. */
@@ -484,6 +499,8 @@ export interface ApiCaixa {
    * (opcional) guarda o que achou. Não mexe em saldo: se a gaveta não bateu, o caminho é desfazer e fechar contando.
    */
   verificarFechamentoAutomatico(caixaId: string, dados?: { observacao?: string | null }): Promise<CaixaDoDia>;
+  /** O Dono ficou ciente da falta ou da sobra acima da tolerância: a pendência some. Só o Dono. */
+  darCienciaDaDiferenca(caixaId: string): Promise<CaixaDoDia>;
   /** Só o último fechamento, pelo Dono ou pelo Administrador. */
   desfazerFechamento(caixaId: string, dados: Omit<PedidoDesfazer, 'explicacao'> & { explicacao?: string | null }): Promise<CaixaDoDia>;
 }

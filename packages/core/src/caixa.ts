@@ -16,6 +16,9 @@
 //   - FECHAMENTO AUTOMÁTICO: o caixa que passou da meia-noite aberto fecha sozinho, sem contagem e sem ajuste.
 //     Fica como pendência até o Dono ou o Administrador VERIFICAR (conferiu a gaveta, com observação opcional).
 //     O dia reaberto hoje com "Desfazer fechamento" não fecha sozinho de novo até a próxima meia-noite;
+//   - DIFERENÇA ACIMA DA TOLERÂNCIA (pendência 3): o fechamento guarda a tolerância da loja daquele momento.
+//     Falta ou sobra acima dela fica como pendência do Dono até ele dar CIÊNCIA (se foi o próprio Dono que
+//     fechou ou autorizou, já entra como ciente);
 //   - DIA TRAVADO: dia anterior a hoje e até o último caixa fechado. Lançar nele (compra, ajuste de estoque,
 //     lançamento financeiro com data) só com a liberação de um Dono, com motivo.
 // Valores em centavos. As datas são AAAA-MM-DD no fuso da loja; os instantes, ISO 8601.
@@ -88,6 +91,17 @@ export interface FechamentoCaixa {
    * conferiu ainda (vira a pendência "Deseja verificar?" na Visão geral).
    */
   verificacao?: VerificacaoFechamento | null;
+  /** Tolerância da loja no momento do fechamento (a diferença acima dela vira pendência do Dono). */
+  toleranciaCentavos?: number | null;
+  /** O Dono ficou ciente da diferença acima da tolerância. Ausente ou null = ainda não (pendência 3). */
+  ciencia?: CienciaDoDono | null;
+}
+
+/** Ciência do Dono sobre a falta ou a sobra acima da tolerância. */
+export interface CienciaDoDono {
+  /** ISO 8601. */
+  em: string;
+  por: Operador;
 }
 
 /** O Dono ou o Administrador conferiu o fechamento automático (a gaveta bateu, ou anotou o que achou). */
@@ -406,7 +420,18 @@ export function conferirFechamento(
 /** Fecha o caixa conferido: guarda os números do dia e lança a falta ou a sobra como ajuste no Caixa físico. */
 export function fecharCaixa(
   c: ConferenciaFechamento,
-  ctx: { em: string; por: Operador; autorizadoPor: Operador | null; vendas: readonly Pick<Venda, 'criadaEm' | 'status' | 'pagamentos'>[]; lancamentos: readonly LancamentoDaGaveta[]; fuso: string },
+  ctx: {
+    em: string;
+    por: Operador;
+    autorizadoPor: Operador | null;
+    vendas: readonly Pick<Venda, 'criadaEm' | 'status' | 'pagamentos'>[];
+    lancamentos: readonly LancamentoDaGaveta[];
+    fuso: string;
+    /** Tolerância da loja agora (fica guardada no fechamento). */
+    toleranciaCentavos?: number | null;
+    /** O Dono que fechou ou autorizou: a diferença acima da tolerância já entra com a ciência dele. */
+    donoCiente?: Operador | null;
+  },
 ): { caixa: CaixaDoDia; ajuste: NovoLancamento | null } {
   const fechamento: FechamentoCaixa = {
     em: ctx.em,
@@ -420,7 +445,11 @@ export function fecharCaixa(
     justificativa: c.justificativa,
     autorizadoPor: ctx.autorizadoPor,
     resumo: resumoDoCaixa(c.caixa, ctx.vendas, ctx.lancamentos, ctx.fuso),
+    toleranciaCentavos: ctx.toleranciaCentavos ?? null,
   };
+  if (ctx.donoCiente && ctx.toleranciaCentavos != null && acimaDaTolerancia(fechamento, ctx.toleranciaCentavos)) {
+    fechamento.ciencia = { em: ctx.em, por: ctx.donoCiente };
+  }
   const d = c.diferencaCentavos;
   const ajuste: NovoLancamento | null =
     d === 0
@@ -512,6 +541,35 @@ export function conferirVerificacao(caixas: readonly CaixaDoDia[], caixaId: stri
 /** Marca o fechamento automático como conferido: a pendência some. Nada mais muda (sem ajuste no saldo). */
 export function verificarFechamento(c: CaixaDoDia, ctx: { em: string; por: Operador; observacao: string | null }): CaixaDoDia {
   return { ...c, fechamento: { ...c.fechamento!, verificacao: { em: ctx.em, por: ctx.por, observacao: ctx.observacao } } };
+}
+
+// ------------------------------------------------------------------ diferença acima da tolerância (pendência 3)
+/**
+ * Fechamento contado com falta ou sobra acima da tolerância guardada nele (o fechamento antigo, sem a
+ * tolerância guardada, usa a de agora). O automático não entra: não teve contagem.
+ */
+export function acimaDaTolerancia(f: FechamentoCaixa, toleranciaAgora: number): boolean {
+  return !f.automatico && f.diferencaCentavos !== null && Math.abs(f.diferencaCentavos) > (f.toleranciaCentavos ?? toleranciaAgora);
+}
+
+/** Fechamentos com diferença acima da tolerância de que o Dono ainda não está ciente, do mais antigo. */
+export function diferencasAConferir(caixas: readonly CaixaDoDia[], toleranciaAgora: number): CaixaDoDia[] {
+  return caixas.filter((c) => c.fechamento && acimaDaTolerancia(c.fechamento, toleranciaAgora) && !c.fechamento.ciencia).sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
+/** Só fechamento com diferença acima da tolerância, e uma vez só. */
+export function conferirCiencia(caixas: readonly CaixaDoDia[], caixaId: string, toleranciaAgora: number): Resultado<CaixaDoDia> {
+  const c = caixas.find((x) => x.id === caixaId);
+  if (!c) return erro('Caixa não encontrado.');
+  if (!c.fechamento) return erro('Este caixa não está fechado.');
+  if (!acimaDaTolerancia(c.fechamento, toleranciaAgora)) return erro('Este fechamento não tem diferença acima da tolerância.');
+  if (c.fechamento.ciencia) return erro(`${c.fechamento.ciencia.por.nome} já está ciente deste fechamento.`);
+  return ok(c);
+}
+
+/** O Dono ficou ciente da diferença: a pendência some. Nada mais muda no caixa. */
+export function darCiencia(c: CaixaDoDia, ctx: { em: string; por: Operador }): CaixaDoDia {
+  return { ...c, fechamento: { ...c.fechamento!, ciencia: { em: ctx.em, por: ctx.por } } };
 }
 
 // ------------------------------------------------------------------ desfazer o fechamento

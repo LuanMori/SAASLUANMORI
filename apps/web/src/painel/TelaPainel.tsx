@@ -11,7 +11,7 @@
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
 // À meia-noite com o sistema aberto (usarViradaDoDia), o caixa que ficou aberto fecha sozinho, as telas
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
-import { type ConfiguracaoDaLoja, dataBr, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
+import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, type PapelDeLoja } from '@saas/core';
 import { useCallback, useEffect, useState } from 'react';
 import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
@@ -115,11 +115,13 @@ export function TelaPainel({
     const alvo = ITENS_MENU.find((i) => i.id === id);
     return alvo ? podeVer(alvo, pessoa.papel) && disponivel(id) : false;
   };
-  // Pendência "só gestor" some para o Vendedor; nas outras, o botão só aparece para quem pode abrir a aba de destino.
+  // Pendência "só gestor" some para o Vendedor e "só Dono" para quem não é Dono; nas outras, o botão só aparece
+  // para quem pode abrir a aba de destino.
   const gestor = ehGestor(pessoa.papel);
+  const dono = ehDono(pessoa.papel);
   const pendenciasVisiveis =
     pendencias
-      ?.filter((p) => !p.soGestor || gestor)
+      ?.filter((p) => (!p.soGestor || gestor) && (!p.soDono || dono))
       .map((p) => (p.acao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
   const escolher = (id: IdSecao) => {
     setAviso(null);

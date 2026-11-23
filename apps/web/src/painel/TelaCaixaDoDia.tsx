@@ -8,13 +8,17 @@
 //     (depositar no banco ou retirada do dono), suprimento e o fechamento (contado, diferença, justificativa);
 //   - FECHAMENTO AUTOMÁTICO à meia-noite (sem contagem): o Dono e o Administrador veem "Deseja verificar?" e
 //     conferem a gaveta: marcam como verificado (com observação) ou desfazem o fechamento para fechar contando;
+//   - DIFERENÇA ACIMA DA TOLERÂNCIA (pendência 3): só o Dono vê o aviso vermelho e dá "Ciente" (se foi ele que
+//     fechou ou autorizou, já fica ciente). O histórico mostra quem ficou ciente;
 //   - o Vendedor precisa da senha do Dono ou do Administrador para a retirada do dono e para fechar com
 //     diferença acima da tolerância da loja; só o Dono e o Administrador desfazem o último fechamento;
 //   - histórico de caixa e movimentos em dinheiro (as tabelas sempre com o cabeçalho; vazias: "Nenhum registro.");
 //   - Regras do caixa (Dono e Administrador): a diferença que fecha sem senha (padrão R$ 10,00).
 import {
+  acimaDaTolerancia,
   type CaixaDoDia,
   dataBr,
+  diferencasAConferir,
   fechamentosAVerificar,
   formatarCentavos,
   FUSO_PADRAO,
@@ -67,6 +71,20 @@ export function TelaCaixaDoDia({ api, pessoa, fuso = FUSO_PADRAO, aoMudarRegras 
   const gestor = pode(pessoa.papel, 'caixa.desfazer');
   // fechamentos automáticos que ninguém conferiu: quem confere é o Dono ou o Administrador
   const aVerificar = dados && gestor ? fechamentosAVerificar(dados.historico) : [];
+  // falta ou sobra acima da tolerância de que o Dono ainda não está ciente (só o Dono vê e dá ciência)
+  const aConferir = dados && pode(pessoa.papel, 'caixa.ciencia') ? diferencasAConferir(dados.historico, dados.toleranciaCentavos) : [];
+  const [dandoCiencia, setDandoCiencia] = useState<string | null>(null);
+  async function ciente(c: CaixaDoDia) {
+    setDandoCiencia(c.id);
+    try {
+      await api.darCienciaDaDiferenca(c.id);
+      concluir(`Ciência registrada: fechamento de ${dataBr(c.dia)}. A pendência saiu da Visão geral.`);
+    } catch (e) {
+      falhou(e);
+    } finally {
+      setDandoCiencia(null);
+    }
+  }
 
   const concluir = (texto: string) => {
     setErro(null);
@@ -120,6 +138,26 @@ export function TelaCaixaDoDia({ api, pessoa, fuso = FUSO_PADRAO, aoMudarRegras 
               {erro}
             </Aviso>
           )}
+          {aConferir.map((c) => {
+            const f = c.fechamento!;
+            const dif = f.diferencaCentavos ?? 0;
+            return (
+              <Aviso
+                key={c.id}
+                tipo="erro"
+                papel="status"
+                acao={
+                  <button type="button" className="botao" onClick={() => void ciente(c)} disabled={dandoCiencia === c.id} aria-label={`Ciente do fechamento de ${dataBr(c.dia)}`}>
+                    {dandoCiencia === c.id ? 'Gravando…' : 'Ciente'}
+                  </button>
+                }
+              >
+                O fechamento de {dataBr(c.dia)} teve {dif < 0 ? 'falta' : 'sobra'} de {formatarCentavos(Math.abs(dif))}, acima da tolerância de{' '}
+                {formatarCentavos(f.toleranciaCentavos ?? dados.toleranciaCentavos)} (fechou: {f.por?.nome ?? '—'} às {horaNoFuso(f.em, fuso)}
+                {f.autorizadoPor ? ` • autorizou: ${f.autorizadoPor.nome}` : ''}).{f.justificativa ? ` Justificativa: ${f.justificativa}` : ''}
+              </Aviso>
+            );
+          })}
           {aVerificar.map((c) => (
             <Aviso
               key={c.id}
@@ -604,6 +642,13 @@ function Historico({ dados, fuso, podeDesfazer, aoDesfazer }: { dados: PainelCai
                       <>
                         <span className={`pe-situacao ${f.diferencaCentavos ? 'pe-zerado' : 'caixa-sem-dif'}`}>{sinal(f.diferencaCentavos ?? 0)}</span>
                         {f.diferencaCentavos !== 0 && f.justificativa && <small className="suave pe-detalhe">{f.justificativa}</small>}
+                        {f.ciencia ? (
+                          <small className="suave pe-detalhe">
+                            ciente: {f.ciencia.por.nome} em {dataNoFuso(f.ciencia.em, fuso)} às {horaNoFuso(f.ciencia.em, fuso)}
+                          </small>
+                        ) : (
+                          acimaDaTolerancia(f, dados.toleranciaCentavos) && <small className="pe-detalhe cx-a-verificar">acima da tolerância • aguardando a ciência do Dono</small>
+                        )}
                       </>
                     )}
                   </td>

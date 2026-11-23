@@ -1,5 +1,5 @@
 // apps/web/src/painel/TelaCaixaDoDia.test.tsx — aba Caixa do dia (Fase 2, módulo 5), ligada à API da demonstração.
-import type { OperadorComPapel } from '@saas/core';
+import { dataBr, type OperadorComPapel } from '@saas/core';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -132,7 +132,10 @@ describe('Caixa do dia · abrir, operar e fechar', () => {
     expect(await screen.findByText('O caixa de hoje já foi fechado.')).toBeTruthy();
     expect(screen.getByText('Caixa de hoje fechado')).toBeTruthy();
     const linha = within(screen.getByRole('region', { name: 'Histórico de caixa' })).getAllByRole('row')[1]!;
-    expect(txt(linha.textContent)).toMatch(/R\$ 100,00R\$ 120,00R\$ 100,00-R\$ 20,00troco erradoabriu: Bruno às \d\d:\d\dfechou: Bruno às \d\d:\d\d • autorizou: Caio—$/);
+    // acima da tolerância e autorizada pelo Administrador: fica para o Dono dar ciência (pendência 3)
+    expect(txt(linha.textContent)).toMatch(
+      /R\$ 100,00R\$ 120,00R\$ 100,00-R\$ 20,00troco erradoacima da tolerância • aguardando a ciência do Donoabriu: Bruno às \d\d:\d\dfechou: Bruno às \d\d:\d\d • autorizou: Caio—$/,
+    );
     // o Vendedor não desfaz
     expect(screen.queryByRole('button', { name: /Desfazer o fechamento/ })).toBeNull();
   });
@@ -223,34 +226,76 @@ describe('Caixa do dia · fechamento automático à meia-noite (pedido do Luan, 
 });
 
 describe('Caixa do dia · nas outras telas', () => {
-  it('Visão geral: o fechamento automático vira a pendência "Deseja verificar?" do Dono; o Vendedor não vê', async () => {
+  it('Visão geral: "Deseja verificar?" (Dono) e "caixa de hoje não aberto" (todos); depois de abrir, nada pendente', async () => {
     const { comRelogio, agora } = await ontemFechouSozinho();
     const aoIrPara = vi.fn();
     const visao = (o: OperadorComPapel) => (
       <TelaVisaoGeral api={comRelogio(o)} nome={o.nome} fuso={FUSO} agora={agora} aoVerCaixa={vi.fn()} aoIrPara={aoIrPara} intervaloMs={60_000} />
     );
+    const textos = () => screen.getAllByRole('listitem').map((li) => txt(li.querySelector('.pend-texto')?.textContent));
     render(visao(ANA));
-    const item = await screen.findByText(/fechou sozinho à meia-noite/);
-    expect(txt(item.textContent)).toBe('Atenção: O caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 30,00). Deseja verificar?');
-    expect(screen.getByTestId('pend-contagem').textContent).toBe('1');
+    await screen.findByText(/fechou sozinho à meia-noite/);
+    expect(textos()).toEqual([
+      'Atenção: O caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 30,00). Deseja verificar?',
+      'Atenção: O caixa de hoje não foi aberto: vendas ficam bloqueadas.',
+    ]);
+    expect(screen.getByTestId('pend-contagem').textContent).toBe('2');
     await userEvent.click(screen.getByRole('button', { name: 'Verificar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Abrir caixa' }));
+    expect(aoIrPara.mock.calls).toEqual([['caixa-do-dia'], ['caixa-do-dia']]);
+    cleanup();
+
+    // o Vendedor não confere o caixa: vê só o "caixa de hoje não aberto"
+    render(visao(BRUNO));
+    await screen.findByText(/^O caixa de hoje não foi aberto/);
+    expect(textos()).toEqual(['Atenção: O caixa de hoje não foi aberto: vendas ficam bloqueadas.']);
+    expect(screen.queryByText(/fechou sozinho/)).toBeNull();
+    cleanup();
+
+    // verificado e com o caixa de hoje aberto: nada pendente, e o card diz o que já está ligado
+    const dono = comRelogio(ANA);
+    await dono.verificarFechamentoAutomatico((await dono.lerCaixa()).historico[0]!.id);
+    await dono.abrirCaixa({ fundoCentavos: 3000 });
+    render(visao(ANA));
+    expect(txt((await screen.findByText(/^Nada pendente/)).textContent)).toBe(
+      'Nada pendente. Tudo em ordem.Por enquanto, só os avisos do caixa estão ligados. Os outros (estoque, validade, contas…) ainda vamos escolher.',
+    );
+  });
+
+  it('Visão geral e Caixa do dia: falta acima da tolerância fica para o Dono dar ciência (o Administrador não vê)', async () => {
+    const caio = api({ id: 'caio', nome: 'Caio', papel: 'administrador' });
+    await caio.abrirCaixa({ fundoCentavos: 10000 });
+    const fechado = await caio.fecharCaixa({ dia: (await caio.lerSituacaoDoCaixa()).hoje, contadoCentavos: 7500, justificativa: 'troco errado' });
+    const aoIrPara = vi.fn();
+    render(<TelaVisaoGeral api={api(ANA)} nome="Ana" fuso={FUSO} aoVerCaixa={vi.fn()} aoIrPara={aoIrPara} intervaloMs={60_000} />);
+    const item = (await screen.findByText(/acima da tolerância/)).closest('li')!;
+    expect(item.className).toContain('pend-alta'); // urgente: ícone vermelho
+    expect(txt(item.querySelector('.pend-texto')?.textContent)).toBe(
+      `Urgente: Fechamento de ${dataBr(fechado.dia)} com falta de R$ 25,00, acima da tolerância de R$ 10,00 (fechou: Caio).`,
+    );
+    await userEvent.click(within(item).getByRole('button', { name: 'Conferir' }));
     expect(aoIrPara).toHaveBeenCalledWith('caixa-do-dia');
     cleanup();
 
-    // verificado: a pendência some e o card diz o que já está ligado
-    const dono = comRelogio(ANA);
-    await dono.verificarFechamentoAutomatico((await dono.lerCaixa()).historico[0]!.id);
-    render(visao(ANA));
-    expect(txt((await screen.findByText(/^Nada pendente/)).textContent)).toBe(
-      'Nada pendente. Tudo em ordem.Por enquanto, só o aviso do caixa fechado sozinho à meia-noite está ligado. Os outros (estoque, validade, contas…) ainda vamos escolher.',
-    );
+    // o Administrador não vê o aviso; no histórico, "aguardando a ciência do Dono"
+    render(<TelaCaixaDoDia api={caio} pessoa={{ nome: 'Caio', papel: 'administrador' }} fuso={FUSO} />);
+    expect(await screen.findByText('acima da tolerância • aguardando a ciência do Dono')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Ciente/ })).toBeNull();
     cleanup();
 
-    // o Vendedor não confere o caixa: para ele, as pendências continuam "a definir"
-    render(visao(BRUNO));
-    await screen.findByRole('button', { name: 'Caixa de hoje não aberto' });
-    expect(screen.getByText(/Ainda não definimos quais avisos entram aqui/)).toBeTruthy();
-    expect(screen.queryByText(/fechou sozinho/)).toBeNull();
+    // o Dono vê o aviso vermelho com a justificativa e dá "Ciente"
+    render(<TelaCaixaDoDia api={api(ANA)} pessoa={{ nome: 'Ana', papel: 'dono' }} fuso={FUSO} />);
+    const aviso = await screen.findByText(/^O fechamento de .* teve falta/);
+    expect(txt(aviso.textContent)).toMatch(
+      new RegExp(`^O fechamento de ${dataBr(fechado.dia).replace(/\//g, '\\/')} teve falta de R\\$ 25,00, acima da tolerância de R\\$ 10,00 \\(fechou: Caio às \\d\\d:\\d\\d\\)\\. Justificativa: troco errado$`),
+    );
+    expect(aviso.closest('.cx-aviso')?.className).toContain('cx-aviso-erro');
+    await userEvent.click(screen.getByRole('button', { name: `Ciente do fechamento de ${dataBr(fechado.dia)}` }));
+    expect(txt((await screen.findByText(/^Ciência registrada/)).textContent)).toBe(
+      `Ciência registrada: fechamento de ${dataBr(fechado.dia)}. A pendência saiu da Visão geral.`,
+    );
+    await waitFor(() => expect(screen.queryByText(/teve falta/)).toBeNull());
+    expect(await screen.findByText(/^ciente: Ana em \d\d\/\d\d\/\d{4} às \d\d:\d\d$/)).toBeTruthy();
   });
 
   it('Frente de caixa sem caixa aberto: pílula vermelha, aviso com "Abrir caixa" e a venda é recusada', async () => {

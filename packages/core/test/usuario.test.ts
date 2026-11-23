@@ -34,7 +34,15 @@ const mensagem = (r: { ok: boolean; erros?: { mensagem: string }[] }) => (!r.ok 
 describe('permissões (matriz única, do DaniPets)', () => {
   it('Dono pode tudo; Administrador tudo menos o que é só do Dono; Vendedor o do DaniPets', () => {
     expect(LISTA_PERMISSOES.every((p) => pode('dono', p))).toBe(true);
-    expect(LISTA_PERMISSOES.filter((p) => !pode('administrador', p))).toEqual(['usuarios.donos', 'usuarios.excluir_dados', 'clientes.excluir_dados', 'brinde', 'dia_fechado.liberar', 'fiado.liberar']);
+    expect(LISTA_PERMISSOES.filter((p) => !pode('administrador', p))).toEqual([
+      'usuarios.donos',
+      'usuarios.excluir_dados',
+      'clientes.excluir_dados',
+      'brinde',
+      'caixa.ciencia',
+      'dia_fechado.liberar',
+      'fiado.liberar',
+    ]);
     expect(LISTA_PERMISSOES.filter((p) => pode('vendedor', p))).toEqual(['vender', 'caixa', 'clientes', 'produtos.cadastrar']);
   });
 

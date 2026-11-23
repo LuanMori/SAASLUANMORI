@@ -1,9 +1,10 @@
 // apps/web/src/painel/regrasPendencias.test.ts
-// Regras prontas, mas DESLIGADAS (pendências "A DEFINIR"): aqui só se confere o que elas calculam.
+// Regras prontas, mas DESLIGADAS (pendências "A DEFINIR"): aqui só se confere o que elas calculam. As do caixa
+// (#1, #2, #3 e #16) já estão LIGADAS (pedido do Luan em 21 e 22/11/2026).
 import type { Recebivel } from '@saas/core';
 import { describe, expect, it } from 'vitest';
 import type { Produto, SaldoEstoque } from '../api';
-import { pendenciasDeCartao, pendenciasDeEstoque, pendenciasDeFiado, pendenciasDeRetorno } from './regrasPendencias';
+import { pendenciasDeCartao, pendenciasDeEstoque, pendenciasDeFiado, pendenciasDeRetorno, pendenciasDoCaixa } from './regrasPendencias';
 
 const produto = (id: string, nome: string, ativo = true): Produto => ({
   id,
@@ -107,3 +108,43 @@ describe('pendência de clientes para lembrar (#12)', () => {
   });
 });
 
+
+describe('pendências do caixa, ligadas (#1, #2, #3 e #16)', () => {
+  const base = { hoje: '2026-11-22', estado: 'nao_aberto' as const, atrasado: null, aVerificar: null, diferencasAConferir: null };
+
+  it('#1 caixa de hoje não aberto, para todos; aberto ou fechado, nada', () => {
+    expect(pendenciasDoCaixa(base)).toEqual([
+      { id: 'caixa-nao-aberto:2026-11-22', gravidade: 'media', texto: 'O caixa de hoje não foi aberto: vendas ficam bloqueadas.', acao: { rotulo: 'Abrir caixa', secao: 'caixa-do-dia' } },
+    ]);
+    expect(pendenciasDoCaixa({ ...base, estado: 'aberto' })).toEqual([]);
+    expect(pendenciasDoCaixa({ ...base, estado: 'fechado' })).toEqual([]);
+  });
+
+  it('#2 dia anterior com o caixa aberto vem no lugar da #1 (é ele que precisa fechar antes)', () => {
+    expect(pendenciasDoCaixa({ ...base, atrasado: '2026-11-21' })).toEqual([
+      {
+        id: 'caixa-dia-aberto:2026-11-21',
+        gravidade: 'media',
+        texto: 'Dia com caixa aberto e sem fechamento: 21/11/2026. Feche esse dia para abrir o caixa de hoje.',
+        acao: { rotulo: 'Ir ao caixa', secao: 'caixa-do-dia' },
+      },
+    ]);
+  });
+
+  it('#3 diferença acima da tolerância (urgente, só o Dono) e #16 caixa fechado sozinho (gestor)', () => {
+    const lista = pendenciasDoCaixa({
+      ...base,
+      estado: 'aberto',
+      aVerificar: [{ caixaId: 'c2', dia: '2026-11-21', esperadoCentavos: 10000 }],
+      diferencasAConferir: [
+        { caixaId: 'c1', dia: '2026-11-20', diferencaCentavos: -2500, toleranciaCentavos: 1000, fechouPor: 'Bruno', autorizadoPor: 'Caio' },
+        { caixaId: 'c0', dia: '2026-11-19', diferencaCentavos: 3000, toleranciaCentavos: 1000, fechouPor: 'Caio', autorizadoPor: null },
+      ],
+    });
+    expect(lista.map((p) => [p.id, p.gravidade, txt(p.texto), p.acao?.rotulo, p.soDono ?? false, p.soGestor ?? false])).toEqual([
+      ['caixa-diferenca:c1', 'alta', 'Fechamento de 20/11/2026 com falta de R$ 25,00, acima da tolerância de R$ 10,00 (fechou: Bruno • autorizou: Caio).', 'Conferir', true, false],
+      ['caixa-diferenca:c0', 'alta', 'Fechamento de 19/11/2026 com sobra de R$ 30,00, acima da tolerância de R$ 10,00 (fechou: Caio).', 'Conferir', true, false],
+      ['caixa-automatico:2026-11-21', 'media', 'O caixa de 21/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta (esperado R$ 100,00). Deseja verificar?', 'Verificar', false, true],
+    ]);
+  });
+});
