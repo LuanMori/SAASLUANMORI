@@ -164,12 +164,12 @@ describe('Clientes · fiado na Frente de caixa', () => {
     const { maria } = await comFiado(8000); // deve R$ 80,00 de R$ 100,00
     const vend = api(BRUNO);
     render(<TelaFrenteCaixa api={vend} operador={{ nome: 'Bruno', papel: 'vendedor' }} loja={{ nome: 'Loja' }} fuso={FUSO} aoSair={vi.fn()} />);
-    await screen.findByPlaceholderText('Bipe o código (3*código = 3 unidades)');
+    await screen.findByPlaceholderText('Bipe o código ou digite o nome (3*código = 3 un.)');
     await userEvent.keyboard('{F6}');
     await userEvent.type(within(janela()).getByLabelText('CPF, telefone ou nome'), 'maria');
     await userEvent.click(await within(janela()).findByRole('button', { name: /Maria Souza/ }));
     expect(screen.getByText(/Limite R\$ 100,00 • disponível R\$ 20,00/)).toBeTruthy();
-    await userEvent.type(screen.getByLabelText('Leitor de código de barras'), '3*7897000400403{Enter}');
+    await userEvent.type(screen.getByLabelText('Código ou nome do produto'), '3*7897000400403{Enter}');
     await userEvent.keyboard('{F7}');
     await userEvent.click(screen.getByRole('button', { name: 'FINALIZAR · F2' }));
     expect(await screen.findByRole('heading', { name: 'Liberação do Dono' })).toBeTruthy();

@@ -1,6 +1,7 @@
 // apps/web/src/painel/TelaFrenteCaixa.tsx
 // Frente de caixa no formato do DaniPets V9.3.3 (tela cheia, sem a barra lateral):
-//   esquerda: CÓDIGO (leitor; "3*código" = 3 unidades), busca por nome (F3), fita de itens
+//   esquerda: uma barra só para o produto (pedido do Luan, 23/11/2026): bipe o código ("3*código" = 3 unidades)
+//             ou digite o nome e escolha na lista (F3 volta para ela; as setas andam na lista); fita de itens
 //             (quantidade, desconto, remover) e resumo (itens, produtos, descontos, total);
 //   direita:  ÚLTIMO ITEM, TOTAL A PAGAR, formas de pagamento com atalho (F4 Dinheiro, F8 Pix,
 //             F9 Débito, F10 Crédito), dinheiro com valor recebido e TROCO (calculado na hora; atalhos
@@ -18,7 +19,7 @@
 // Vale-troca (módulo 8): "Usar vale-troca" escolhe um vale com saldo (ou pelo código), com ou sem cliente; cada
 // vale abate o que cobre (depois do cashback) e a sobra fica no vale. A devolução pode virar vale e, aqui, ele pode
 // ser usado na hora ("troca").
-// Estoque: a busca mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
+// Estoque: a lista da barra mostra o saldo e o caixa não deixa passar do que há (o servidor confere de novo).
 // O carrinho de cada pessoa fica guardado no navegador e sobrevive a recarregar a página.
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
 // quem está logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
@@ -48,7 +49,7 @@ import {
   semAcento,
   type ValeTroca,
 } from '@saas/core';
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent as TeclaNoCampo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
 import {
   acharPorCodigo,
@@ -73,6 +74,7 @@ import {
   usaFiado,
   totaisDoCarrinho,
 } from './caixa/carrinho';
+import { AvisoComIcone } from './AvisoComIcone';
 import { ModalCliente } from './caixa/ModalCliente';
 import { ModalDesconto } from './caixa/ModalDesconto';
 import { ModalDevolucao, type ValeDaDevolucao } from './caixa/ModalDevolucao';
@@ -144,9 +146,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
   const [enviando, setEnviando] = useState(false);
   const [janela, setJanela] = useState<Janela>(null);
   const [codigo, setCodigo] = useState('');
-  const [busca, setBusca] = useState('');
   const refCodigo = useRef<HTMLInputElement>(null);
-  const refBusca = useRef<HTMLInputElement>(null);
+  const refSugestoes = useRef<HTMLUListElement>(null);
   const refRecebido = useRef<HTMLInputElement>(null);
   const refDinheiro = useRef<HTMLDivElement>(null);
 
@@ -205,38 +206,67 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
     setAviso(null);
   }
 
-  function lerCodigo(ev: FormEvent) {
-    ev.preventDefault();
-    const bruto = codigo;
-    setCodigo(''); // sempre limpa, mesmo com erro (leitura encadeada do leitor)
+  // ------------------------------------------------------------------ a barra do produto (código ou nome)
+  /**
+   * O que a barra acha enquanto se digita: nome sem acento ou começo do código. "3*nome" também vale (3 unidades
+   * do escolhido); se o texto inteiro já acha produto (um nome como "10x15"), ele vale sem multiplicador.
+   */
+  function procurar(texto: string): { lista: Produto[]; multiplicador: string | null } {
+    const achar = (t: string) => {
+      const termo = semAcento(t);
+      return termo
+        ? produtos.filter((p) => semAcento(p.nome).includes(termo) || p.codigoInterno.startsWith(termo) || (p.codigoBarras ?? '').startsWith(termo)).slice(0, 8)
+        : [];
+    };
+    const cheio = achar(texto);
+    if (cheio.length > 0) return { lista: cheio, multiplicador: null };
+    const e = lerEntrada(texto);
+    return e.multiplicador ? { lista: achar(e.codigo), multiplicador: e.multiplicador } : { lista: [], multiplicador: null };
+  }
+
+  const achados = procurar(codigo);
+  const sugestoes = achados.lista;
+
+  /** Põe o produto na venda com a quantidade da barra ("3*" = 3; sem nada = 1 unidade ou 1 kg) e limpa a barra. */
+  function adicionarDaBarra(p: Produto, multiplicador: string | null) {
+    setCodigo(''); // sempre limpa, mesmo com erro na quantidade (leitura encadeada do leitor)
     focarCodigo();
-    if (!bruto.trim()) return;
-    const e = lerEntrada(bruto);
-    const p = acharPorCodigo(produtos, e.codigo);
-    if (!p) return erro(`Código "${e.codigo}" não encontrado (ou produto inativo).`);
-    const q = quantidadeDaEntrada(e.multiplicador, unidadeDe(p.unidade));
+    const q = quantidadeDaEntrada(multiplicador, unidadeDe(p.unidade));
     if (typeof q !== 'number') return erro(q.erro);
     adicionar(p, q);
   }
 
-  const termo = semAcento(busca);
-  const sugestoes = termo
-    ? produtos.filter((p) => semAcento(p.nome).includes(termo) || p.codigoInterno.startsWith(termo) || (p.codigoBarras ?? '').startsWith(termo)).slice(0, 8)
-    : [];
-
-  function escolher(p: Produto) {
-    adicionar(p, unidadeDe(p.unidade) === 'kg' ? 1000 : 1); // 1 unidade ou 1 kg, como o leitor sem multiplicador
-    setBusca('');
-    focarCodigo();
+  /** Enter na barra: código exato primeiro (leitor); senão, o único produto achado pelo nome ou pelo começo do código. */
+  function lerOuBuscar(ev: FormEvent) {
+    ev.preventDefault();
+    const texto = codigo.trim();
+    if (!texto) return focarCodigo();
+    const e = lerEntrada(texto);
+    const exato = acharPorCodigo(produtos, e.codigo);
+    if (exato) return adicionarDaBarra(exato, e.multiplicador);
+    if (sugestoes.length === 1) return adicionarDaBarra(sugestoes[0]!, achados.multiplicador);
+    if (sugestoes.length > 1) return erro('Mais de um produto encontrado: escolha na lista.');
+    if (/^\d+$/.test(e.codigo)) {
+      setCodigo(''); // parece leitura do leitor: limpa para a próxima, como antes
+      return erro(`Código "${e.codigo}" não encontrado (ou produto inativo).`);
+    }
+    erro(`Nenhum produto encontrado para “${texto}”.`); // digitado à mão: o texto fica para corrigir
   }
 
-  function buscar(ev: FormEvent) {
-    ev.preventDefault();
-    if (!termo) return;
-    const exato = acharPorCodigo(produtos, busca);
-    if (exato) return escolher(exato);
-    if (sugestoes.length === 1) return escolher(sugestoes[0]!);
-    erro(sugestoes.length === 0 ? `Nenhum produto encontrado para “${busca.trim()}”.` : 'Mais de um produto encontrado: escolha na lista.');
+  const botoesDaLista = () => Array.from(refSugestoes.current?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+  /** Seta para baixo na barra entra na lista; na lista, as setas andam e a de cima, no primeiro, volta à barra. */
+  function setasDaBarra(e: TeclaNoCampo<HTMLInputElement>) {
+    if (e.key !== 'ArrowDown' || sugestoes.length === 0) return;
+    e.preventDefault();
+    botoesDaLista()[0]?.focus();
+  }
+  function setasDaLista(e: TeclaNoCampo<HTMLUListElement>) {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const botoes = botoesDaLista();
+    const i = botoes.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowUp' && i <= 0) return focarCodigo();
+    botoes[e.key === 'ArrowDown' ? Math.min(i + 1, botoes.length - 1) : i - 1]?.focus();
   }
 
   function mudarQuantidade(produtoId: string, quantidade: number) {
@@ -439,7 +469,8 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         void acoes.current.finalizar();
       } else if (e.key === 'F3') {
         e.preventDefault();
-        refBusca.current?.focus();
+        refCodigo.current?.focus();
+        refCodigo.current?.select();
       } else if (e.key === 'F6') {
         e.preventDefault();
         setJanela({ tipo: 'cliente' });
@@ -448,7 +479,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         acoes.current.definirForma(FORMA_DA_TECLA[e.key]!);
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        setBusca('');
+        setCodigo('');
         focarCodigo();
       }
     };
@@ -502,60 +533,73 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
         </button>
       </header>
       {caixa && caixa.estado !== 'aberto' && (
-        <div className="alerta alerta-erro pdv-caixa-aviso" role="status">
-          <span>
-            {avisoDaVirada && caixa.estado === 'nao_aberto' && <b className="pdv-virada">{avisoDaVirada} </b>}
-            {caixa.estado === 'fechado'
-              ? 'O caixa de hoje já foi fechado. Para vender hoje, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia.'
-              : 'O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.'}
-          </span>
-          {aoAbrirCaixa && (
-            <button type="button" className="botao" onClick={aoAbrirCaixa}>
-              {caixa.estado === 'fechado' ? 'Ir para Caixa do dia' : 'Abrir caixa'}
-            </button>
+        // aviso com ícone, como no Caixa do dia (pedido do Luan, 23/11/2026): o título diz o que houve e o resto, o que fazer
+        <AvisoComIcone
+          tipo="atencao"
+          papel="status"
+          className="pdv-caixa-aviso"
+          acao={
+            aoAbrirCaixa && (
+              <button type="button" className="botao botao-primario" onClick={aoAbrirCaixa}>
+                {caixa.estado === 'fechado' ? 'Ir para Caixa do dia' : 'Abrir caixa'}
+              </button>
+            )
+          }
+        >
+          {caixa.estado === 'fechado' ? (
+            <>
+              <b className="pdv-caixa-titulo">Caixa de hoje fechado{caixa.fechadoEm ? ` às ${horaNoFuso(caixa.fechadoEm, fuso)}` : ''}.</b> As vendas de hoje
+              estão encerradas. Para vender, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia.
+            </>
+          ) : (
+            <>
+              <b className="pdv-caixa-titulo">Caixa de hoje não aberto.</b> {avisoDaVirada && <span className="pdv-virada">{avisoDaVirada} </span>}
+              Sem caixa aberto não há vendas: abra o caixa para começar.
+            </>
           )}
-        </div>
+        </AvisoComIcone>
       )}
 
       <div className="pdv-corpo">
         <section className="pdv-esquerda" aria-label="Itens da venda">
-          <form className="pdv-leitor" onSubmit={lerCodigo} autoComplete="off">
-            <label htmlFor="pdv-codigo">CÓDIGO</label>
+          <form className="pdv-leitor" onSubmit={lerOuBuscar} role="search" autoComplete="off">
+            <label htmlFor="pdv-codigo">PRODUTO</label>
             <input
               id="pdv-codigo"
               ref={refCodigo}
               value={codigo}
               onChange={(e) => setCodigo(e.target.value)}
-              inputMode="numeric"
-              placeholder={carga.tipo === 'carregando' ? 'Carregando produtos…' : 'Bipe o código (3*código = 3 unidades)'}
-              aria-label="Leitor de código de barras"
+              onKeyDown={setasDaBarra}
+              placeholder={carga.tipo === 'carregando' ? 'Carregando produtos…' : 'Bipe o código ou digite o nome (3*código = 3 un.)'}
+              aria-label="Código ou nome do produto"
+              aria-controls="pdv-sugestoes"
+              aria-describedby="pdv-dica-barra"
+              enterKeyHint="enter"
               autoFocus
             />
             <button type="submit" className="pdv-ok">
               OK
             </button>
-          </form>
-
-          <form className="pdv-busca" onSubmit={buscar} role="search" autoComplete="off">
-            <input
-              ref={refBusca}
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar produto por nome ou código (F3)"
-              aria-label="Buscar produto"
-              aria-controls="pdv-sugestoes"
-            />
+            <span id="pdv-dica-barra" className="sr-only">
+              Enter põe o produto na venda. Com mais de um produto achado, use a seta para baixo e escolha na lista.
+            </span>
             {sugestoes.length > 0 && (
-              <ul id="pdv-sugestoes" className="pdv-sugestoes" aria-label="Produtos encontrados">
+              <ul id="pdv-sugestoes" ref={refSugestoes} className="pdv-sugestoes" aria-label="Produtos encontrados" onKeyDown={setasDaLista}>
                 {sugestoes.map((p) => (
                   <li key={p.id}>
-                    <button type="button" onClick={() => escolher(p)}>
+                    <button type="button" onClick={() => adicionarDaBarra(p, achados.multiplicador)}>
                       <span className="mono suave">{p.codigoInterno}</span>
                       <span className="pdv-sug-nome">
                         {p.nome}
-                        <small className={(saldos.get(p.id) ?? 0) > 0 ? 'pdv-saldo' : 'pdv-saldo pdv-saldo-zero'}>saldo {Math.max(0, saldos.get(p.id) ?? 0)}</small>
+                        {/* saldo na unidade do produto: "25 kg" a granel (o estoque guarda gramas), "3 un" por unidade */}
+                        <small className={(saldos.get(p.id) ?? 0) > 0 ? 'pdv-saldo' : 'pdv-saldo pdv-saldo-zero'}>
+                          saldo {formatarQuantidade(Math.max(0, saldos.get(p.id) ?? 0), unidadeDe(p.unidade))}
+                        </small>
                       </span>
-                      <span className="numero">{formatarCentavos(p.precoCentavos)}</span>
+                      <span className="numero">
+                        {formatarCentavos(p.precoCentavos)}
+                        {unidadeDe(p.unidade) === 'kg' && <small className="pdv-por-kg">/kg</small>}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -958,7 +1002,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ['F8', 'pix'],
           ['F9', 'débito'],
           ['F10', 'crédito'],
-          ['Esc', 'leitor'],
+          ['Esc', 'limpar a barra'],
         ].map(([k, t]) => (
           // as teclas das formas de pagamento já aparecem nos botões: em tela estreita, somem daqui
           <span key={k} className={FORMA_DA_TECLA[k!] ? 'pdv-tecla pdv-tecla-forma' : 'pdv-tecla'}>

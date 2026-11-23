@@ -563,3 +563,47 @@ Sem tabela nova (decisão P3): os vales ficam na demonstração. No sistema real
   - console sem erros nem avisos.
   - As conferências dos módulos 4, 5, 6 e 7 rodaram de novo e passaram.
 
+
+---
+
+## Frente de caixa — ajustes pedidos pelo Luan
+
+### 23/11/2026: uma barra só para o produto e o aviso do caixa com ícone
+
+O pedido (1ª imagem): *"Alterar o formato visual da mensagem do caixa fechado, será que é necessario duas barras
+para procurar produto?"*. Resposta do Luan: **uma barra só**.
+
+- **Uma barra só** (rótulo PRODUTO), no lugar do leitor CÓDIGO e da busca por nome:
+  - o leitor continua igual: bipe o código, Enter, e o item entra; "3*código" = 3 unidades; a barra limpa sozinha
+    depois de cada leitura, mesmo com erro;
+  - digitando o nome (sem acento) ou o começo do código, a lista "Produtos encontrados" abre embaixo da barra,
+    com o código interno, o saldo e o preço;
+  - Enter com um produto só na lista já põe o item. Com mais de um, aparece "Mais de um produto encontrado:
+    escolha na lista." e o texto fica na barra;
+  - a seta para baixo entra na lista, as setas andam e Enter escolhe; a seta de cima, no primeiro, volta para a
+    barra;
+  - "2*nome" põe 2 do produto escolhido ("1,5*nome" = 1,5 kg a granel). Um nome que já começa com número, como
+    "10x15", vale como nome;
+  - nome que não existe: "Nenhum produto encontrado para “…”." e o texto fica para corrigir;
+  - **F3** volta para a barra e seleciona o texto; **Esc** limpa a barra (o rodapé diz "Esc limpar a barra");
+  - no celular, a barra deixou de abrir o teclado só de números, para dar para digitar o nome.
+- **Lista da barra:** o saldo de produto a granel aparecia em gramas ("saldo 25000"). Agora sai na unidade do
+  produto ("saldo 25 kg", "saldo 3 un"), e o preço do granel mostra "/kg".
+- **Aviso do caixa** no mesmo formato do Caixa do dia (amarelo, com ícone de atenção, título em negrito e o botão à
+  direita), no lugar da faixa vermelha:
+  - não aberto: "**Caixa de hoje não aberto.** Sem caixa aberto não há vendas: abra o caixa para começar."
+    [Abrir caixa]. Na virada da meia-noite, a frase "Novo dia: o caixa de … fechou sozinho…" entra no meio;
+  - fechado: "**Caixa de hoje fechado às 11:00.** As vendas de hoje estão encerradas. Para vender, o Dono ou o
+    Administrador pode desfazer o fechamento em Caixa do dia." [Ir para Caixa do dia];
+  - a venda continua travada do mesmo jeito: F2 ou FINALIZAR sem caixa aberto avisam e não gravam.
+- **Testes:**
+  - tela 357 (+4): barra única (nome, lista, "Mais de um", setas, "2*nome", F3, Esc, nome que não existe),
+    começo do código e código inteiro, granel na lista, PDV com o caixa fechado (aviso com ícone e o botão);
+  - os testes que bipavam pelo "Leitor de código de barras" passaram a usar a barra "Código ou nome do produto".
+- **Navegador:**
+  - uma barra só; o aviso amarelo com ícone nos dois estados;
+  - "Abrir caixa" leva ao Caixa do dia, e com o caixa aberto o aviso some;
+  - a lista abre logo embaixo da barra, alinhada; seta para baixo e Enter põem o produto, e o foco volta para a
+    barra; "3*código" põe 3;
+  - celular (390 px) sem rolagem para o lado, com a lista aberta;
+  - console sem erros.

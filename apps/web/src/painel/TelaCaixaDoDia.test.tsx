@@ -305,8 +305,11 @@ describe('Caixa do dia · nas outras telas', () => {
     const aoAbrirCaixa = vi.fn();
     render(<TelaFrenteCaixa api={a} operador={{ nome: 'Bruno', papel: 'vendedor' }} loja={{ nome: 'Loja' }} fuso={FUSO} aoSair={vi.fn()} aoAbrirCaixa={aoAbrirCaixa} />);
     expect(await screen.findByText('CAIXA DE HOJE NÃO ABERTO')).toBeTruthy();
-    expect(screen.getByText('O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.')).toBeTruthy();
-    await userEvent.type(screen.getByLabelText('Leitor de código de barras'), `${p.codigoBarras}{Enter}`);
+    const aviso = screen.getByText('Caixa de hoje não aberto.').closest('.cx-aviso')!;
+    expect(aviso.classList.contains('cx-aviso-atencao')).toBe(true); // aviso com ícone, como no Caixa do dia
+    expect(aviso.querySelector('svg.cx-aviso-icone')).toBeTruthy();
+    expect(aviso.querySelector('p')?.textContent).toBe('Caixa de hoje não aberto. Sem caixa aberto não há vendas: abra o caixa para começar.');
+    await userEvent.type(screen.getByLabelText('Código ou nome do produto'), `${p.codigoBarras}{Enter}`);
     await userEvent.click(screen.getByRole('button', { name: 'FINALIZAR · F2' }));
     expect((await screen.findByText('Abra o caixa de hoje (Caixa do dia) antes de vender.')).getAttribute('role')).toBe('alert');
     await userEvent.click(screen.getByRole('button', { name: 'Abrir caixa' }));
@@ -316,7 +319,28 @@ describe('Caixa do dia · nas outras telas', () => {
     await a.abrirCaixa({ fundoCentavos: 0 });
     render(<TelaFrenteCaixa api={a} operador={{ nome: 'Bruno', papel: 'vendedor' }} loja={{ nome: 'Loja' }} fuso={FUSO} aoSair={vi.fn()} aoAbrirCaixa={aoAbrirCaixa} />);
     expect(await screen.findByText(/^Caixa aberto às \d\d:\d\d$/)).toBeTruthy();
-    expect(screen.queryByText(/ainda não foi aberto/)).toBeNull();
+    expect(screen.queryByText('Caixa de hoje não aberto.')).toBeNull();
+  });
+
+  it('Frente de caixa com o caixa de hoje fechado: pílula com a hora, aviso com ícone e "Ir para Caixa do dia"', async () => {
+    const a = api(ANA);
+    const p = await a.criarProduto({ nome: 'Petisco Bifinho', codigoBarras: '7897000400403', precoCentavos: 750 });
+    await darEstoque('cx', 5);
+    await a.abrirCaixa({ fundoCentavos: 0 });
+    await a.fecharCaixa({ dia: (await a.lerSituacaoDoCaixa()).hoje, contadoCentavos: 0 });
+    const aoAbrirCaixa = vi.fn();
+    render(<TelaFrenteCaixa api={api(BRUNO)} operador={{ nome: 'Bruno', papel: 'vendedor' }} loja={{ nome: 'Loja' }} fuso={FUSO} aoSair={vi.fn()} aoAbrirCaixa={aoAbrirCaixa} />);
+    expect(await screen.findByText(/^CAIXA DE HOJE FECHADO às \d\d:\d\d$/)).toBeTruthy();
+    const aviso = screen.getByText(/^Caixa de hoje fechado às \d\d:\d\d\.$/).closest('.cx-aviso')!;
+    expect(aviso.getAttribute('role')).toBe('status');
+    expect(txt(aviso.querySelector('p')?.textContent)).toMatch(
+      /^Caixa de hoje fechado às \d\d:\d\d\. As vendas de hoje estão encerradas\. Para vender, o Dono ou o Administrador pode desfazer o fechamento em Caixa do dia\.$/,
+    );
+    await userEvent.type(screen.getByLabelText('Código ou nome do produto'), `${p.codigoBarras}{Enter}`);
+    await userEvent.click(screen.getByRole('button', { name: 'FINALIZAR · F2' }));
+    expect((await screen.findByText(/^O caixa de hoje já foi fechado/)).getAttribute('role')).toBe('alert');
+    await userEvent.click(within(aviso as HTMLElement).getByRole('button', { name: 'Ir para Caixa do dia' }));
+    expect(aoAbrirCaixa).toHaveBeenCalledOnce();
   });
 
   it('Visão geral mostra a situação do caixa no cabeçalho; clicar leva para o Caixa do dia', async () => {

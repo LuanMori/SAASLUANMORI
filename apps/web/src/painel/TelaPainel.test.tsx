@@ -142,9 +142,9 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
 
     // Frente de caixa abre em tela cheia, sem a barra lateral (como no DaniPets)
     await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
-    await screen.findByPlaceholderText('Bipe o código (3*código = 3 unidades)');
+    await screen.findByPlaceholderText('Bipe o código ou digite o nome (3*código = 3 un.)');
     expect(screen.queryByRole('navigation', { name: 'Menu principal' })).toBeNull();
-    const leitor = screen.getByLabelText('Leitor de código de barras');
+    const leitor = screen.getByLabelText('Código ou nome do produto');
     await userEvent.type(leitor, '2*7897000400403{Enter}');
     await userEvent.keyboard('{F2}');
     expect(txt((await screen.findByText(/Venda #00001 finalizada/)).textContent)).toBe('Venda #00001 finalizada: R$ 15,00 em Pix.');
@@ -299,8 +299,8 @@ describe('TelaPainel · virada do dia com o sistema aberto (pedido do Luan, 21/1
     // a Frente de caixa mostra o aviso junto com "sem caixa aberto não há vendas"
     await userEvent.click(screen.getByRole('button', { name: 'Frente de caixa' }));
     expect(await screen.findByText('CAIXA DE HOJE NÃO ABERTO')).toBeTruthy();
-    expect(txt(screen.getByText(/^Novo dia:/).closest('span')?.textContent)).toBe(
-      'Novo dia: o caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta. O caixa de hoje ainda não foi aberto. Sem caixa aberto não há vendas.',
+    expect(txt(screen.getByText(/^Novo dia:/).closest('p')?.textContent)).toBe(
+      'Caixa de hoje não aberto. Novo dia: o caixa de 20/11/2026 fechou sozinho à meia-noite, sem contagem da gaveta. Sem caixa aberto não há vendas: abra o caixa para começar.',
     );
     // de volta ao painel: "Ir para Caixa do dia" e "Entendi"
     await userEvent.click(screen.getByRole('button', { name: '← Painel' }));

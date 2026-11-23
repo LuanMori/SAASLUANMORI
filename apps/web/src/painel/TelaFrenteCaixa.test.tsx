@@ -44,13 +44,13 @@ async function abrir(base: ApiPainel, operador: OperadorComPapel, chave: string 
   const ui = render(
     <TelaFrenteCaixa api={api} operador={{ nome: operador.nome, papel: operador.papel }} loja={{ nome: 'Loja T' }} fuso={FUSO} chaveCarrinho={chave} aoSair={aoSair} />,
   );
-  await screen.findByPlaceholderText('Bipe o código (3*código = 3 unidades)');
+  await screen.findByPlaceholderText('Bipe o código ou digite o nome (3*código = 3 un.)');
   return { api, aoSair, ui, ...extra };
 }
 
 /** As vendas gravadas na loja dos testes, vistas pelo Dono (o Vendedor só recebe as de hoje). */
 const vendasDoPdv = () => criarApiLocal({ lojaId: 'pdv', operador: ANA, exemplos: false, atrasoMs: 0 }).listarVendas();
-const leitor = () => screen.getByLabelText('Leitor de código de barras');
+const leitor = () => screen.getByLabelText('Código ou nome do produto');
 const bipar = (codigo: string) => userEvent.type(leitor(), `${codigo}{Enter}`);
 const linhas = () => within(screen.getByRole('table')).getAllByRole('row').slice(1);
 const total = () => txt(screen.getByTestId('pdv-total').textContent);
@@ -88,17 +88,70 @@ describe('Frente de caixa · cabeçalho e leitor', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
-  it('F3 vai para a busca; busca pelo nome sem acento; com vários resultados pede para escolher', async () => {
+  it('uma barra só: o nome sem acento acha o produto; com vários, pede para escolher na lista', async () => {
     await montar();
-    await userEvent.keyboard('{F3}');
-    const busca = screen.getByLabelText('Buscar produto');
-    expect(document.activeElement).toBe(busca);
-    await userEvent.type(busca, 'racao{Enter}');
+    expect(screen.queryByLabelText('Buscar produto')).toBeNull(); // a segunda barra saiu (pedido do Luan)
+    await bipar('racao');
     expect(linhas()[0]!.textContent).toMatch(/Ração Gatos 3 kg/);
-    await userEvent.type(busca, 'petisco{Enter}');
-    expect(screen.getByRole('alert').textContent).toMatch(/Mais de um produto/);
-    await userEvent.click(within(screen.getByRole('list', { name: 'Produtos encontrados' })).getByText('Petisco Ossinho'));
+    expect((leitor() as HTMLInputElement).value).toBe('');
+    await userEvent.type(leitor(), 'petisco');
+    const lista = screen.getByRole('list', { name: 'Produtos encontrados' });
+    expect(within(lista).getAllByRole('button').map((b) => b.querySelector('.pdv-sug-nome')?.firstChild?.textContent)).toEqual(['Petisco Bifinho', 'Petisco Ossinho']);
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('Mais de um produto encontrado: escolha na lista.');
+    expect((leitor() as HTMLInputElement).value).toBe('petisco'); // o texto fica para escolher ou corrigir
+    await userEvent.click(within(lista).getByText('Petisco Ossinho'));
     expect(linhas()).toHaveLength(2);
+    expect(screen.queryByRole('list', { name: 'Produtos encontrados' })).toBeNull();
+    expect(document.activeElement).toBe(leitor());
+  });
+
+  it('setas andam na lista; "2*nome" põe 2 do escolhido; F3 volta para a barra; Esc limpa', async () => {
+    await montar();
+    await userEvent.type(leitor(), '2*petisco');
+    await userEvent.keyboard('{ArrowDown}');
+    const botoes = within(screen.getByRole('list', { name: 'Produtos encontrados' })).getAllByRole('button');
+    expect(document.activeElement).toBe(botoes[0]);
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(botoes[1]);
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}');
+    expect(document.activeElement).toBe(leitor()); // a seta de cima, no primeiro, volta para a barra
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect((screen.getByLabelText('Quantidade de Petisco Ossinho', { selector: 'input' }) as HTMLInputElement).value).toBe('2');
+    expect(document.activeElement).toBe(leitor());
+
+    (document.activeElement as HTMLElement).blur();
+    await userEvent.keyboard('{F3}');
+    expect(document.activeElement).toBe(leitor());
+    await userEvent.type(leitor(), 'coleira');
+    await userEvent.keyboard('{Enter}');
+    expect(screen.getByRole('alert').textContent).toBe('Nenhum produto encontrado para “coleira”.');
+    expect((leitor() as HTMLInputElement).value).toBe('coleira'); // digitado à mão: fica para corrigir
+    await userEvent.keyboard('{Escape}');
+    expect((leitor() as HTMLInputElement).value).toBe('');
+    expect(linhas()).toHaveLength(1);
+  });
+
+  it('produto a granel: a lista mostra o saldo em kg e o preço por kg; "1,5*nome" põe 1,5 kg', async () => {
+    const api = criarApiLocal({ lojaId: 'granel', operador: BRUNO, exemplos: false, atrasoMs: 0 });
+    await api.criarProduto({ nome: 'Ração a granel', codigoBarras: null, precoCentavos: 1990, unidade: 'kg' });
+    await darEstoque('granel', 25000); // 25 kg (o estoque guarda gramas)
+    await abrir(api, BRUNO, null);
+    await userEvent.type(leitor(), '1,5*granel');
+    const item = within(screen.getByRole('list', { name: 'Produtos encontrados' })).getByRole('button');
+    expect(txt(item.textContent)).toBe('0001Ração a granelsaldo 25 kgR$ 19,90/kg');
+    await userEvent.click(item);
+    expect(txt(screen.getByTestId('pdv-ultimo').nextElementSibling?.textContent)).toBe('1,5 kg × R$ 19,90/kg = R$ 29,85');
+  });
+
+  it('começo do código também acha; código inteiro (leitor) entra direto, mesmo com outros parecidos', async () => {
+    await montar();
+    await userEvent.type(leitor(), '789');
+    expect(within(screen.getByRole('list', { name: 'Produtos encontrados' })).getAllByRole('button')).toHaveLength(2);
+    await userEvent.clear(leitor());
+    await bipar('7891000200209');
+    expect(linhas()[0]!.textContent).toMatch(/Ração Gatos 3 kg/);
+    expect(screen.queryByRole('list', { name: 'Produtos encontrados' })).toBeNull();
   });
 
   it('quantidade com + e −; chegar a zero tira o item; × remove', async () => {
@@ -467,8 +520,8 @@ describe('Frente de caixa · estoque', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Aumentar Coleira M' }));
     expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 2 un.');
     expect((screen.getByLabelText('Quantidade de Coleira M', { selector: 'input' }) as HTMLInputElement).value).toBe('2');
-    await userEvent.type(screen.getByLabelText('Buscar produto'), 'coleira');
-    expect(within(screen.getByRole('list', { name: 'Produtos encontrados' })).getByText('saldo 2')).toBeTruthy();
+    await userEvent.type(leitor(), 'coleira');
+    expect(within(screen.getByRole('list', { name: 'Produtos encontrados' })).getByText('saldo 2 un')).toBeTruthy();
   });
 
   it('a venda dá baixa na hora: vendido tudo, o produto não passa mais', async () => {
@@ -479,8 +532,8 @@ describe('Frente de caixa · estoque', () => {
     await bipar('2*789100');
     await finalizar();
     await screen.findByText(/finalizada/);
-    await userEvent.type(screen.getByLabelText('Buscar produto'), 'coleira');
-    await within(screen.getByRole('list', { name: 'Produtos encontrados' })).findByText('saldo 0');
+    await userEvent.type(leitor(), 'coleira');
+    await within(screen.getByRole('list', { name: 'Produtos encontrados' })).findByText('saldo 0 un');
     await userEvent.keyboard('{Escape}');
     await bipar('789100');
     expect(screen.getByRole('alert').textContent).toBe('Estoque insuficiente para Coleira M. Disponível: 0 un.');

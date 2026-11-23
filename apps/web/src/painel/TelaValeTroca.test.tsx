@@ -40,10 +40,10 @@ async function pdv(o: OperadorComPapel) {
   if ((await base.lerSituacaoDoCaixa()).estado === 'nao_aberto') await base.abrirCaixa({ fundoCentavos: 10000 });
   const a = { ...base, criarVenda: vi.fn(base.criarVenda) };
   render(<TelaFrenteCaixa api={a} operador={{ nome: o.nome, papel: o.papel }} loja={{ nome: 'Loja T' }} fuso={FUSO} aoSair={vi.fn()} />);
-  await screen.findByPlaceholderText('Bipe o código (3*código = 3 unidades)');
+  await screen.findByPlaceholderText('Bipe o código ou digite o nome (3*código = 3 un.)');
   return a;
 }
-const bipar = (codigo: string) => userEvent.type(screen.getByLabelText('Leitor de código de barras'), `${codigo}{Enter}`);
+const bipar = (codigo: string) => userEvent.type(screen.getByLabelText('Código ou nome do produto'), `${codigo}{Enter}`);
 const total = () => txt(screen.getByTestId('pdv-total').textContent);
 
 describe('Frente de caixa · devolução como vale-troca e a troca (DEV-03, PDV-09)', () => {
