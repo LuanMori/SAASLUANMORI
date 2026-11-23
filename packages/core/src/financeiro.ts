@@ -132,12 +132,21 @@ export type NovoLancamento = Omit<Lancamento, 'id'>;
 export interface TaxasCartao {
   /** % cobrado pela operadora (1.5 = 1,5%). */
   taxaPct: Record<FormaCartao, number>;
-  /** Dias até a operadora depositar. */
+  /** Dias até a operadora depositar (vale na baixa manual). */
   dias: Record<FormaCartao, number>;
+  /**
+   * Baixa do cartão, escolha do Dono (pedido do Luan em 23/11/2026). Automática (padrão): a venda e o fiado pagos
+   * no cartão entram na Conta bancária na hora, já sem a taxa. Manual (false): ficam a receber da operadora até
+   * alguém confirmar o depósito, como no DaniPets. Ausente = automática.
+   */
+  baixaAutomatica?: boolean;
 }
 
-/** Padrão do DaniPets. */
-export const TAXAS_CARTAO_PADRAO: TaxasCartao = { taxaPct: { debito: 1.5, credito: 3 }, dias: { debito: 1, credito: 30 } };
+/** Padrão do DaniPets, com a baixa automática do cartão. */
+export const TAXAS_CARTAO_PADRAO: TaxasCartao = { taxaPct: { debito: 1.5, credito: 3 }, dias: { debito: 1, credito: 30 }, baixaAutomatica: true };
+
+/** O cartão entra na Conta bancária na hora (baixa automática)? Ausente = sim. */
+export const baixaAutomaticaDoCartao = (t: Pick<TaxasCartao, 'baixaAutomatica'>): boolean => t.baixaAutomatica !== false;
 
 export type SituacaoRecebivel = 'pendente' | 'recebido' | 'cancelado';
 
@@ -161,13 +170,36 @@ export interface Recebivel {
   estornadoBrutoCentavos: number;
   estornadoTaxaCentavos: number;
   situacao: SituacaoRecebivel;
-  /** `forma`: como o cliente pagou o fiado (Dinheiro, Pix ou cartão), quando foi pela conta do cliente. */
-  recebimento: { em: string; conta: ContaId; valorCentavos: number; por: Operador; forma?: FormaPagamento } | null;
+  /**
+   * `forma`: como o cliente pagou o fiado (Dinheiro, Pix ou cartão), quando foi pela conta do cliente. `baixa`: o
+   * recebimento do fiado que pagou esta compra (cotação, troco, taxa e a chave que evita receber duas vezes).
+   */
+  recebimento: { em: string; conta: ContaId; valorCentavos: number; por: Operador; forma?: FormaPagamento; baixa?: BaixaDoFiado } | null;
   /** 'fiado' = cartão usado para pagar o fiado do cliente (sem venda; vendaId vazio e vendaNumero 0). */
   origem?: 'fiado' | null;
 }
 
 export type NovoRecebivel = Omit<Recebivel, 'id'>;
+
+/** O que fica guardado de um recebimento de fiado: a cotação e o resultado, com a chave do pedido (sem repetir). */
+export interface BaixaDoFiado {
+  /** Chave do pedido: o mesmo pedido enviado de novo (rede lenta, clique duplo) devolve este resultado. */
+  chave: string;
+  forma: FormaPagamento;
+  /** O que abateu da dívida. */
+  principalCentavos: number;
+  /** O que o cliente pagou (no cartão, com a taxa da maquininha). */
+  brutoCentavos: number;
+  taxaCentavos: number;
+  percentual: number;
+  /** Dinheiro entregue (só em dinheiro) e o troco. */
+  entregueCentavos: number | null;
+  trocoCentavos: number;
+  /** Recebeu só as compras deste vencimento (AAAA-MM-DD); null = abateu da mais antiga. */
+  vencimento: string | null;
+  abatidas: { vendaNumero: number; valorCentavos: number }[];
+  ficaDevendoCentavos: number;
+}
 
 export const LIMITES_FINANCEIRO = { descricaoMax: 120, categoriaMax: 60, taxaPctMax: 99.99, diasMax: 365 } as const;
 
@@ -522,13 +554,18 @@ export function validarSaldoInicial(entrada: unknown, lancamentos: readonly Pick
   return { ok: true, valor: { conta: conta as ContaId, valorCentavos: v as number } };
 }
 
-/** Taxa de 0 a 99,99% (100% ou mais deixaria o valor a receber negativo) e prazo de 0 a 365 dias. */
+/**
+ * Taxa de 0 a 99,99% (100% ou mais deixaria o valor a receber negativo), prazo de 0 a 365 dias e a baixa do
+ * cartão (automática ou manual; sem ela, automática).
+ */
 export function validarTaxasCartao(entrada: unknown): Resultado<TaxasCartao> {
   if (!ehObjeto(entrada) || !ehObjeto(entrada.taxaPct) || !ehObjeto(entrada.dias)) {
     return { ok: false, erros: [{ campo: '_', mensagem: 'Informe a taxa e os dias do débito e do crédito.' }] };
   }
   const erros: ErroCampo[] = [];
-  for (const k of Object.keys(entrada)) if (k !== 'taxaPct' && k !== 'dias') erros.push({ campo: k, mensagem: 'Campo não permitido.' });
+  for (const k of Object.keys(entrada)) if (k !== 'taxaPct' && k !== 'dias' && k !== 'baixaAutomatica') erros.push({ campo: k, mensagem: 'Campo não permitido.' });
+  const baixa = entrada.baixaAutomatica;
+  if (baixa !== undefined && typeof baixa !== 'boolean') erros.push({ campo: 'baixaAutomatica', mensagem: 'Escolha se a baixa do cartão é automática ou manual.' });
   const taxaPct = { debito: 0, credito: 0 };
   const dias = { debito: 0, credito: 0 };
   for (const f of ['debito', 'credito'] as const) {
@@ -540,5 +577,14 @@ export function validarTaxasCartao(entrada: unknown): Resultado<TaxasCartao> {
     if (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > LIMITES_FINANCEIRO.diasMax) erros.push({ campo: `dias.${f}`, mensagem: 'Os dias vão de 0 a 365.' });
     else dias[f] = d;
   }
-  return erros.length ? { ok: false, erros } : { ok: true, valor: { taxaPct, dias } };
+  return erros.length ? { ok: false, erros } : { ok: true, valor: { taxaPct, dias, baixaAutomatica: baixa !== false } };
+}
+
+/**
+ * Baixa automática do cartão: o valor (venda ou fiado) entra na Conta bancária na hora, já sem a taxa. É a mesma
+ * confirmação do depósito da baixa manual (receberRecebivel), feita no momento do pagamento.
+ */
+export function baixarCartaoNaHora(r: Recebivel, ctx: { em: string; por: Operador }): Resultado<{ recebivel: Recebivel; lancamento: NovoLancamento }> {
+  if (!ehCartao(r.forma)) return { ok: false, erros: [{ campo: '_', mensagem: 'Só o cartão tem baixa automática.' }] };
+  return receberRecebivel(r, { conta: 'banco', em: ctx.em, por: ctx.por });
 }

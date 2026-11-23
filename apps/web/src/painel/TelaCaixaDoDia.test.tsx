@@ -258,7 +258,7 @@ describe('Caixa do dia · nas outras telas', () => {
     await dono.abrirCaixa({ fundoCentavos: 3000 });
     render(visao(ANA));
     expect(txt((await screen.findByText(/^Nada pendente/)).textContent)).toBe(
-      'Nada pendente. Tudo em ordem.Por enquanto, só os avisos do caixa estão ligados. Os outros (estoque, validade, contas…) ainda vamos escolher.',
+      'Nada pendente. Tudo em ordem.Por enquanto, estão ligados os avisos do caixa e dos clientes (fiado a vencer, cashback a vencer e promoções). Os outros (estoque, validade, contas…) ainda vamos escolher.',
     );
   });
 

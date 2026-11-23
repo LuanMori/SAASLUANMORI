@@ -61,8 +61,8 @@ export function CardPendencias({ pendencias, aoIrPara, nota = null, carregando =
                   <span className="sr-only">{p.gravidade === 'alta' ? 'Urgente: ' : 'Atenção: '}</span>
                   {p.texto}
                 </p>
-                {p.acao && aoIrPara && (
-                  <button type="button" className="botao pend-acao" onClick={() => aoIrPara(p.acao!.secao)}>
+                {p.acao && (p.acao.abrir || (aoIrPara && p.acao.secao)) && (
+                  <button type="button" className="botao pend-acao" onClick={p.acao.abrir ?? (() => aoIrPara!(p.acao!.secao!))}>
                     {p.acao.rotulo}
                   </button>
                 )}

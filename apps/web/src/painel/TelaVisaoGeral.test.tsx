@@ -19,7 +19,7 @@ afterEach(() => {
 const FUSO = 'America/Sao_Paulo';
 
 /** Loja com 1 produto e vendas em horários controlados. */
-async function preparar() {
+async function preparar(baixa: 'manual' | 'automatica' = 'manual') {
   let relogio = new Date('2026-11-12T13:00:00Z'); // 10:00 em SP
   const agora = () => relogio;
   const mudar = (iso: string) => {
@@ -30,6 +30,8 @@ async function preparar() {
   const comoBruno = comCaixaAberto(criarApiLocal({ lojaId: 'l', operador: { id: 'bruno', nome: 'Bruno', papel: 'vendedor' }, exemplos: false, atrasoMs: 0, agora }));
   const p = await comoAna.criarProduto({ nome: 'Areia 4 kg', codigoBarras: null, precoCentavos: 2490 });
   await darEstoque('l', 50); // produto novo começa sem estoque
+  // a maior parte destes testes olha o cartão "a receber": baixa manual (escolha do Dono)
+  if (baixa === 'manual') await comoAna.salvarTaxasCartao({ ...(await comoAna.lerTaxasCartao()), baixaAutomatica: false });
 
   mudar('2026-11-11T20:00:00Z'); // ontem, 17:00 em SP
   await comoAna.criarVenda({ itens: [{ produtoId: p.id, quantidade: 10 }], pagamentos: [{ forma: 'credito', valorCentavos: 24900 }] });
@@ -87,6 +89,15 @@ describe('TelaVisaoGeral · formato', () => {
     await userEvent.click(saldo);
     expect(aoVerFinanceiro).toHaveBeenCalledOnce();
     expect(detalhe()).toBeNull(); // os do lado não abrem relatório: mudam de aba
+  });
+
+  it('baixa automática do cartão (o padrão): o crédito de ontem já está no saldo, sem "a receber no cartão"', async () => {
+    const { api, agora } = await preparar('automatica');
+    render(<TelaVisaoGeral api={api} nome="Ana" fuso={FUSO} agora={agora} aoVerProdutos={vi.fn()} aoVerFinanceiro={vi.fn()} />);
+    const saldo = await screen.findByRole('button', { name: /Saldo das contas/ });
+    // R$ 74,70 de hoje + R$ 241,53 do crédito de ontem (R$ 249,00 menos a taxa de 3%), que entrou no banco na hora
+    await waitFor(() => expect(txt(saldo.querySelector('.vg-atalho-valor')?.textContent)).toBe('R$ 316,23'));
+    expect(saldo.querySelector('.vg-atalho-nota')).toBeNull();
   });
 
   it('venda no fiado: não entra no saldo, aparece como "a receber no fiado" no card', async () => {

@@ -46,7 +46,10 @@ fechamento, motivo de desfazer, motivo da liberação) ficam no próprio caixa, 
 estoque, e não nos detalhes do histórico.
 Em 21/11/2026 (pedido do Luan): **fechamento automático verificado** (o dia, o esperado na gaveta e se houve
 observação; a observação em si fica no próprio caixa). Em 22/11/2026: **ciência de diferença no fechamento**
-(o dia e a falta ou a sobra; quem deu ciência é o Dono que está logado).
+(o dia e a falta ou a sobra; quem deu ciência é o Dono que está logado). Em 23/11/2026 (arquivo fiado-caixa):
+"fiado recebido" passou a guardar o cobrado, a taxa, o troco e o vencimento; "taxas de cartão alteradas", as
+taxas do débito e do crédito e a baixa (automática ou manual); o lembrete de pagamento, o vencimento lembrado.
+Só valores, dias e percentuais: nada de dado pessoal.
 
 Módulo 6 (Clientes e fiado, 20/11/2026): limite de fiado alterado (de → para), autorização de mensagens
 (autorizou ou cancelou), não incomodar, CPF completo visto, fiado recebido (valor e forma), fiado liberado

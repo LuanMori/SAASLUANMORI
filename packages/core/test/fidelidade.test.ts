@@ -11,15 +11,16 @@ import {
   consumirCashback,
   type ContatoCliente,
   creditarCashback,
-  type CupomRetorno,
   cupomAtivo,
+  type CupomRetorno,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
   emDias,
   extratoCompletoDoCliente,
   extratoDaFidelidade,
-  FORMAS_DA_TELA,
+  fiadoAVencer,
   formaPrecisaDeCliente,
+  FORMAS_DA_TELA,
   gerarCashback,
   linkWhatsapp,
   type LoteCashback,
@@ -36,8 +37,9 @@ import {
   primeiroNome,
   type ProdutoParaVenda,
   proximoVencimento,
-  regrasPadrao,
+  type Recebivel,
   registrarContato,
+  regrasPadrao,
   regulamentoDoPrograma,
   repartirEstorno,
   resultadoDosLembretes,
@@ -320,6 +322,12 @@ describe('cupom de retorno e lembretes (CLI-11, 13 e 14)', () => {
     expect(registrarContato(MARIA, 'retorno', 'whatsapp', { ...CTX, cupons: [], regras: { ...REGRAS.retorno, cupomPct: 0 } }).cupom).toBeNull();
   });
 
+  it('o lembrete de pagamento guarda o vencimento ("fiado:AAAA-MM-DD"); os outros, não', () => {
+    expect(registrarContato(MARIA, 'cobranca', 'whatsapp', { ...CTX, cupons: [], regras: REGRAS.retorno, referencia: 'fiado:2026-11-25' }).contato.referencia).toBe('fiado:2026-11-25');
+    expect(registrarContato(MARIA, 'retorno', 'whatsapp', { ...CTX, cupons: [], regras: REGRAS.retorno, referencia: 'fiado:2026-11-25' }).contato).not.toHaveProperty('referencia');
+    expect(registrarContato(MARIA, 'cobranca', 'whatsapp', { ...CTX, cupons: [], regras: REGRAS.retorno }).contato).not.toHaveProperty('referencia');
+  });
+
   it('quem pode receber mensagem: WhatsApp e autorização; a cobrança só pede o WhatsApp', () => {
     const base = { ativo: true, telefone: '41999998888', whatsapp: true, autorizaMensagens: { em: CTX.em, por: ANA } };
     expect([podeReceberMensagem(base), podeReceberCobranca(base), motivoSemMensagem(base, 'retorno')]).toEqual([true, true, null]);
@@ -506,5 +514,65 @@ describe('regulamento, extrato e histórico (CLI-18, CLI-03)', () => {
     expect(limpo(resumirAuditoria('cliente.cashback_nao_recuperado', { rotulo: 'devolucao', numero: 12, valorCentavos: 50 }))).toBe(
       'Devolução • venda nº 00012 • R$ 0,50 do cashback desta compra já tinham sido usados ou venceram',
     );
+  });
+});
+
+// ------------------------------------------------------------------ fiado a vencer (pendência do card, arquivo do Luan de 23/11/2026)
+describe('fiado a vencer: de hoje até daqui a 7 dias, por cliente e vencimento', () => {
+  const pessoa = (id: string, nome: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    nome,
+    telefone: '41999998888',
+    cpf: '',
+    ativo: true,
+    naoIncomodar: false,
+    lembreteAdiadoAte: null,
+    whatsapp: true,
+    autorizaMensagens: null,
+    ...extra,
+  });
+  const titulo = (id: string, clienteId: string, venceEm: string, bruto: number, extra: Partial<Recebivel> = {}): Recebivel => ({
+    id,
+    forma: 'fiado',
+    cliente: { id: clienteId, nome: clienteId },
+    vendaId: `v-${id}`,
+    vendaNumero: 1,
+    criadoEm: '2026-11-01T12:00:00.000Z',
+    venceEm,
+    brutoCentavos: bruto,
+    taxaCentavos: 0,
+    estornadoBrutoCentavos: 0,
+    estornadoTaxaCentavos: 0,
+    situacao: 'pendente',
+    recebimento: null,
+    ...extra,
+  });
+
+  it('junta as compras do mesmo vencimento; fora da janela, pago, desativado, "não incomodar" e adiado ficam de fora', () => {
+    const clientes = [
+      pessoa('maria', 'Maria'),
+      pessoa('ana', 'Ana', { whatsapp: false }),
+      pessoa('joao', 'João', { naoIncomodar: true }),
+      pessoa('lia', 'Lia', { lembreteAdiadoAte: '2026-11-22' }),
+      pessoa('rui', 'Rui', { ativo: false }),
+    ];
+    const recebiveis = [
+      titulo('m1', 'maria', '2026-11-25', 3000),
+      titulo('m2', 'maria', '2026-11-25', 2000, { estornadoBrutoCentavos: 500 }),
+      titulo('m3', 'maria', '2026-11-28', 1000), // 8 dias: fora
+      titulo('m4', 'maria', '2026-11-19', 1000), // vencido: fora (a pendência é "a vencer")
+      titulo('m5', 'maria', '2026-11-21', 1000, { situacao: 'recebido' }),
+      titulo('a1', 'ana', '2026-11-20', 700),
+      titulo('j1', 'joao', '2026-11-22', 900),
+      titulo('l1', 'lia', '2026-11-22', 900),
+      titulo('r1', 'rui', '2026-11-22', 900),
+    ];
+    const contatos = [{ clienteId: 'maria', tipo: 'cobranca' as const, referencia: 'fiado:2026-11-25' }];
+    expect(fiadoAVencer(recebiveis, clientes, contatos, HOJE)).toEqual([
+      { clienteId: 'ana', nome: 'Ana', venceEm: '2026-11-20', valorCentavos: 700, referencia: 'fiado:2026-11-20', avisado: false, bloqueio: 'O cliente não tem WhatsApp no cadastro.' },
+      { clienteId: 'maria', nome: 'Maria', venceEm: '2026-11-25', valorCentavos: 4500, referencia: 'fiado:2026-11-25', avisado: true, bloqueio: null },
+    ]);
+    // passado o adiamento, a Lia volta para a lista (e o vencimento de 28/11 da Maria entra na janela de 7 dias)
+    expect(fiadoAVencer(recebiveis, clientes, [], '2026-11-22').map((i) => `${i.clienteId}:${i.venceEm}`)).toEqual(['lia:2026-11-22', 'maria:2026-11-25', 'maria:2026-11-28']);
   });
 });

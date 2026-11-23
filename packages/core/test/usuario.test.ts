@@ -40,6 +40,7 @@ describe('permissões (matriz única, do DaniPets)', () => {
       'clientes.excluir_dados',
       'brinde',
       'caixa.ciencia',
+      'financeiro.baixa_cartao',
       'dia_fechado.liberar',
       'fiado.liberar',
     ]);

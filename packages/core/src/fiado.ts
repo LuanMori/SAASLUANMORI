@@ -4,12 +4,14 @@
 //   - LIMITE por cliente (definido pelo Dono ou pelo Administrador; 0 = sem fiado). Na Frente de caixa, passar
 //     do limite, ou comprar com fiado vencido (regra da loja, ligada no padrão), só com a liberação de um Dono,
 //     com motivo;
-//   - RECEBER pela conta do cliente: o valor (todo ou parte) abate primeiro a compra mais antiga. Dinheiro entra
-//     na gaveta (com o caixa de hoje aberto), Pix na Conta bancária e cartão fica a receber da operadora, com a
-//     taxa do cartão. Pagar fiado não gera cashback.
+//   - RECEBER pela conta do cliente: o valor (todo ou parte) abate primeiro a compra mais antiga, ou só as compras
+//     de um vencimento. Dinheiro entra na gaveta (com o caixa de hoje aberto; o troco não entra), Pix na Conta
+//     bancária e cartão com a TAXA DA MAQUININHA REPASSADA ao cliente (ele paga o bruto; a loja recebe o valor
+//     cheio): entra no banco na hora (baixa automática) ou fica a receber da operadora (baixa manual), conforme a
+//     escolha do Dono nas taxas. Pagar fiado não gera cashback. (Arquivo do Luan de 23/11/2026.)
 // Valores em centavos; dias AAAA-MM-DD no fuso da loja.
-import { dataBr } from './compra';
-import { formatarCentavos } from './dinheiro';
+import { dataBr, dataValida } from './compra';
+import { CENTAVOS_MAX, formatarCentavos } from './dinheiro';
 import {
   type ContaId,
   liquidoAReceber,
@@ -89,6 +91,78 @@ export const mensagemFiadoPrecisaDono = (nome: string, motivos: readonly string[
 export const FORMAS_RECEBER_FIADO = ['dinheiro', 'pix', 'debito', 'credito'] as const;
 export type FormaReceberFiado = (typeof FORMAS_RECEBER_FIADO)[number];
 
+/** Só as compras de um vencimento (receber pela lista "Fiado a vencer", que separa por vencimento). */
+export function fiadoDoVencimento(fiado: FiadoDoCliente, venceEm: string, hoje: string): FiadoDoCliente {
+  const abertos = fiado.abertos.filter((r) => r.venceEm === venceEm);
+  const devendo = abertos.reduce((s, r) => s + liquidoAReceber(r), 0);
+  const vencido = venceEm < hoje ? devendo : 0;
+  return { devendoCentavos: devendo, vencidoCentavos: vencido, diasVencido: vencido > 0 ? diasEntre(venceEm, hoje) : 0, abertos };
+}
+
+/** Lembrete de pagamento de um vencimento: "fiado:2026-12-23". */
+export const referenciaDoFiado = (venceEm: string): string => `fiado:${venceEm}`;
+
+/** O vencimento de uma referência "fiado:AAAA-MM-DD" (null = não é uma referência válida). */
+export function vencimentoDaReferencia(referencia: unknown): string | null {
+  if (typeof referencia !== 'string') return null;
+  const m = /^fiado:(\d{4}-\d{2}-\d{2})$/.exec(referencia);
+  return m && dataValida(m[1]) ? m[1]! : null;
+}
+
+/** Quanto cobrar para receber o fiado: o que abate, o que o cliente paga, a taxa da maquininha e o troco. */
+export interface CotacaoRecebimento {
+  /** O que abate da dívida (e o que a loja recebe). */
+  principalCentavos: number;
+  forma: FormaReceberFiado;
+  /** Taxa da maquininha (0 em dinheiro e Pix). */
+  percentual: number;
+  /** O que o cliente paga: no cartão, o principal mais a taxa. */
+  brutoCentavos: number;
+  taxaCentavos: number;
+  liquidoCentavos: number;
+  /** Só em dinheiro: o que o cliente entregou e o troco. */
+  entregueCentavos: number | null;
+  trocoCentavos: number;
+}
+
+/**
+ * Cotação do recebimento do fiado (arquivo do Luan, 23/11/2026). No cartão, a taxa da maquininha é repassada ao
+ * cliente: o bruto é o valor em que bruto − taxa(bruto) dá exatamente o que abate a dívida (conferido para todas
+ * as taxas de 0,01% a 99,99%). Em dinheiro, o troco do que foi entregue (sem `entregue`, entregou o valor certo).
+ */
+export function cotarRecebimentoFiado(principal: unknown, forma: unknown, taxas: Pick<TaxasCartao, 'taxaPct'>, entregue?: unknown): Resultado<CotacaoRecebimento> {
+  const erro = (mensagem: string, campo: string): Resultado<never> => ({ ok: false, erros: [{ campo, mensagem }] });
+  if (typeof principal !== 'number' || !Number.isSafeInteger(principal) || principal <= 0 || principal > CENTAVOS_MAX) return erro('Informe um valor válido para a baixa.', 'valorCentavos');
+  if (typeof forma !== 'string' || !(FORMAS_RECEBER_FIADO as readonly string[]).includes(forma)) return erro('Escolha a forma de pagamento.', 'forma');
+  const f = forma as FormaReceberFiado;
+  const percentual = f === 'debito' || f === 'credito' ? taxas.taxaPct[f] : 0;
+  const pontos = Math.round(percentual * 100);
+  if (!Number.isInteger(pontos) || pontos < 0 || pontos >= 10_000) return erro('A taxa da maquininha está inválida. Confira as taxas.', 'taxa');
+  const bruto = Math.round((principal * 10_000) / (10_000 - pontos));
+  if (bruto > CENTAVOS_MAX) return erro('O valor a cobrar passa do limite de um recebimento.', 'valorCentavos');
+  const taxa = taxaDoCartao(bruto, percentual);
+  if (bruto - taxa !== principal) return erro('Não foi possível calcular a taxa deste valor. Tente outro valor.', 'taxa');
+  let entregueCentavos: number | null = null;
+  if (f === 'dinheiro') {
+    const e = entregue === undefined || entregue === null ? principal : entregue;
+    if (typeof e !== 'number' || !Number.isSafeInteger(e) || e > CENTAVOS_MAX || e < principal) return erro('O dinheiro entregue é menor que o valor da baixa.', 'entregueCentavos');
+    entregueCentavos = e;
+  }
+  return {
+    ok: true,
+    valor: {
+      principalCentavos: principal,
+      forma: f,
+      percentual,
+      brutoCentavos: bruto,
+      taxaCentavos: taxa,
+      liquidoCentavos: principal,
+      entregueCentavos,
+      trocoCentavos: entregueCentavos === null ? 0 : entregueCentavos - principal,
+    },
+  };
+}
+
 export interface RecebimentoDeFiado {
   /** Compras no fiado que mudaram (pagas por inteiro, ou com o valor que falta diminuído). */
   atualizados: Recebivel[];
@@ -96,7 +170,8 @@ export interface RecebimentoDeFiado {
   partesPagas: Recebivel[];
   /** Dinheiro (Caixa físico) ou Pix (Conta bancária). */
   lancamento: NovoLancamento | null;
-  /** Cartão: fica a receber da operadora, com a taxa. */
+  /** Cartão: o pagamento à operadora, com a taxa repassada (bruto − taxa = o valor recebido). A baixa (na hora ou
+   *  manual) é decidida por quem grava, com as taxas da loja. */
   cartao: NovoRecebivel | null;
   /** O que foi abatido de cada compra (da mais antiga para a mais nova). */
   abatidas: { vendaNumero: number; valorCentavos: number }[];
@@ -123,7 +198,10 @@ export function previaDoRecebimento(
   return { abatidas, ficaDevendoCentavos: devendo - valor };
 }
 
-/** Recebe o fiado do cliente: o valor (todo ou parte do que ele deve) abate primeiro a compra mais antiga (DaniPets fiadoReceber). */
+/**
+ * Recebe o fiado do cliente: o valor (todo ou parte do que ele deve) abate primeiro a compra mais antiga (DaniPets
+ * fiadoReceber). No cartão, a taxa da maquininha é repassada ao cliente (cotarRecebimentoFiado).
+ */
 export function receberFiado(
   fiado: FiadoDoCliente,
   valorCentavos: unknown,
@@ -165,24 +243,26 @@ export function receberFiado(
     f === 'dinheiro' || f === 'pix'
       ? { conta, tipo: 'recebimento_fiado', valorCentavos, descricao, criadoEm: ctx.em, vendaId: null, vendaNumero: null, recebivelId: null, categoria: null, por: ctx.por }
       : null;
-  const cartao: NovoRecebivel | null =
-    f === 'debito' || f === 'credito'
-      ? {
-          forma: f,
-          cliente: ctx.cliente,
-          vendaId: '',
-          vendaNumero: 0,
-          origem: 'fiado',
-          criadoEm: ctx.em,
-          venceEm: somarDias(ctx.hoje, ctx.taxas.dias[f]),
-          brutoCentavos: valorCentavos,
-          taxaCentavos: taxaDoCartao(valorCentavos, ctx.taxas.taxaPct[f]),
-          estornadoBrutoCentavos: 0,
-          estornadoTaxaCentavos: 0,
-          situacao: 'pendente',
-          recebimento: null,
-        }
-      : null;
+  let cartao: NovoRecebivel | null = null;
+  if (f === 'debito' || f === 'credito') {
+    const cotacao = cotarRecebimentoFiado(valorCentavos, f, ctx.taxas);
+    if (!cotacao.ok) return cotacao;
+    cartao = {
+      forma: f,
+      cliente: ctx.cliente,
+      vendaId: '',
+      vendaNumero: 0,
+      origem: 'fiado',
+      criadoEm: ctx.em,
+      venceEm: somarDias(ctx.hoje, ctx.taxas.dias[f]),
+      brutoCentavos: cotacao.valor.brutoCentavos,
+      taxaCentavos: cotacao.valor.taxaCentavos,
+      estornadoBrutoCentavos: 0,
+      estornadoTaxaCentavos: 0,
+      situacao: 'pendente',
+      recebimento: null,
+    };
+  }
   return { ok: true, valor: { atualizados, partesPagas, lancamento, cartao, abatidas } };
 }
 

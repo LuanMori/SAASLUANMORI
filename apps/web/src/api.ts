@@ -4,6 +4,8 @@
 // JavaScript nem consegue ler). A demonstração implementa os mesmos contratos no navegador
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
+  CotacaoRecebimento,
+  FiadoAVencer,
   AcaoAutorizada,
   CaixaDoDia,
   CanalContato,
@@ -341,10 +343,49 @@ export interface ApiClientes {
   excluirCliente(id: string, motivo: string): Promise<void>;
   listarAvisosDeClientes(): Promise<AvisoExclusaoCliente[]>;
   conferirAvisoDeCliente(id: string): Promise<AvisoExclusaoCliente>;
-  /** Fiado pela conta do cliente: abate primeiro a compra mais antiga. Dinheiro só com o caixa de hoje aberto. */
-  receberFiadoDoCliente(id: string, dados: { valorCentavos: number; forma: FormaReceberFiado }): Promise<{ abatidas: { vendaNumero: number; valorCentavos: number }[]; ficaDevendoCentavos: number }>;
+  /**
+   * Fiado pela conta do cliente: abate primeiro a compra mais antiga (ou só as de um `vencimento`). Dinheiro só com
+   * o caixa de hoje aberto, com troco do que foi entregue; cartão com a taxa da maquininha repassada ao cliente, que
+   * entra no banco na hora (baixa automática) ou fica a receber (manual). A mesma `chave` não recebe duas vezes
+   * (devolve o resultado do primeiro). Se a taxa mudou desde a cotação da tela: 409 com codigo "taxa_mudou".
+   */
+  receberFiadoDoCliente(id: string, dados: PedidoReceberFiado): Promise<RecebimentoDoFiado>;
+  /** As taxas da maquininha para cotar o recebimento do fiado (quem vende recebe o fiado). */
+  taxasParaReceberFiado(): Promise<TaxasCartao>;
   /** Aba Fiado (Dono e Administrador): quem deve, da conta mais vencida para a menos. */
   listarFiado(): Promise<{ linhas: LinhaFiado[]; limitesCentavos: number }>;
+}
+
+export interface PedidoReceberFiado {
+  valorCentavos: number;
+  forma: FormaReceberFiado;
+  /** Só as compras deste vencimento (AAAA-MM-DD). */
+  vencimento?: string | null;
+  /** Em dinheiro: o que o cliente entregou (o troco é a diferença). Sem ele: o valor certo. */
+  entregueCentavos?: number | null;
+  /** O que a tela cotou (bruto e taxa): se a taxa mudou nesse meio tempo, a gravação recusa. */
+  brutoPrevistoCentavos?: number | null;
+  taxaPrevistaPct?: number | null;
+  /** Identificador do pedido, para não receber duas vezes (clique duplo, rede lenta). */
+  chave?: string | null;
+}
+
+export interface RecebimentoDoFiado {
+  abatidas: { vendaNumero: number; valorCentavos: number }[];
+  /** O que o cliente ainda deve (todas as compras). */
+  ficaDevendoCentavos: number;
+  cotacao: CotacaoRecebimento;
+}
+
+/** As pendências de clientes do card da Visão geral (arquivo do Luan, 23/11/2026). */
+export interface PendenciasDeClientes {
+  hoje: string;
+  /** Fiado que vence de hoje a 7 dias, por cliente e vencimento. Só para quem vê o fiado de todos (null para os outros). */
+  fiado: FiadoAVencer[] | null;
+  /** Cashback vencendo (a mesma lista da aba Retorno). */
+  cashback: PainelRetorno['cashback'];
+  /** Promoções exclusivas: sem comprar há N dias, com o cupom de retorno (vazio se a loja não dá cupom). */
+  promocao: (PainelRetorno['retorno'][number] & { percentual: number })[];
 }
 
 // ---- Financeiro (só Dono e Administrador; Vendedor recebe 403)
@@ -576,13 +617,18 @@ export interface ApiFidelidade {
   listarRetorno(): Promise<PainelRetorno>;
   /** Cashback em aberto da loja e de onde ele vem. */
   resumoDoCashback(): Promise<ResumoCashback>;
-  /** A mensagem com o nome da loja e os dados do cliente. O lembrete de pagamento: só Dono e Administrador. */
-  mensagemParaCliente(clienteId: string, tipo: TipoContato): Promise<MensagemParaCliente>;
+  /**
+   * A mensagem com o nome da loja e os dados do cliente. O lembrete de pagamento: só Dono e Administrador; com a
+   * `referencia` de um vencimento ("fiado:AAAA-MM-DD"), fala do valor e da data daquele vencimento.
+   */
+  mensagemParaCliente(clienteId: string, tipo: TipoContato, referencia?: string | null): Promise<MensagemParaCliente>;
+  /** Pendências de clientes do card da Visão geral: fiado a vencer, cashback a vencer e promoções exclusivas. */
+  pendenciasDeClientes(): Promise<PendenciasDeClientes>;
   /**
    * "Marcar como enviado" (WhatsApp, só para quem autorizou mensagens) ou "Já falei" (sem mensagem). A mensagem
    * de retorno pelo WhatsApp dá o cupom (ou repete o que ainda vale).
    */
-  registrarContato(clienteId: string, dados: { tipo: TipoContato; canal: CanalContato }): Promise<{ contato: ContatoCliente; cupom: CupomRetorno | null }>;
+  registrarContato(clienteId: string, dados: { tipo: TipoContato; canal: CanalContato; referencia?: string | null }): Promise<{ contato: ContatoCliente; cupom: CupomRetorno | null }>;
   /** Tira o cliente da lista de retorno por 7 dias. */
   adiarLembrete(clienteId: string): Promise<{ ate: string }>;
   /** O cliente sai das listas de lembrete (desfaz no cadastro). */

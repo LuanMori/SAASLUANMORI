@@ -3,11 +3,18 @@
 //   - cadastro e edição (CLI-01): nome, telefone e CPF obrigatórios; campo extra da loja ("Pet"), nascimento,
 //     limite de fiado (só Dono e Administrador), endereço, observações, WhatsApp, autorização de mensagens e
 //     "não incomodar". Na edição o CPF inteiro não vem do servidor: em branco, fica o do cadastro;
-//   - receber fiado (CLI-16): valor (todo ou parte), forma, e o que o valor abate (a compra mais antiga primeiro);
+//   - receber fiado (CLI-16; arquivo do Luan de 23/11/2026): valor (todo ou parte, ou um vencimento), forma em
+//     botões, dinheiro entregue com troco, cartão com a taxa da maquininha repassada ao cliente, prévia e a chave
+//     que evita receber duas vezes;
+//   - taxas da maquininha (Dono e Administrador; a baixa automática ou manual é escolha do Dono);
 //   - excluir cliente sem histórico, com motivo (CLI-07).
 // As regras (campo extra, fiado, cashback, cupom, mensagens) ficam na aba Regras do programa (clientes/AbaRegras.tsx).
 import {
+  baixaAutomaticaDoCartao,
   type Cliente,
+  type CotacaoRecebimento,
+  cotarRecebimentoFiado,
+  dataBr,
   descreverAbatidas,
   type ErroCampo,
   FORMAS_RECEBER_FIADO,
@@ -16,6 +23,7 @@ import {
   formatarTelefone,
   LIMITES_CLIENTE,
   NOME_FORMA_PAGAMENTO,
+  pctTexto,
   pode,
   type PapelDeLoja,
   previaDoRecebimento,
@@ -23,9 +31,10 @@ import {
   type RegrasDaLoja,
   validarNovoCliente,
 } from '@saas/core';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { type ApiPainel, type ClienteSemCpf, type ContaDoCliente, ErroApi } from '../../api';
 import { Modal } from '../caixa/Modal';
+import { usarCarga } from '../usarCarga';
 
 const mensagemDe = (e: unknown) => (e instanceof ErroApi ? e.message : 'Não foi possível gravar. Tente de novo.');
 const reais = (c: number) => (c / 100).toFixed(2).replace('.', ',');
@@ -180,44 +189,230 @@ export function ModalCadastroCliente({
   );
 }
 
-const DICA_FORMA: Record<FormaReceberFiado, string> = {
-  dinheiro: 'Em dinheiro, o valor entra no esperado do Caixa do dia (com o caixa de hoje aberto).',
-  pix: 'Em Pix, o valor entra na Conta bancária.',
-  debito: 'No cartão, o valor fica a receber da operadora, com a taxa do cartão.',
-  credito: 'No cartão, o valor fica a receber da operadora, com a taxa do cartão.',
-};
+/** Para onde vai o dinheiro, por forma (e, no cartão, pela baixa escolhida pelo Dono). */
+function dicaDaForma(forma: FormaReceberFiado, baixaAutomatica: boolean): string {
+  if (forma === 'dinheiro') return 'Em dinheiro, entra no esperado do Caixa do dia só o valor da baixa (com o caixa de hoje aberto); o troco sai da gaveta.';
+  if (forma === 'pix') return 'Em Pix, o valor entra na Conta bancária.';
+  return `No cartão, a taxa da maquininha é cobrada do cliente: a loja recebe o valor cheio. ${
+    baixaAutomatica ? 'Baixa automática: entra na Conta bancária na hora.' : 'Baixa manual: fica a receber da operadora até alguém confirmar o depósito.'
+  }`;
+}
 
+/** Identificador do pedido: o mesmo pedido enviado de novo (clique duplo, rede lenta) não recebe duas vezes. */
+const novaChave = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+/**
+ * Receber fiado (arquivo do Luan, 23/11/2026): valor a baixar (todo ou parte, ou só um vencimento), a forma em
+ * botões, o dinheiro entregue com o troco e, no cartão, quanto cobrar na maquininha com a taxa repassada ao
+ * cliente. A prévia mostra o que a loja recebe e o saldo depois da baixa.
+ */
 export function ModalReceberFiado({
   api,
   conta,
+  vencimento = null,
   aoConcluir,
   aoFechar,
 }: {
-  api: Pick<ApiPainel, 'receberFiadoDoCliente'>;
+  api: Pick<ApiPainel, 'receberFiadoDoCliente' | 'taxasParaReceberFiado'>;
   conta: Pick<ContaDoCliente, 'cliente' | 'fiado'>;
+  /** Só as compras deste vencimento (lista "Fiado a vencer"). */
+  vencimento?: string | null;
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
   const { cliente, fiado } = conta;
-  const [valor, setValor] = useState(reais(fiado.devendoCentavos));
+  const abertos = vencimento ? fiado.abertos.filter((a) => a.venceEm === vencimento) : fiado.abertos;
+  const limite = abertos.reduce((t, a) => t + a.abertoCentavos, 0);
+  const [valor, setValor] = useState(reais(limite));
   const [forma, setForma] = useState<FormaReceberFiado>('dinheiro');
+  const [entregue, setEntregue] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
-  const centavos = reaisParaCentavos(valor);
-  // a mesma conta do servidor: abate primeiro a compra que vence primeiro
-  const previa = previaDoRecebimento(fiado.abertos, centavos ?? 0);
+  const envio = useRef(false);
+  const chave = useRef<string | null>(null);
+  const { estado: taxas, recarregar } = usarCarga(() => api.taxasParaReceberFiado(), [api]);
+  const cartao = forma === 'debito' || forma === 'credito';
+  const base = reaisParaCentavos(valor);
+  const entregueCentavos = entregue.trim() ? reaisParaCentavos(entregue) : base;
+
+  // a mesma conta do servidor (cotarRecebimentoFiado): o que cobrar, a taxa, o troco
+  let cotacao: CotacaoRecebimento | null = null;
+  let problema: string | null = null;
+  if (base === null || base <= 0) problema = 'Informe o valor a baixar (só números).';
+  else if (base > limite) problema = `${cliente.nome} deve ${formatarCentavos(limite)}${vencimento ? ' neste vencimento' : ''}. Informe um valor até esse.`;
+  else if (forma === 'dinheiro' && entregueCentavos === null) problema = 'Confira o valor entregue (só números).';
+  else if (!cartao || taxas.tipo === 'pronto') {
+    const r = cotarRecebimentoFiado(base, forma, taxas.tipo === 'pronto' ? taxas.dados : SEM_TAXA, forma === 'dinheiro' ? entregueCentavos : undefined);
+    if (r.ok) cotacao = r.valor;
+    else problema = r.erros[0]!.mensagem;
+  }
+  const previa = previaDoRecebimento(abertos, base ?? 0);
+  const baixaAutomatica = taxas.tipo === 'pronto' ? baixaAutomaticaDoCartao(taxas.dados) : true;
 
   async function confirmar(ev: FormEvent) {
     ev.preventDefault();
+    if (!cotacao || envio.current) return;
+    envio.current = true;
+    setEnviando(true);
     setErro(null);
-    if (centavos === null || centavos <= 0) return setErro('Informe o valor recebido (só números).');
-    if (centavos > fiado.devendoCentavos) return setErro(`${cliente.nome} deve ${formatarCentavos(fiado.devendoCentavos)}. Informe um valor até esse.`);
+    chave.current ??= novaChave();
+    try {
+      const pago = await api.receberFiadoDoCliente(cliente.id, {
+        valorCentavos: cotacao.principalCentavos,
+        forma,
+        vencimento,
+        entregueCentavos: cotacao.entregueCentavos,
+        brutoPrevistoCentavos: cotacao.brutoCentavos,
+        taxaPrevistaPct: cotacao.percentual,
+        chave: chave.current,
+      });
+      const c = pago.cotacao;
+      aoConcluir(
+        `Baixa de ${formatarCentavos(c.principalCentavos)} confirmada. ${NOME_FORMA_PAGAMENTO[forma]}: ${formatarCentavos(c.brutoCentavos)}${
+          forma === 'dinheiro' ? ` · troco ${formatarCentavos(c.trocoCentavos)}` : ''
+        } · saldo em aberto ${formatarCentavos(pago.ficaDevendoCentavos)}.`,
+      );
+    } catch (e) {
+      setErro(mensagemDe(e));
+      if (e instanceof ErroApi && e.codigo === 'taxa_mudou') void recarregar(); // mostra o valor novo para conferir
+    } finally {
+      envio.current = false;
+      setEnviando(false);
+    }
+  }
+
+  const linha = (rotulo: string, total: string) => (
+    <div className="baixa-linha" key={rotulo}>
+      <span>{rotulo}</span>
+      <strong>{total}</strong>
+    </div>
+  );
+  return (
+    <Modal titulo="Receber fiado" aoFechar={aoFechar}>
+      <p className="modal-sub">
+        {cliente.nome} · {vencimento ? `vence ${dataBr(vencimento)} · ` : 'em aberto '}
+        <b>{formatarCentavos(limite)}</b>
+        {!vencimento && fiado.vencidoCentavos > 0 ? ` (${formatarCentavos(fiado.vencidoCentavos)} vencido)` : ''}
+      </p>
+      <form className="modal-form" onSubmit={confirmar} noValidate autoComplete="off">
+        <div className="campo">
+          <label htmlFor="rf-valor">Valor a baixar (R$)</label>
+          <input
+            id="rf-valor"
+            value={valor}
+            onChange={(e) => {
+              setErro(null);
+              setValor(e.target.value);
+            }}
+            inputMode="decimal"
+            maxLength={14}
+          />
+        </div>
+        <div className="baixa-formas" role="group" aria-label="Forma de pagamento">
+          {FORMAS_RECEBER_FIADO.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className="botao"
+              aria-pressed={forma === f}
+              onClick={() => {
+                setErro(null);
+                setForma(f);
+              }}
+            >
+              {NOME_FORMA_PAGAMENTO[f]}
+            </button>
+          ))}
+        </div>
+        {forma === 'dinheiro' && (
+          <div className="campo">
+            <label htmlFor="rf-entregue">Dinheiro entregue (R$)</label>
+            <input
+              id="rf-entregue"
+              value={entregue}
+              onChange={(e) => {
+                setErro(null);
+                setEntregue(e.target.value);
+              }}
+              inputMode="decimal"
+              maxLength={14}
+              placeholder={base && base > 0 ? reais(base) : '0,00'}
+            />
+          </div>
+        )}
+        {cotacao && (
+          <div className="baixa-previa" aria-live="polite" aria-label="Prévia do recebimento">
+            {linha(cartao ? 'Cobrar na maquininha' : forma === 'pix' ? 'Receber no Pix' : 'Troco', formatarCentavos(forma === 'dinheiro' ? cotacao.trocoCentavos : cotacao.brutoCentavos))}
+            {cartao && linha(`Taxa da maquininha (${pctTexto(cotacao.percentual)})`, formatarCentavos(cotacao.taxaCentavos))}
+            {cartao && linha('Líquido para a loja', formatarCentavos(cotacao.liquidoCentavos))}
+            {linha('Saldo após a baixa', formatarCentavos(fiado.devendoCentavos - cotacao.principalCentavos))}
+            {previa.abatidas.length > 0 && linha('Abate primeiro', descreverAbatidas(previa.abatidas))}
+          </div>
+        )}
+        {cartao && taxas.tipo !== 'pronto' && (
+          <p className="suave" role="status">
+            {taxas.tipo === 'carregando' ? 'Consultando a taxa da maquininha…' : taxas.mensagem}
+          </p>
+        )}
+        <p className="modal-dica">{dicaDaForma(forma, baixaAutomatica)}</p>
+        <Erro texto={erro ?? problema} />
+        <div className="modal-acoes">
+          <button type="submit" className="botao botao-primario" disabled={enviando || !cotacao}>
+            {enviando ? 'Registrando…' : 'Confirmar recebimento'}
+          </button>
+          <button type="button" className="botao" onClick={aoFechar}>
+            Voltar
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const SEM_TAXA = { taxaPct: { debito: 0, credito: 0 } };
+const PCT = /^\d{1,2}([,.]\d{1,2})?$/;
+const pctCampo = (n: number) => String(n).replace('.', ',');
+
+/**
+ * Taxas da maquininha (arquivo do Luan, 23/11/2026; aba Clientes → Fiado): o Dono e o Administrador mudam as taxas
+ * do débito e do crédito; a baixa do cartão (automática ou manual) é escolha do Dono.
+ */
+export function ModalTaxasMaquininha({
+  api,
+  papel,
+  aoConcluir,
+  aoFechar,
+}: {
+  api: Pick<ApiPainel, 'lerTaxasCartao' | 'salvarTaxasCartao'>;
+  papel: PapelDeLoja;
+  aoConcluir: (mensagem: string) => void;
+  aoFechar: () => void;
+}) {
+  const { estado } = usarCarga(() => api.lerTaxasCartao(), [api]);
+  const [debito, setDebito] = useState<string | null>(null);
+  const [credito, setCredito] = useState<string | null>(null);
+  const [baixa, setBaixa] = useState<boolean | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const escolheBaixa = pode(papel, 'financeiro.baixa_cartao');
+  const atual = estado.tipo === 'pronto' ? estado.dados : null;
+
+  async function salvar(ev: FormEvent) {
+    ev.preventDefault();
+    if (!atual) return;
+    setErro(null);
+    const textos = { debito: debito ?? pctCampo(atual.taxaPct.debito), credito: credito ?? pctCampo(atual.taxaPct.credito) };
+    for (const f of ['debito', 'credito'] as const) {
+      if (!PCT.test(textos[f].trim())) return setErro(`${NOME_FORMA_PAGAMENTO[f]}: informe um percentual de 0 a 99,99.`);
+    }
     setEnviando(true);
     try {
-      const r = await api.receberFiadoDoCliente(cliente.id, { valorCentavos: centavos, forma });
-      aoConcluir(
-        `Recebido ${formatarCentavos(centavos)} de ${cliente.nome.split(' ')[0]} em ${NOME_FORMA_PAGAMENTO[forma]}: abateu ${descreverAbatidas(r.abatidas)}.${r.ficaDevendoCentavos > 0 ? ` Fica devendo ${formatarCentavos(r.ficaDevendoCentavos)}.` : ''}`,
-      );
+      await api.salvarTaxasCartao({
+        ...atual,
+        taxaPct: { debito: Number(textos.debito.trim().replace(',', '.')), credito: Number(textos.credito.trim().replace(',', '.')) },
+        ...(escolheBaixa && baixa !== null ? { baixaAutomatica: baixa } : {}),
+      });
+      aoConcluir('Taxas da maquininha atualizadas.');
     } catch (e) {
       setErro(mensagemDe(e));
     } finally {
@@ -225,37 +420,42 @@ export function ModalReceberFiado({
     }
   }
 
+  const automatica = baixa ?? (atual ? baixaAutomaticaDoCartao(atual) : true);
   return (
-    <Modal titulo="Receber fiado" aoFechar={aoFechar}>
-      <p className="modal-sub">
-        {cliente.nome} deve <b>{formatarCentavos(fiado.devendoCentavos)}</b>
-        {fiado.vencidoCentavos > 0 ? `, com ${formatarCentavos(fiado.vencidoCentavos)} vencido` : ''}.
-      </p>
-      <form className="modal-form" onSubmit={confirmar} noValidate autoComplete="off">
-        <div className="campo">
-          <label htmlFor="rf-valor">Valor recebido (R$)</label>
-          <input id="rf-valor" value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" maxLength={12} />
-        </div>
-        <div className="campo">
-          <label htmlFor="rf-forma">Forma de pagamento</label>
-          <select id="rf-forma" value={forma} onChange={(e) => setForma(e.target.value as FormaReceberFiado)}>
-            {FORMAS_RECEBER_FIADO.map((f) => (
-              <option key={f} value={f}>
-                {NOME_FORMA_PAGAMENTO[f]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <dl className="cli-previa">
-          <dt>Abate primeiro a mais antiga</dt>
-          <dd>{previa.abatidas.length ? descreverAbatidas(previa.abatidas) : '—'}</dd>
-          <dt>Fica devendo</dt>
-          <dd>{formatarCentavos(previa.ficaDevendoCentavos)}</dd>
-        </dl>
-        <p className="modal-dica">{DICA_FORMA[forma]}</p>
-        <Erro texto={erro} />
-        <Acoes enviando={enviando} rotulo="Confirmar recebimento" aoFechar={aoFechar} />
-      </form>
+    <Modal titulo="Taxas da maquininha" aoFechar={aoFechar}>
+      {!atual ? (
+        estado.tipo === 'carregando' ? (
+          <p className="vazio">Carregando…</p>
+        ) : (
+          <Erro texto={estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? estado.mensagem : null} />
+        )
+      ) : (
+        <form className="modal-form" onSubmit={salvar} noValidate autoComplete="off">
+          <p className="modal-sub">Valem para as vendas no cartão e para o fiado pago no cartão (no fiado, a taxa é cobrada do cliente).</p>
+          <div className="cli-form">
+            <div className="campo">
+              <label htmlFor="tx-debito">Cartão de débito (%)</label>
+              <input id="tx-debito" value={debito ?? pctCampo(atual.taxaPct.debito)} onChange={(e) => setDebito(e.target.value)} inputMode="decimal" maxLength={5} />
+            </div>
+            <div className="campo">
+              <label htmlFor="tx-credito">Cartão de crédito (%)</label>
+              <input id="tx-credito" value={credito ?? pctCampo(atual.taxaPct.credito)} onChange={(e) => setCredito(e.target.value)} inputMode="decimal" maxLength={5} />
+            </div>
+          </div>
+          <fieldset className="tx-baixa" disabled={!escolheBaixa}>
+            <legend>Baixa do cartão</legend>
+            <label>
+              <input type="radio" name="tx-baixa" checked={automatica} onChange={() => setBaixa(true)} disabled={!escolheBaixa} /> Automática: entra na Conta bancária na hora, já sem a taxa
+            </label>
+            <label>
+              <input type="radio" name="tx-baixa" checked={!automatica} onChange={() => setBaixa(false)} disabled={!escolheBaixa} /> Manual: fica a receber da operadora até confirmar o depósito
+            </label>
+            {!escolheBaixa && <small className="suave">Só o Dono escolhe a baixa do cartão.</small>}
+          </fieldset>
+          <Erro texto={erro} />
+          <Acoes enviando={enviando} rotulo="Salvar taxas" aoFechar={aoFechar} />
+        </form>
+      )}
     </Modal>
   );
 }

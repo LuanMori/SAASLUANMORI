@@ -31,7 +31,7 @@ import { Modal } from './caixa/Modal';
 import { ModalSenha } from './caixa/ModalSenha';
 import { AbaRegras } from './clientes/AbaRegras';
 import { AbaRetorno } from './clientes/AbaRetorno';
-import { ModalCadastroCliente, ModalExcluirCliente, ModalReceberFiado } from './clientes/ModaisCliente';
+import { ModalCadastroCliente, ModalExcluirCliente, ModalReceberFiado, ModalTaxasMaquininha } from './clientes/ModaisCliente';
 import { ModalWhatsapp } from './clientes/ModalWhatsapp';
 import { ResumoClientes } from './clientes/ResumoClientes';
 import { dataNoFuso, plural } from './formato';
@@ -53,7 +53,8 @@ type Janela =
   | { tipo: 'lgpd'; conta: ContaDoCliente }
   /** Lembrete pelo WhatsApp (módulo 7). */
   | { tipo: 'whatsapp'; clienteId: string; contato: TipoContato }
-  | { tipo: 'naoIncomodar'; clienteId: string; nome: string };
+  | { tipo: 'naoIncomodar'; clienteId: string; nome: string }
+  | { tipo: 'taxas' };
 
 type Aba = 'clientes' | 'retorno' | 'fiado' | 'regras';
 
@@ -297,7 +298,13 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
               />
             </section>
           ) : (
-            <AbaFiado estado={estadoFiado} hoje={hoje} aoAbrir={abrirConta} aoLembrar={(clienteId) => setJanela({ tipo: 'whatsapp', clienteId, contato: 'cobranca' })} aoReceber={async (id) => {
+            <AbaFiado
+              estado={estadoFiado}
+              hoje={hoje}
+              aoAbrir={abrirConta}
+              aoLembrar={(clienteId) => setJanela({ tipo: 'whatsapp', clienteId, contato: 'cobranca' })}
+              aoTaxas={pode(pessoa.papel, 'financeiro') ? () => setJanela({ tipo: 'taxas' }) : undefined}
+              aoReceber={async (id) => {
               try {
                 const c = await api.contaDoCliente(id);
                 setJanela({ tipo: 'receber', conta: c });
@@ -328,6 +335,7 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
         />
       )}
       {janela?.tipo === 'receber' && <ModalReceberFiado api={api} conta={janela.conta} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
+      {janela?.tipo === 'taxas' && <ModalTaxasMaquininha api={api} papel={pessoa.papel} aoConcluir={concluir} aoFechar={() => setJanela(null)} />}
       {janela?.tipo === 'excluir' && (
         <ModalExcluirCliente
           api={api}
@@ -809,6 +817,7 @@ function AbaFiado({
   aoAbrir,
   aoReceber,
   aoLembrar,
+  aoTaxas,
 }: {
   estado: { tipo: string; mensagem?: string; dados?: Awaited<ReturnType<ApiPainel['listarFiado']>> | null };
   hoje: string;
@@ -816,6 +825,8 @@ function AbaFiado({
   aoReceber: (id: string) => void;
   /** Lembrete de pagamento pelo WhatsApp (módulo 7). */
   aoLembrar: (id: string) => void;
+  /** "Taxas da maquininha" (Dono e Administrador; arquivo do Luan, 23/11/2026). */
+  aoTaxas?: () => void;
 }) {
   if (estado.tipo === 'bloqueado' || estado.tipo === 'falhou') {
     return (
@@ -850,7 +861,14 @@ function AbaFiado({
       <section className="card card-plano" aria-labelledby="cli-abertas-titulo">
         <div className="card-cabeca">
           <h2 id="cli-abertas-titulo">Contas em aberto</h2>
-          <span className="suave">{plural(linhas.length, 'cliente', 'clientes')}</span>
+          <div className="cli-acoes-linha">
+            <span className="suave">{plural(linhas.length, 'cliente', 'clientes')}</span>
+            {aoTaxas && (
+              <button type="button" className="botao" onClick={aoTaxas}>
+                Taxas da maquininha
+              </button>
+            )}
+          </div>
         </div>
         {linhas.length === 0 ? (
           <p className="vazio">Ninguém deve no fiado.</p>

@@ -4,10 +4,12 @@ import {
   type Autorizacao,
   cadastroCompleto,
   clienteTemHistorico,
+  cotarRecebimentoFiado,
   descreverAbatidas,
   efeitosFinanceirosDoEstorno,
   extratoDoCliente,
   fiadoDoCliente,
+  fiadoDoVencimento,
   liberacaoDoFiadoServe,
   mensagemFiadoPrecisaDono,
   motivosDoFiado,
@@ -16,12 +18,14 @@ import {
   type Recebivel,
   receberFiado,
   receberRecebivel,
+  referenciaDoFiado,
   resumirAuditoria,
   situacaoDoFiado,
   TAXAS_CARTAO_PADRAO,
   temWhatsapp,
   validarNovaVenda,
   validarNovoCliente,
+  vencimentoDaReferencia,
   type Venda,
 } from '../src';
 
@@ -177,16 +181,52 @@ describe('receber o fiado pela conta do cliente (CLI-16)', () => {
     expect(previaDoRecebimento(emAberto, 9000)).toEqual({ abatidas: [], ficaDevendoCentavos: 8000 }); // mais do que deve: não abate nada
   });
 
-  it('Pix entra na Conta bancária; cartão fica a receber da operadora, com a taxa', () => {
+  it('Pix entra na Conta bancária; no cartão a taxa da maquininha é repassada ao cliente (a loja recebe o valor cheio)', () => {
     const pix = receberFiado(abertos(), 8000, 'pix', ctx);
     expect(pix.ok && pix.valor.lancamento).toMatchObject({ conta: 'banco', valorCentavos: 8000, descricao: 'Fiado • Maria Oliveira • Pix' });
     const cartao = receberFiado(abertos(), 3000, 'credito', ctx);
     if (!cartao.ok) throw new Error('cartão');
     expect(cartao.valor.lancamento).toBeNull();
-    expect(cartao.valor.cartao).toMatchObject({ forma: 'credito', cliente: MARIA, origem: 'fiado', vendaNumero: 0, brutoCentavos: 3000, taxaCentavos: 90, venceEm: '2026-12-20', situacao: 'pendente' });
+    // R$ 30,00 da dívida: o cliente paga R$ 30,93 no crédito (3%), a taxa é R$ 0,93 e a loja fica com R$ 30,00
+    expect(cartao.valor.cartao).toMatchObject({ forma: 'credito', cliente: MARIA, origem: 'fiado', vendaNumero: 0, brutoCentavos: 3093, taxaCentavos: 93, venceEm: '2026-12-20', situacao: 'pendente' });
     // confirmar o depósito da operadora: a descrição diz que era fiado
     const conf = receberRecebivel({ ...cartao.valor.cartao!, id: 'c1' }, { conta: 'banco', em: 'x', por: ANA });
     expect(conf.ok && conf.valor.lancamento.descricao).toBe('Cartão de crédito • fiado de Maria Oliveira');
+  });
+
+  it('cotação: no cartão, o bruto menos a taxa dá o valor que abate; em dinheiro, o troco do que foi entregue', () => {
+    const taxas = { taxaPct: { debito: 1.5, credito: 3.99 } };
+    expect(cotarRecebimentoFiado(500, 'credito', taxas)).toEqual({
+      ok: true,
+      valor: { principalCentavos: 500, forma: 'credito', percentual: 3.99, brutoCentavos: 521, taxaCentavos: 21, liquidoCentavos: 500, entregueCentavos: null, trocoCentavos: 0 },
+    });
+    expect(cotarRecebimentoFiado(1000, 'dinheiro', taxas, 2000)).toMatchObject({ ok: true, valor: { brutoCentavos: 1000, taxaCentavos: 0, entregueCentavos: 2000, trocoCentavos: 1000 } });
+    expect(cotarRecebimentoFiado(1000, 'dinheiro', taxas)).toMatchObject({ ok: true, valor: { entregueCentavos: 1000, trocoCentavos: 0 } });
+    expect(cotarRecebimentoFiado(1000, 'pix', taxas, 5000)).toMatchObject({ ok: true, valor: { brutoCentavos: 1000, entregueCentavos: null, trocoCentavos: 0 } });
+    // a conta nunca erra o centavo: todas as taxas de 0,01% a 99,99% com valores de R$ 0,01 a R$ 20,00
+    let falhas = 0;
+    for (let pontos = 1; pontos < 10_000; pontos += 7) {
+      for (let v = 1; v <= 2000; v += 13) if (!cotarRecebimentoFiado(v, 'debito', { taxaPct: { debito: pontos / 100, credito: 0 } }).ok) falhas++;
+    }
+    expect(falhas).toBe(0);
+    expect(mensagem(cotarRecebimentoFiado(0, 'pix', taxas))).toBe('Informe um valor válido para a baixa.');
+    expect(mensagem(cotarRecebimentoFiado(100, 'cheque', taxas))).toBe('Escolha a forma de pagamento.');
+    expect(mensagem(cotarRecebimentoFiado(1000, 'dinheiro', taxas, 999))).toBe('O dinheiro entregue é menor que o valor da baixa.');
+    expect(mensagem(cotarRecebimentoFiado(1000, 'credito', { taxaPct: { debito: 0, credito: 100 } }))).toBe('A taxa da maquininha está inválida. Confira as taxas.');
+  });
+
+  it('receber só um vencimento: as compras daquele dia; a referência do lembrete é "fiado:AAAA-MM-DD"', () => {
+    const f = fiadoDoCliente([fiado('r1', 1, 5000, '2026-11-10'), fiado('r2', 2, 3000, '2026-11-25'), fiado('r3', 3, 2000, '2026-11-25')], 'maria', HOJE);
+    const dia25 = fiadoDoVencimento(f, '2026-11-25', HOJE);
+    expect([dia25.devendoCentavos, dia25.vencidoCentavos, dia25.abertos.map((r) => r.id)]).toEqual([5000, 0, ['r2', 'r3']]);
+    expect(fiadoDoVencimento(f, '2026-11-10', HOJE)).toMatchObject({ devendoCentavos: 5000, vencidoCentavos: 5000, diasVencido: 10 });
+    const r = receberFiado(dia25, 4000, 'pix', ctx);
+    expect(r.ok && r.valor.abatidas).toEqual([
+      { vendaNumero: 2, valorCentavos: 3000 },
+      { vendaNumero: 3, valorCentavos: 1000 },
+    ]); // a compra de 10/11 (mais antiga) não foi tocada
+    expect(referenciaDoFiado('2026-11-25')).toBe('fiado:2026-11-25');
+    expect([vencimentoDaReferencia('fiado:2026-11-25'), vencimentoDaReferencia('fiado:2026-02-30'), vencimentoDaReferencia('x'), vencimentoDaReferencia(7)]).toEqual(['2026-11-25', null, null, null]);
   });
 
   it('recusa valor zero, maior que a dívida, forma desconhecida e cliente sem fiado', () => {
@@ -260,6 +300,10 @@ describe('conta do cliente: extrato e histórico (CLI-04, 07)', () => {
     expect(resumirAuditoria('cliente.mensagens', { autorizou: false })).toBe('cancelou a autorização de mensagens');
     expect(resumirAuditoria('cliente.nao_incomodar', { ativo: true })).toBe('saiu das listas de lembrete');
     expect(limpo(resumirAuditoria('cliente.fiado_recebido', { valorCentavos: 6000, forma: 'pix' }))).toBe('R$ 60,00 • em Pix');
+    expect(limpo(resumirAuditoria('cliente.fiado_recebido', { valorCentavos: 500, forma: 'credito', brutoCentavos: 521, taxaCentavos: 21, trocoCentavos: 0, vencimento: '2026-12-23' }))).toBe(
+      'R$ 5,00 • em Cartão de crédito • cobrado R$ 5,21 (taxa R$ 0,21) • vencimento 23/12/2026',
+    );
+    expect(limpo(resumirAuditoria('cliente.fiado_recebido', { valorCentavos: 1000, forma: 'dinheiro', brutoCentavos: 1000, taxaCentavos: 0, trocoCentavos: 1000 }))).toBe('R$ 10,00 • em Dinheiro • troco R$ 10,00');
     expect(limpo(resumirAuditoria('venda.fiado_liberado', { numero: 12, valorCentavos: 5000, autorizadoPor: 'ana' }, nome))).toBe('venda nº 00012 • R$ 50,00 no fiado • liberado por Ana');
   });
 });

@@ -23,7 +23,7 @@ import { cadastroCompleto, type Cliente, extratoDoCliente, type LinhaExtrato, pr
 import { dataBr } from './compra';
 import { preencherModelo, type RegrasDaLoja } from './configuracao';
 import { formatarCentavos } from './dinheiro';
-import { type Recebivel, somarDias } from './financeiro';
+import { liquidoAReceber, type Recebivel, somarDias } from './financeiro';
 import { soDigitos } from './interno';
 import type { Resultado } from './resultado';
 import { extratoDosVales, type ValeTroca } from './vale';
@@ -135,6 +135,8 @@ export interface ContatoCliente {
   criadoEm: string;
   por: Operador;
   cupomId: string | null;
+  /** Lembrete de pagamento de um vencimento ("fiado:2026-12-23"): o mesmo vencimento não é lembrado duas vezes. */
+  referencia?: string | null;
 }
 
 /** O que a fidelidade precisa saber do cliente. */
@@ -363,9 +365,10 @@ export function registrarContato(
   cliente: ClienteDoSaldo,
   tipo: TipoContato,
   canal: CanalContato,
-  ctx: QuemQuando & { cupons: readonly CupomRetorno[]; regras: Pick<RegrasDaLoja['retorno'], 'cupomPct' | 'cupomValidadeDias'> },
+  ctx: QuemQuando & { cupons: readonly CupomRetorno[]; regras: Pick<RegrasDaLoja['retorno'], 'cupomPct' | 'cupomValidadeDias'>; referencia?: string | null },
 ): ContatoRegistrado {
   const contato: ContatoCliente = { id: ctx.novoId(), clienteId: cliente.id, tipo, canal, dia: ctx.dia, criadoEm: ctx.em, por: ctx.por, cupomId: null };
+  if (tipo === 'cobranca' && ctx.referencia) contato.referencia = ctx.referencia;
   let cupom: CupomRetorno | null = null;
   let cupomNovo = false;
   if (tipo === 'retorno' && canal === 'whatsapp' && cadastroCompleto(cliente) && ctx.regras.cupomPct > 0) {
@@ -377,6 +380,63 @@ export function registrarContato(
     contato.cupomId = cupom.id;
   }
   return { contato, cupom, cupomNovo };
+}
+
+// ------------------------------------------------------------------ fiado a vencer (pendência do card)
+/** Dias à frente da lista "Fiado a vencer" (hoje até daqui a 7 dias). */
+export const DIAS_FIADO_A_VENCER = 7;
+
+export interface FiadoAVencer {
+  clienteId: string;
+  nome: string;
+  /** AAAA-MM-DD. */
+  venceEm: string;
+  /** O que falta pagar das compras desse vencimento. */
+  valorCentavos: number;
+  /** "fiado:AAAA-MM-DD": o lembrete deste vencimento. */
+  referencia: string;
+  /** Já mandou o lembrete deste vencimento. */
+  avisado: boolean;
+  /** Por que o WhatsApp não vai (desativado, sem WhatsApp); null = pode mandar. */
+  bloqueio: string | null;
+}
+
+/**
+ * Fiado que vence de hoje até daqui a 7 dias, por cliente e vencimento (pendência "Fiado a vencer", do arquivo do
+ * Luan de 23/11/2026). Quem pediu "não incomodar" ou adiou os lembretes fica FORA da lista (decisão do Luan: o
+ * "não incomodar" só tira das listas; a mensagem pela conta do cliente continua possível). Do que vence antes.
+ */
+export function fiadoAVencer(
+  recebiveis: readonly Recebivel[],
+  clientes: readonly ClienteDaFidelidade[],
+  contatos: readonly Pick<ContatoCliente, 'clienteId' | 'tipo' | 'referencia'>[],
+  hoje: string,
+  dias: number = DIAS_FIADO_A_VENCER,
+): FiadoAVencer[] {
+  const ate = somarDias(hoje, dias);
+  const porId = new Map(clientes.map((c) => [c.id, c]));
+  const itens = new Map<string, FiadoAVencer>();
+  for (const r of recebiveis) {
+    const saldo = liquidoAReceber(r);
+    if (r.forma !== 'fiado' || saldo <= 0 || r.venceEm < hoje || r.venceEm > ate) continue;
+    const c = r.cliente ? porId.get(r.cliente.id) : undefined;
+    if (!c || !c.ativo || c.naoIncomodar || (c.lembreteAdiadoAte && c.lembreteAdiadoAte > hoje)) continue;
+    const chave = `${c.id}|${r.venceEm}`;
+    const item = itens.get(chave) ?? {
+      clienteId: c.id,
+      nome: c.nome,
+      venceEm: r.venceEm,
+      valorCentavos: 0,
+      referencia: `fiado:${r.venceEm}`,
+      avisado: false,
+      bloqueio: motivoSemMensagem(c, 'cobranca'),
+    };
+    item.valorCentavos += saldo;
+    itens.set(chave, item);
+  }
+  return [...itens.values()]
+    .map((i) => ({ ...i, avisado: contatos.some((k) => k.clienteId === i.clienteId && k.tipo === 'cobranca' && k.referencia === i.referencia) }))
+    .sort((a, b) => a.venceEm.localeCompare(b.venceEm) || a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
 // ------------------------------------------------------------------ mensagens

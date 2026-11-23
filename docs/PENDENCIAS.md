@@ -4,9 +4,11 @@
 > quais avisos entram nele. **Exceção: as do Caixa do dia já estão definidas e LIGADAS** pelo Luan:
 > a **16** (caixa fechado sozinho à meia-noite, "Deseja verificar?", Dono e Administrador) em 21/11/2026,
 > e a **1** (caixa de hoje não aberto, todos), a **2** (dia anterior com caixa aberto, todos) e a **3**
-> (fechamento com diferença acima da tolerância, **só o Dono**) em 22/11/2026.
+> (fechamento com diferença acima da tolerância, **só o Dono**) em 22/11/2026. **Também ligadas (23/11/2026,
+> arquivo fiado-caixa do Luan, "no card de pendências"):** a **17** (fiado a vencer, Dono e Administrador), a
+> **18** (cashback a vencer, todos) e a **19** (promoções exclusivas, todos), que fazem o papel da 12.
 > As outras continuam a definir: sem nenhuma pendência, o card diz "Nada pendente. Tudo em ordem." e
-> explica que, por enquanto, só os avisos do caixa estão ligados. Nada é inventado.
+> explica que, por enquanto, só os avisos do caixa e dos clientes estão ligados. Nada é inventado.
 
 ## O que já está pronto
 
@@ -27,6 +29,18 @@
 - **20/11/2026 (módulo 7, Fidelidade):** a **12** (clientes para lembrar hoje: sem comprar e cashback vencendo)
   também ficou pronta e desligada, com o texto do DaniPets ("2 clientes para lembrar hoje (1 sem comprar, 1
   cashback vencendo)"). Ela usa a mesma lista da aba Clientes → Retorno.
+- **23/11/2026 (arquivo fiado-caixa do Luan; "as três pendências novas: no card de pendências"): 17, 18 e 19
+  LIGADAS.** Cada uma mostra a contagem ("Fiado a vencer · 2") e o botão **Ver lista**, que abre os clientes na
+  própria Visão geral:
+  - **17 Fiado a vencer** (Dono e Administrador): compras no fiado que vencem de hoje a 7 dias, por cliente e
+    vencimento, com **Receber** (só aquele vencimento) e **WhatsApp** (o lembrete de pagamento daquele
+    vencimento, com a mensagem da loja; vale uma vez por vencimento: depois aparece "Lembrete registrado");
+  - **18 Cashback a vencer** (todos): a mesma lista da aba Retorno, com **WhatsApp**;
+  - **19 Promoções exclusivas** (todos): clientes sem comprar há N dias que podem receber o cupom de retorno
+    (só se a loja dá cupom), com **WhatsApp**.
+  - Quem pediu **"não incomodar"** ou adiou os lembretes fica fora das três listas (decisão do Luan: o "não
+    incomodar" só tira das listas; a mensagem pela conta do cliente continua possível).
+  - Código: `pendenciasDeClientes` na API e `apps/web/src/painel/PendenciasDoInicio.tsx`.
 - **22/11/2026 (pedido do Luan: "pode ligar todos, o 3 somente para o dono"): a 1, a 2 e a 3 foram LIGADAS.**
   - **1** "O caixa de hoje não foi aberto: vendas ficam bloqueadas." (todos), botão **Abrir caixa**;
   - **2** "Dia com caixa aberto e sem fechamento: 21/11/2026. Feche esse dia para abrir o caixa de hoje."
@@ -70,7 +84,10 @@ Gravidade: **alta** = resolver já · **média** = atenção. "Gestor" = Dono e 
 | 10 | Recebimentos de cartão vencidos aguardando confirmação | média | gestor | Financeiro | **pronta, desligada** (falta a tela do Financeiro para confirmar) |
 | **Clientes** | | | | | |
 | 11 | Fiado vencido | média | gestor | Clientes | **pronta, desligada** (o fiado já existe na Frente de caixa) |
-| 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes (aba Retorno) | **pronta, desligada** (a lista de retorno e o cashback já existem: módulo 7) |
+| 12 | Clientes para lembrar (sem comprar há X dias, cashback vencendo) | média | todos | Clientes (aba Retorno) | substituída pela 18 e pela 19 (23/11/2026) |
+| **17** | **Fiado a vencer (próximos 7 dias), com Receber e WhatsApp** | média | gestor | "Ver lista" no card | **DEFINIDA pelo Luan em 23/11/2026 e LIGADA** |
+| **18** | **Cashback a vencer, com WhatsApp** | média | todos | "Ver lista" no card | **DEFINIDA pelo Luan em 23/11/2026 e LIGADA** |
+| **19** | **Promoções exclusivas (sem comprar, com o cupom de retorno), com WhatsApp** | média | todos | "Ver lista" no card | **DEFINIDA pelo Luan em 23/11/2026 e LIGADA** |
 | **Usuários e acesso (próprio do SaaS)** | | | | | |
 | 13 | Usuário com senha provisória que ainda não entrou (há mais de 3 dias): a senha provisória pode ter se perdido | média | gestor | Usuários ("Nova senha") | nada: dá para fazer com o que já existe (desde 18/11/2026) |
 | 14 | Usuário bloqueado por muitas senhas erradas (pode ser alguém tentando adivinhar a senha) | média | gestor | Usuários | nada: o bloqueio já existe no login próprio (18/11/2026) |
@@ -87,5 +104,6 @@ automático do banco: a loja não precisa fazer nada. Sugestão: não incluir es
 ## Como decidir
 
 Para cada pendência: entra ou não? Gravidade? Quem vê? Para qual aba o botão leva?
-Já ligadas: as do caixa (1, 2, 3 e 16). Sugestão de ordem para as próximas: as que já estão prontas e só
-esperam o "sim" (6, 7, 10, 11 e 12) e as de validade (4 e 5), que dependem da aba Produtos e estoque.
+Já ligadas: as do caixa (1, 2, 3 e 16) e as de clientes (17, 18 e 19). Sugestão de ordem para as próximas: as
+que já estão prontas e só esperam o "sim" (6, 7, 10 e 11) e as de validade (4 e 5), que dependem da aba Produtos
+e estoque. A 10 (cartão a receber vencido) só faz sentido para quem escolher a baixa manual do cartão.

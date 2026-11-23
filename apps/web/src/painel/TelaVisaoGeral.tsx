@@ -29,16 +29,22 @@ import {
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ApiPainel } from '../api';
 import { usarIntervalo } from '../usarIntervalo';
-import { CardPendencias } from './CardPendencias';
 import { comoVoltou, dataNoFuso, dataPorExtenso, horaNoFuso, pagamentosComValores, plural, produtosVendidos, quantidadeDoItem, saudacao } from './formato';
 import type { IdSecao } from './menu';
 import { NOTA_PENDENCIAS_A_DEFINIR, type Pendencia } from './pendencias';
+import { PendenciasDoInicio } from './PendenciasDoInicio';
 import { pendenciasDoCaixa } from './regrasPendencias';
 import { usarCarga } from './usarCarga';
 
 interface Props {
   /** resumoFinanceiro só é chamado para quem vê o Financeiro (aoVerFinanceiro). */
-  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'> & Partial<Pick<ApiPainel, 'resumoFinanceiro' | 'lerSituacaoDoCaixa'>>;
+  api: Pick<ApiPainel, 'listarVendas' | 'listarProdutos' | 'listarDevolucoes'> &
+    Partial<
+      Pick<
+        ApiPainel,
+        'resumoFinanceiro' | 'lerSituacaoDoCaixa' | 'pendenciasDeClientes' | 'contaDoCliente' | 'receberFiadoDoCliente' | 'taxasParaReceberFiado' | 'mensagemParaCliente' | 'registrarContato'
+      >
+    >;
   nome: string;
   fuso: string;
   agora?: () => Date;
@@ -231,7 +237,13 @@ export function TelaVisaoGeral({
             />
           )}
 
-          <CardPendencias pendencias={todasPendencias} aoIrPara={aoIrPara} nota={doCaixa !== null ? NOTA_PENDENCIAS_A_DEFINIR : null} carregando={lendoCaixa} />
+          <PendenciasDoInicio
+            api={api}
+            pendencias={todasPendencias}
+            aoIrPara={aoIrPara}
+            nota={doCaixa !== null || api.pendenciasDeClientes ? NOTA_PENDENCIAS_A_DEFINIR : null}
+            carregando={lendoCaixa}
+          />
         </>
       )}
     </div>

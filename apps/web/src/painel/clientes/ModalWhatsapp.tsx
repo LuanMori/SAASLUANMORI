@@ -3,7 +3,9 @@
 //   - a mensagem pronta, com o nome da loja e os dados do cliente (dá para ajustar antes de mandar);
 //   - "Abrir no WhatsApp" abre o wa.me em outra janela com a mensagem; a pessoa confere e envia por lá;
 //   - "Marcar como enviado" registra o lembrete. A mensagem de retorno dá o cupom (ou repete o que ainda vale);
-//   - só para quem autorizou mensagens da loja (o lembrete de pagamento do fiado só pede o WhatsApp).
+//   - só para quem autorizou mensagens da loja (o lembrete de pagamento do fiado só pede o WhatsApp);
+//   - com a `referencia` de um vencimento ("fiado:AAAA-MM-DD", lista "Fiado a vencer"), o lembrete fala do valor e
+//     da data daquele vencimento e vale uma vez por vencimento.
 import { dataBr, formatarTelefone, LIMITES_LOJA, linkWhatsapp, NOME_CONTATO, pctTexto, primeiroNome, type TipoContato } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiPainel, ErroApi } from '../../api';
@@ -16,16 +18,19 @@ export function ModalWhatsapp({
   api,
   clienteId,
   tipo,
+  referencia = null,
   aoConcluir,
   aoFechar,
 }: {
   api: Pick<ApiPainel, 'mensagemParaCliente' | 'registrarContato'>;
   clienteId: string;
   tipo: TipoContato;
+  /** Lembrete de um vencimento: "fiado:AAAA-MM-DD". */
+  referencia?: string | null;
   aoConcluir: (mensagem: string) => void;
   aoFechar: () => void;
 }) {
-  const { estado } = usarCarga(() => api.mensagemParaCliente(clienteId, tipo), [api, clienteId, tipo]);
+  const { estado } = usarCarga(() => api.mensagemParaCliente(clienteId, tipo, referencia), [api, clienteId, tipo, referencia]);
   const [texto, setTexto] = useState<string | null>(null);
   const [abriu, setAbriu] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -58,7 +63,7 @@ export function ModalWhatsapp({
     setErro(null);
     setEnviando(true);
     try {
-      const r = await api.registrarContato(clienteId, { tipo, canal: 'whatsapp' });
+      const r = await api.registrarContato(clienteId, { tipo, canal: 'whatsapp', referencia });
       aoConcluir(`${titulo} registrado para ${primeiroNome(m.nome)}.${r.cupom ? ` Cupom de ${pctTexto(r.cupom.pct)} válido até ${dataBr(r.cupom.venceEm)}.` : ''}`);
     } catch (e) {
       setErro(mensagemDe(e));

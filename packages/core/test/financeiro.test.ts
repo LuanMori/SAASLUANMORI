@@ -1,6 +1,10 @@
 // packages/core/test/financeiro.test.ts
 import { describe, expect, it } from 'vitest';
 import {
+  taxaDoCartao,
+  taxasDasVendas,
+  baixaAutomaticaDoCartao,
+  baixarCartaoNaHora,
   conferirSaida,
   efeitosFinanceirosDaVenda,
   efeitosFinanceirosDoEstorno,
@@ -8,16 +12,15 @@ import {
   lancamentosManuais,
   liquidoAReceber,
   type NovoLancamento,
-  type Recebivel,
   receberRecebivel,
   recebiveisDeCartao,
   recebiveisDeFiado,
   recebiveisVencidos,
+  type Recebivel,
   resumirAReceber,
   saldosDasContas,
   somarDias,
-  taxaDoCartao,
-  taxasDasVendas,
+  TAXAS_CARTAO_PADRAO,
   validarLancamentoManual,
   validarSaldoInicial,
   validarTaxasCartao,
@@ -263,8 +266,10 @@ describe('lançamentos à mão (Dono e Administrador)', () => {
   it('taxas do cartão: 0 a 99,99% com até 2 casas e 0 a 365 dias', () => {
     expect(validarTaxasCartao({ taxaPct: { debito: 1.15, credito: 3 }, dias: { debito: 1, credito: 30 } })).toEqual({
       ok: true,
-      valor: { taxaPct: { debito: 1.15, credito: 3 }, dias: { debito: 1, credito: 30 } },
+      valor: { taxaPct: { debito: 1.15, credito: 3 }, dias: { debito: 1, credito: 30 }, baixaAutomatica: true }, // sem dizer: automática
     });
+    expect(validarTaxasCartao({ taxaPct: { debito: 1, credito: 3 }, dias: { debito: 1, credito: 30 }, baixaAutomatica: false })).toMatchObject({ ok: true, valor: { baixaAutomatica: false } });
+    expect(campos(validarTaxasCartao({ taxaPct: { debito: 1, credito: 3 }, dias: { debito: 1, credito: 30 }, baixaAutomatica: 'sim' }))).toEqual(['baixaAutomatica']);
     expect(campos(validarTaxasCartao({ taxaPct: { debito: 100, credito: 1.234 }, dias: { debito: -1, credito: 366 } }))).toEqual([
       'taxaPct.debito',
       'dias.debito',
@@ -273,5 +278,22 @@ describe('lançamentos à mão (Dono e Administrador)', () => {
     ]);
     expect(campos(validarTaxasCartao({ taxaPct: {}, dias: {}, extra: true }))).toContain('extra');
     expect(campos(validarTaxasCartao({ taxaPct: 3 }))).toEqual(['_']);
+  });
+});
+
+describe('baixa do cartão: automática (padrão) ou manual, escolha do Dono (pedido do Luan em 23/11/2026)', () => {
+  it('a automática é o padrão; sem dizer, também', () => {
+    expect([baixaAutomaticaDoCartao(TAXAS_CARTAO_PADRAO), baixaAutomaticaDoCartao({}), baixaAutomaticaDoCartao({ baixaAutomatica: false })]).toEqual([true, true, false]);
+  });
+
+  it('baixa na hora: o cartão vira "recebido" na Conta bancária, já sem a taxa; fiado e dinheiro não', () => {
+    const r = { id: 'c1', forma: 'credito', cliente: null, vendaId: 'v1', vendaNumero: 7, criadoEm: '2026-11-23T13:00:00.000Z', venceEm: '2026-12-23', brutoCentavos: 7990, taxaCentavos: 319, estornadoBrutoCentavos: 0, estornadoTaxaCentavos: 0, situacao: 'pendente', recebimento: null } as const;
+    const b = baixarCartaoNaHora({ ...r }, { em: r.criadoEm, por: { id: 'bruno', nome: 'Bruno' } });
+    if (!b.ok) throw new Error('baixa');
+    expect(b.valor.recebivel).toMatchObject({ situacao: 'recebido', recebimento: { conta: 'banco', valorCentavos: 7671, em: r.criadoEm } });
+    expect(b.valor.lancamento).toMatchObject({ conta: 'banco', tipo: 'recebimento_cartao', valorCentavos: 7671, vendaNumero: 7 });
+    // é a mesma confirmação da baixa manual
+    expect(receberRecebivel({ ...r }, { conta: 'banco', em: r.criadoEm, por: { id: 'bruno', nome: 'Bruno' } })).toEqual(b);
+    expect(baixarCartaoNaHora({ ...r, forma: 'fiado' }, { em: r.criadoEm, por: { id: 'b', nome: 'B' } }).ok).toBe(false);
   });
 });

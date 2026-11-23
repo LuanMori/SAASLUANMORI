@@ -230,9 +230,27 @@ export function resumirAuditoria(acao: string, detalhes: unknown, nomeDoUsuario:
     case 'cliente.nao_incomodar':
       partes.push(d.ativo === true ? 'saiu das listas de lembrete' : d.ativo === false ? 'voltou para as listas de lembrete' : null);
       break;
-    case 'cliente.fiado_recebido':
-      partes.push(dinheiro(d.valorCentavos), typeof d.forma === 'string' ? (NOME_FORMA[d.forma] ?? null) && `em ${NOME_FORMA[d.forma]}` : null);
+    case 'cliente.fiado_recebido': {
+      const taxa = typeof d.taxaCentavos === 'number' && d.taxaCentavos > 0 ? dinheiro(d.taxaCentavos) : null;
+      const troco = typeof d.trocoCentavos === 'number' && d.trocoCentavos > 0 ? dinheiro(d.trocoCentavos) : null;
+      partes.push(
+        dinheiro(d.valorCentavos),
+        typeof d.forma === 'string' ? (NOME_FORMA[d.forma] ?? null) && `em ${NOME_FORMA[d.forma]}` : null,
+        taxa && dinheiro(d.brutoCentavos) ? `cobrado ${dinheiro(d.brutoCentavos)} (taxa ${taxa})` : null,
+        troco && `troco ${troco}`,
+        diaBr(d.vencimento) && `vencimento ${diaBr(d.vencimento)}`,
+      );
       break;
+    }
+    case 'financeiro.taxas': {
+      const pct = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? `${String(Math.round(v * 100) / 100).replace('.', ',')}%` : null);
+      partes.push(
+        pct(d.debitoPct) && `débito ${pct(d.debitoPct)}`,
+        pct(d.creditoPct) && `crédito ${pct(d.creditoPct)}`,
+        typeof d.baixaAutomatica === 'boolean' ? (d.baixaAutomatica ? 'baixa automática' : 'baixa manual') : null,
+      );
+      break;
+    }
     case 'cliente.lembrete_retorno':
     case 'cliente.aviso_cashback':
     case 'cliente.lembrete_pagamento': {

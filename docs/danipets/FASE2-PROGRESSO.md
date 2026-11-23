@@ -12,7 +12,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 3. Fornecedores | **Concluído** (19/11/2026) |
 | 4. Compras e contas a pagar | **Concluído** (19/11/2026) |
 | 5. Caixa do dia | **Concluído** (19/11/2026; ajustes pedidos pelo Luan em 21 e 22/11/2026) |
-| 6. Clientes | **Concluído** (20/11/2026) |
+| 6. Clientes | **Concluído** (20/11/2026; arquivo fiado-caixa do Luan passado para o código em 23/11/2026) |
 | 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | **Concluído** (20/11/2026) |
 | 9. Financeiro | a fazer |
@@ -403,6 +403,53 @@ Sem tabela nova (decisão P3). A parte nova de clientes responde 501 no sistema 
   - tema escuro;
   - celular (390 px) sem rolagem para o lado;
   - console sem erros nem avisos.
+
+### Ajuste de 23/11/2026: o arquivo "fiado-caixa" do Luan, passado para o código
+
+O Luan mandou um `sistema-padrao-fiado-caixa.html` com funções escritas à mão dentro do arquivo já gerado (fora
+do código, sem testes; sumiriam na próxima geração da demonstração). A revisão (pedido "veja se todo o código
+está bem amarrado") achou o arquivo funcionando, mas solto do projeto e com regras mudadas sem registro. Com as
+decisões do Luan, tudo foi refeito no código, com testes:
+
+- **Receber fiado** (janela nova, como no arquivo):
+  - valor a baixar (todo, parte ou só um vencimento);
+  - a forma em botões;
+  - **dinheiro entregue com troco**: na gaveta entra só o valor da baixa;
+  - **cartão com a taxa da maquininha repassada ao cliente**: ele paga o bruto e a loja recebe o valor cheio. A
+    conta (`cotarRecebimentoFiado`) foi conferida para todas as taxas de 0,01% a 99,99% e nunca erra o centavo;
+  - prévia com "Cobrar na maquininha", taxa, líquido, saldo após a baixa e o que abate primeiro;
+  - **chave do pedido**: o clique duplo ou a rede lenta não recebem duas vezes;
+  - **"a taxa mudou"**: se a taxa mudou entre a tela e a gravação, a pessoa confere o valor novo antes.
+- **Baixa do cartão** (decisão 1: "ao definir as taxas da maquininha receber automaticamente, mas ter a opção de
+  deixar manual, escolha do dono"):
+  - **automática** (o padrão): a venda e o fiado no cartão entram na Conta bancária na hora, já sem a taxa;
+  - **manual**: ficam a receber da operadora até confirmar o depósito, como no DaniPets;
+  - só o Dono escolhe (permissão nova "Escolher se o cartão entra no banco na hora ou fica a receber");
+  - as vendas de exemplo da demonstração seguem o padrão (o cartão delas já está no banco);
+  - cancelar ou devolver uma venda com baixa feita tira o valor do banco (a regra do módulo 4 já tratava isso).
+- **Taxas da maquininha** (decisão 2): botão em **Clientes → Fiado**, para o **Dono e o Administrador** (as
+  taxas); a baixa automática ou manual fica travada para o Administrador. No arquivo, era só o Dono e
+  comparando o nome do papel, fora da tabela de permissões.
+- **"Não incomodar"** (decisão 3): **só tira das listas**. No arquivo, também bloqueava a mensagem de cobrança;
+  agora a mensagem pela conta do cliente continua possível.
+- **Pendências de clientes no card** (decisão 4): Fiado a vencer, Cashback a vencer e Promoções exclusivas, com
+  "Ver lista", Receber e WhatsApp (as 17, 18 e 19 de `docs/PENDENCIAS.md`).
+- **Lembrete de pagamento de um vencimento**: usa a mensagem de cobrança da loja (com o valor e a data daquele
+  vencimento), em vez do texto fixo do arquivo, e vale uma vez por vencimento.
+- Histórico: "Fiado recebido" mostra o cobrado, a taxa, o troco e o vencimento; "Taxas de cartão alteradas" mostra
+  as taxas e a baixa.
+- **Testes**:
+  - núcleo 396 (+6): cotação, vencimento, referência, fiado a vencer, baixa na hora, taxas com a baixa, permissão;
+  - servidor 134;
+  - tela 353 (+13): API (troco, vencimento, chave, taxa mudou, baixa manual e automática, taxas por papel,
+    pendências de clientes, lembrete do vencimento) e telas (receber, taxas, pendências com Ver lista).
+- **Navegador**:
+  - fiado recebido com troco (a gaveta sobe só o valor da baixa);
+  - venda no crédito com baixa automática (o banco sobe na hora) e com a manual (fica a receber);
+  - o Administrador com a baixa travada;
+  - "Fiado a vencer" com o WhatsApp do vencimento e o Receber no crédito com a taxa repassada;
+  - celular;
+  - console sem erros.
 
 ---
 

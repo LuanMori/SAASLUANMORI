@@ -5,9 +5,9 @@
 // sugestões e o que cada uma precisa estão em docs/PENDENCIAS.md. Já definidas e
 // ligadas pelo Luan: as do CAIXA (#1 caixa de hoje não aberto, #2 dia anterior aberto,
 // #3 diferença acima da tolerância — só o Dono — e #16 caixa fechado sozinho,
-// "Deseja verificar?"), em regrasPendencias.ts → pendenciasDoCaixa, calculadas na
-// Visão geral. Sem a situação do caixa (servidor sem essa parte), o card diz que nada
-// foi definido.
+// "Deseja verificar?"), em regrasPendencias.ts → pendenciasDoCaixa, e as de CLIENTES
+// (fiado a vencer, cashback a vencer e promoções exclusivas, 23/11/2026), em
+// PendenciasDoInicio.tsx. Sem essas partes no servidor, o card diz que nada foi definido.
 //
 // Cada pendência definida no futuro vira uma regra que olha os dados da loja
 // (caixa, estoque, validade, contas…) e devolve zero ou mais itens deste tipo.
@@ -21,8 +21,11 @@ export interface Pendencia {
   id: string;
   gravidade: GravidadePendencia;
   texto: string;
-  /** Botão opcional que leva para a aba onde se resolve (some para quem não pode abrir a aba). */
-  acao?: { rotulo: string; secao: IdSecao };
+  /**
+   * Botão opcional: leva para a aba onde se resolve (`secao`; some para quem não pode abrir a aba) ou abre uma janela
+   * na própria Visão geral (`abrir`, ex.: "Ver lista" das pendências de clientes).
+   */
+  acao?: { rotulo: string; secao?: IdSecao; abrir?: () => void };
   /** Só Dono e Administrador veem (ex.: contas vencidas), como os avisos de Financeiro no DaniPets. */
   soGestor?: boolean;
   /** Só o Dono vê (ex.: fechamento com diferença acima da tolerância, pendência 3). */
@@ -36,4 +39,5 @@ export function ordenarPendencias(lista: readonly Pendencia[]): Pendencia[] {
 }
 
 /** Rodapé do card vazio enquanto as outras pendências não forem escolhidas (docs/PENDENCIAS.md). */
-export const NOTA_PENDENCIAS_A_DEFINIR = 'Por enquanto, só os avisos do caixa estão ligados. Os outros (estoque, validade, contas…) ainda vamos escolher.';
+export const NOTA_PENDENCIAS_A_DEFINIR =
+  'Por enquanto, estão ligados os avisos do caixa e dos clientes (fiado a vencer, cashback a vencer e promoções). Os outros (estoque, validade, contas…) ainda vamos escolher.';

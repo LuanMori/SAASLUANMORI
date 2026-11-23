@@ -122,7 +122,7 @@ export function TelaPainel({
   const pendenciasVisiveis =
     pendencias
       ?.filter((p) => (!p.soGestor || gestor) && (!p.soDono || dono))
-      .map((p) => (p.acao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
+      .map((p) => (p.acao?.secao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
   const escolher = (id: IdSecao) => {
     setAviso(null);
     setSecao(id);

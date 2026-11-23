@@ -8,6 +8,7 @@ import { apagarDadosDemo, criarApiLocal, instanteNoFuso } from './apiLocal';
 
 const ANA = { id: 'ana', nome: 'Ana', papel: 'dono' as const };
 const BRUNO = { id: 'bruno', nome: 'Bruno', papel: 'vendedor' as const };
+const CAIO = { id: 'caio', nome: 'Caio', papel: 'administrador' as const };
 const AGORA = new Date('2026-11-16T15:00:00Z'); // 12:00 em Brasília
 const txt = (t: string) => t.replace(/ /g, ' ');
 
@@ -134,9 +135,10 @@ describe('clientes', () => {
 });
 
 describe('financeiro', () => {
-  it('a venda alimenta Caixa, Banco e cartão a receber; só o Dono e o Administrador veem', async () => {
+  it('baixa manual: a venda alimenta Caixa, Banco e cartão a receber; só o Dono e o Administrador veem', async () => {
     const { ana, bruno, racao } = await loja();
     await darEstoque('eco', 10);
+    await ana.salvarTaxasCartao({ ...(await ana.lerTaxasCartao()), baixaAutomatica: false }); // escolha do Dono
     await bruno.criarVenda({
       itens: [{ produtoId: racao.id, quantidade: 3 }],
       pagamentos: [
@@ -175,6 +177,7 @@ describe('financeiro', () => {
   it('cancelamento estorna pela mesma forma (cartão pendente é cancelado) e a devolução em dinheiro não passa do caixa', async () => {
     const { ana, bruno, racao, petisco } = await loja();
     await darEstoque('eco', 10);
+    await ana.salvarTaxasCartao({ ...(await ana.lerTaxasCartao()), baixaAutomatica: false });
     const v = await bruno.criarVenda({
       itens: [{ produtoId: racao.id, quantidade: 1 }],
       pagamentos: [
@@ -213,11 +216,42 @@ describe('financeiro', () => {
     expect((await ana.resumoFinanceiro()).contas.map((c) => c.saldoCentavos)).toEqual([6000, 4000]);
     expect((await erro(bruno.lancarNoFinanceiro({ tipo: 'entrada', conta: 'caixa', valorCentavos: 1, descricao: 'x', categoria: null }))).status).toBe(403);
 
-    expect(await ana.lerTaxasCartao()).toEqual({ taxaPct: { debito: 1.5, credito: 3 }, dias: { debito: 1, credito: 30 } });
+    expect(await ana.lerTaxasCartao()).toEqual({ taxaPct: { debito: 1.5, credito: 3 }, dias: { debito: 1, credito: 30 }, baixaAutomatica: true });
     await ana.salvarTaxasCartao({ taxaPct: { debito: 1, credito: 2.5 }, dias: { debito: 2, credito: 15 } });
-    expect((await ana.lerTaxasCartao()).taxaPct.credito).toBe(2.5);
+    expect(await ana.lerTaxasCartao()).toEqual({ taxaPct: { debito: 1, credito: 2.5 }, dias: { debito: 2, credito: 15 }, baixaAutomatica: true }); // sem dizer, a baixa fica como estava
     expect((await erro(ana.salvarTaxasCartao({ taxaPct: { debito: 100, credito: 2 }, dias: { debito: 1, credito: 30 } }))).status).toBe(400);
     expect((await erro(bruno.lerTaxasCartao())).status).toBe(403);
+  });
+
+  it('taxas da maquininha: o Dono e o Administrador mudam as taxas; a baixa automática ou manual é escolha do Dono', async () => {
+    const { ana } = await loja();
+    const caio = criarApiLocal({ lojaId: 'eco', operador: CAIO, exemplos: false, atrasoMs: 0, agora: () => AGORA });
+    const atuais = await caio.lerTaxasCartao();
+    await caio.salvarTaxasCartao({ ...atuais, taxaPct: { debito: 2, credito: 4 } });
+    expect((await caio.lerTaxasCartao()).taxaPct).toEqual({ debito: 2, credito: 4 });
+    const e = await erro(caio.salvarTaxasCartao({ ...atuais, baixaAutomatica: false }));
+    expect([e.status, e.message]).toEqual([403, 'Escolher se o cartão entra no banco na hora ou fica a receber: só o Dono.']);
+    await ana.salvarTaxasCartao({ ...(await ana.lerTaxasCartao()), baixaAutomatica: false });
+    expect((await caio.lerTaxasCartao()).baixaAutomatica).toBe(false);
+    // o Administrador muda as taxas sem mexer na escolha do Dono
+    await caio.salvarTaxasCartao({ ...(await caio.lerTaxasCartao()), taxaPct: { debito: 1.5, credito: 3 } });
+    expect((await caio.lerTaxasCartao()).baixaAutomatica).toBe(false);
+    const hist = (await ana.listarAuditoria()).filter((h) => h.acao === 'financeiro.taxas').map((h) => [h.quem, txt(h.resumo ?? '')]);
+    expect(hist).toEqual([
+      ['Caio', 'débito 1,5% • crédito 3% • baixa manual'],
+      ['Ana', 'débito 2% • crédito 4% • baixa manual'],
+      ['Caio', 'débito 2% • crédito 4% • baixa automática'],
+    ]);
+  });
+
+  it('baixa automática (o padrão): o cartão entra no banco na hora, já sem a taxa; o cancelamento tira de volta', async () => {
+    const { ana, bruno, racao } = await loja();
+    await darEstoque('eco', 10);
+    const v = await bruno.criarVenda({ itens: [{ produtoId: racao.id, quantidade: 2 }], pagamentos: [{ forma: 'credito', valorCentavos: 10000 }] });
+    expect(await ana.resumoFinanceiro()).toMatchObject({ contas: [{ saldoCentavos: 0 }, { saldoCentavos: 9700 }], aReceber: { totalCentavos: 0, quantidade: 0 } });
+    expect(await ana.listarRecebiveis()).toMatchObject([{ forma: 'credito', situacao: 'recebido', brutoCentavos: 10000, taxaCentavos: 300, recebimento: { conta: 'banco', valorCentavos: 9700 } }]);
+    await ana.cancelarVenda(v.id, { motivo: 'desistiu' });
+    expect((await ana.resumoFinanceiro()).totalCentavos).toBe(0);
   });
 });
 
@@ -231,13 +265,14 @@ describe('exemplos e lojas antigas', () => {
     expect((await ana.listarClientes()).map((c) => c.nome)).toEqual(['Fernanda Lima', 'João Pereira', 'Maria Oliveira']);
     expect((await ana.listarVendas()).filter((v) => v.cliente).length).toBe(3);
     // o Caixa físico começa com os R$ 100,00 de troco da implantação (os exemplos abrem o caixa com eles)
+    // as vendas no cartão dos exemplos já entraram no banco (baixa automática, o padrão)
     expect(await ana.resumoFinanceiro()).toMatchObject({
       contas: [
         { id: 'caixa', saldoCentavos: 13000 },
-        { id: 'banco', saldoCentavos: 12130 },
+        { id: 'banco', saldoCentavos: 12130 + 18420 + 15740 },
       ],
-      totalCentavos: 25130,
-      aReceber: { totalCentavos: 18420 + 15740, quantidade: 2 },
+      totalCentavos: 25130 + 18420 + 15740,
+      aReceber: { totalCentavos: 0, quantidade: 0 },
     });
     // nos dias das vendas de exemplo o caixa abriu e fechou sem diferença; o de hoje fica para abrir
     const caixa = await ana.lerCaixa();
@@ -250,7 +285,7 @@ describe('exemplos e lojas antigas', () => {
     expect((await ana.listarVendas()).every((v) => v.caixaId === caixa.historico.find((c) => c.dia === v.criadaEm.slice(0, 10))?.id)).toBe(true);
     // abrir de novo não lança tudo outra vez
     const outra = criarApiLocal({ lojaId: 'nova', operador: ANA, atrasoMs: 0, agora: () => AGORA });
-    expect((await outra.resumoFinanceiro()).totalCentavos).toBe(25130);
+    expect((await outra.resumoFinanceiro()).totalCentavos).toBe(25130 + 18420 + 15740);
     expect((await outra.listarMovimentosEstoque()).length).toBe((await ana.listarMovimentosEstoque()).length);
   });
 
@@ -309,12 +344,13 @@ describe('exemplos e lojas antigas', () => {
     expect((await ana.listarEstoque())[0]).toMatchObject({ saldo: 20 });
     const inicial = (await ana.listarMovimentosEstoque()).find((m) => m.tipo === 'inicial');
     expect(inicial).toMatchObject({ quantidade: 23, criadoEm: produto.criadoEm });
+    // o crédito da venda 3 entrou no banco na hora (R$ 19,40) e a devolução tirou R$ 9,70
     expect(await ana.resumoFinanceiro()).toMatchObject({
       contas: [
         { id: 'caixa', saldoCentavos: 2000 },
-        { id: 'banco', saldoCentavos: 0 },
+        { id: 'banco', saldoCentavos: 1000 - 30 },
       ],
-      aReceber: { totalCentavos: 1000 - 30, quantidade: 1 },
+      aReceber: { totalCentavos: 0, quantidade: 0 },
     });
     expect((await ana.listarVendas()).find((v) => v.id === 'v3')?.devolucoes[0]?.itens[0]?.voltaAoEstoque).toBe(true);
     expect((await ana.listarClientes()).length).toBe(3); // clientes de exemplo

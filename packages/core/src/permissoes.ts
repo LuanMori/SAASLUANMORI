@@ -8,8 +8,8 @@
 //   - Vendedor: vender, caixa, clientes e cadastrar produto novo (DaniPets: VENDEDOR_PODE);
 //   - brinde (preço R$ 0,00) sem senha, exclusão de dados (LGPD) e liberação de lançamento em dia com o caixa
 //     já fechado: só o Dono (DaniPets: cliAnonimizar, askDono);
-//   - ciência do fechamento com diferença acima da tolerância (pendência 3, pedido do Luan em 22/11/2026):
-//     só o Dono.
+//   - ciência do fechamento com diferença acima da tolerância (pendência 3, pedido do Luan em 22/11/2026) e a
+//     baixa do cartão automática ou manual (23/11/2026): só o Dono. As taxas da maquininha: Dono e Administrador.
 // Para mudar a regra de um papel, mude só a tabela PODE abaixo (e os testes).
 import type { PapelDeLoja } from './papeis';
 
@@ -41,6 +41,7 @@ export const PERMISSOES = {
   'caixa.diferenca': 'Fechar o caixa com diferença acima da tolerância sem pedir senha',
   'caixa.desfazer': 'Desfazer o fechamento do caixa',
   'caixa.ciencia': 'Dar ciência do fechamento com diferença acima da tolerância',
+  'financeiro.baixa_cartao': 'Escolher se o cartão entra no banco na hora ou fica a receber',
   'dia_fechado.liberar': 'Liberar lançamento em dia com o caixa já fechado',
   'fiado.liberar': 'Liberar venda no fiado acima do limite ou com fiado vencido',
 } as const;
@@ -52,7 +53,16 @@ export const LISTA_PERMISSOES = Object.keys(PERMISSOES) as Permissao[];
 const TODAS = new Set<Permissao>(LISTA_PERMISSOES);
 
 /** Só o Dono, como no DaniPets. */
-const SO_DONO = new Set<Permissao>(['brinde', 'usuarios.donos', 'usuarios.excluir_dados', 'clientes.excluir_dados', 'caixa.ciencia', 'dia_fechado.liberar', 'fiado.liberar']);
+const SO_DONO = new Set<Permissao>([
+  'brinde',
+  'usuarios.donos',
+  'usuarios.excluir_dados',
+  'clientes.excluir_dados',
+  'caixa.ciencia',
+  'financeiro.baixa_cartao',
+  'dia_fechado.liberar',
+  'fiado.liberar',
+]);
 
 /** A matriz. Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */
 const PODE: Record<PapelDeLoja, ReadonlySet<Permissao>> = {

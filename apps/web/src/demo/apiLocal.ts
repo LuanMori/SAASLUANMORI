@@ -29,6 +29,18 @@
 //
 // NÃO é segurança: aqui não há servidor, RLS nem cookie HttpOnly — tudo roda no navegador.
 import {
+  baixaAutomaticaDoCartao,
+  baixarCartaoNaHora,
+  type BaixaDoFiado,
+  type FormaReceberFiado,
+  cotarRecebimentoFiado,
+  dataBr,
+  dataValida,
+  ehCartao,
+  fiadoAVencer,
+  fiadoDoVencimento,
+  type NovoLancamento,
+  vencimentoDaReferencia,
   liquidoAReceber,
   devolverNoVale,
   emitirVale,
@@ -546,7 +558,14 @@ function prepararEcossistema(lojaId: string, opcoes: { fuso: string; exemplos: b
     movimentos.push(...movimentosDaVenda(v).map(comId));
     const f = efeitosFinanceirosDaVenda(v, { taxas, fuso: opcoes.fuso, prazoFiadoDias: configuracaoDemo(lojaId).regras.fiado.prazoDias });
     lancamentos.push(...f.lancamentos.map(comId));
-    recebiveis.push(...f.recebiveis.map(comId));
+    for (const r of f.recebiveis.map(comId)) {
+      // baixa automática do cartão (o padrão): o cartão entra na Conta bancária na hora da venda, já sem a taxa
+      const b = baixaAutomaticaDoCartao(taxas) && ehCartao(r.forma) ? baixarCartaoNaHora(r, { em: v.criadaEm, por: v.vendedor }) : null;
+      if (b?.ok) {
+        recebiveis.push(b.valor.recebivel);
+        lancamentos.push(comId(b.valor.lancamento));
+      } else recebiveis.push(r);
+    }
     for (const d of [...v.devolucoes].sort((a, b) => a.criadaEm.localeCompare(b.criadaEm))) {
       movimentos.push(...movimentosDaDevolucao(v, d).map(comId));
       estornar(v, d.estornos, `Devolução nº ${d.numero}`, d.criadaEm, d.feitaPor);
@@ -886,10 +905,75 @@ export function criarApiLocal({
   };
   const cupomResumido = (k: CupomRetorno | null) => (k ? { id: k.id, pct: k.pct, venceEm: k.venceEm } : null);
   /** Cliente da loja que pode participar das listas e mensagens (não excluído pela LGPD). */
+  /** O que o recebimento do fiado devolve (o mesmo, para o mesmo pedido repetido). */
+  const resultadoDaBaixa = (b: BaixaDoFiado) => ({
+    abatidas: b.abatidas,
+    ficaDevendoCentavos: b.ficaDevendoCentavos,
+    cotacao: {
+      principalCentavos: b.principalCentavos,
+      forma: b.forma as FormaReceberFiado,
+      percentual: b.percentual,
+      brutoCentavos: b.brutoCentavos,
+      taxaCentavos: b.taxaCentavos,
+      liquidoCentavos: b.principalCentavos,
+      entregueCentavos: b.entregueCentavos,
+      trocoCentavos: b.trocoCentavos,
+    },
+  });
+  /** A lista de retorno (aba Retorno), que as pendências de clientes também usam. */
+  const painelRetorno = () => {
+    const hoje = hojeNaLoja();
+    const r = regras();
+    const vendas = vendasDaLoja();
+    const lotes = lotesDaLoja();
+    const contatos = contatosDaLoja();
+    const clientes = clientesDaLoja().filter((c) => c.ativo && !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO);
+    const porId = new Map(clientesDaLoja().map((c) => [c.id, c]));
+    const analise = analisarRetorno({ clientes, ultimaCompra: ultimasCompras(vendas), lotes, contatos, cupons: cuponsDaLoja(), regras: r, hoje });
+    const base = (id: string) => {
+      const c = porId.get(id)!;
+      return { clienteId: id, nome: c.nome, telefone: c.telefone, bloqueio: motivoSemMensagem(c, 'retorno') };
+    };
+    /** O que levou na última compra (DaniPets: "Última compra em 10/10: Ração, Areia"). */
+    const itensDaUltima = (id: string) => {
+      const u = vendas.filter((v) => v.cliente?.id === id && v.status !== 'cancelada').sort((a, b) => b.criadaEm.localeCompare(a.criadaEm))[0];
+      return u ? u.itens.map((i) => i.nome).join(', ') : '';
+    };
+    const compras = vendas.filter((v) => v.cliente && v.status !== 'cancelada').map((v) => ({ clienteId: v.cliente!.id, dia: diaNoFuso(v.criadaEm, fuso), vendaNumero: v.numero }));
+    const resultado = resultadoDosLembretes(contatos, compras, hoje);
+    return {
+      hoje,
+      regras: { cashback: r.cashback, retorno: r.retorno },
+      retorno: analise.retorno.map((x) => ({ ...base(x.clienteId), diasSemComprar: x.diasSemComprar, ultimaCompraDia: x.ultimaCompraDia, ultimaCompraItens: itensDaUltima(x.clienteId), cashbackCentavos: saldoCashback(lotes, porId.get(x.clienteId), hoje) })),
+      cashback: analise.cashback.map((x) => ({ ...base(x.clienteId), bloqueio: motivoSemMensagem(porId.get(x.clienteId)!, 'cashback'), venceEm: x.venceEm, valorCentavos: x.valorCentavos })),
+      fora: analise.fora.map((x) => ({ clienteId: x.clienteId, nome: porId.get(x.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO, motivo: x.motivo })),
+      resultado: {
+        linhas: resultado.linhas.slice(0, 100).map((l) => ({
+          contatoId: l.contato.id,
+          dia: l.contato.dia,
+          clienteNome: porId.get(l.contato.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO,
+          canal: l.contato.canal,
+          situacao: l.situacao,
+          voltou: l.voltou,
+        })),
+        enviados: resultado.enviados,
+        voltaram: resultado.voltaram,
+        taxaPct: resultado.taxaPct,
+      },
+    };
+  };
   const exigirClienteDaFidelidade = (id: string) => {
     const c = clientesDaLoja().find((x) => x.id === id);
     if (!c || c.dadosExcluidos || c.nome === NOME_CLIENTE_REMOVIDO) throw new ErroApi(404, 'Cliente não encontrado.');
     return c;
+  };
+  /** "fiado:AAAA-MM-DD" com compra em aberto nesse vencimento; devolve o vencimento. */
+  const exigirVencimentoEmAberto = (c: Pick<Cliente, 'id'>, referencia: unknown, hoje: string): string => {
+    const vencimento = vencimentoDaReferencia(referencia);
+    if (!vencimento) throw new ErroApi(400, 'Vencimento do lembrete inválido.');
+    const f = fiadoDoVencimento(fiadoDoCliente(recebiveisDaLoja(), c.id, hoje), vencimento, hoje);
+    if (f.devendoCentavos <= 0) throw new ErroApi(409, 'Este fiado já foi recebido ou mudou. Atualize a lista.');
+    return vencimento;
   };
   /**
    * Cashback e cupom quando a venda volta (cancelamento ou devolução), como o DaniPets (DEV-07):
@@ -1236,7 +1320,16 @@ export function criarApiLocal({
             valesDepois[j] = exigirOk(usarVale(valesDepois[j]!, p.valorCentavos, { vendaId: venda.id, vendaNumero: venda.numero, dia: hoje, em: venda.criadaEm, por: venda.vendedor }));
           }
         }
-        const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaLoja(), fuso, prazoFiadoDias: regras().fiado.prazoDias });
+        const taxasDaVenda = taxasDaLoja();
+        const financeiro = efeitosFinanceirosDaVenda(venda, { taxas: taxasDaVenda, fuso, prazoFiadoDias: regras().fiado.prazoDias });
+        // baixa automática (escolha do Dono nas taxas da maquininha): o cartão entra na Conta bancária na hora, já sem a taxa
+        const baixasDoCartao: NovoLancamento[] = [];
+        const recebiveisDaVenda = financeiro.recebiveis.map(comId).map((r) => {
+          if (!baixaAutomaticaDoCartao(taxasDaVenda) || !ehCartao(r.forma)) return r;
+          const b = exigirOk(baixarCartaoNaHora(r, { em: venda.criadaEm, por: venda.vendedor }));
+          baixasDoCartao.push(b.lancamento);
+          return b.recebivel;
+        });
         gravarVendas([...daLoja, venda]);
         if (lotesDepois !== lotes) gravarLotes(lotesDepois);
         if (usoCashback) juntarUso(usoCashback);
@@ -1246,8 +1339,8 @@ export function criarApiLocal({
           auditar('cliente.cupom_usado', { tipo: 'cliente', id: cupom.clienteId }, { pct: cupom.pct, numero: venda.numero });
         }
         juntarMovimentos(movimentosDaVenda(venda));
-        juntarLancamentos(financeiro.lancamentos);
-        gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...financeiro.recebiveis.map(comId)]);
+        juntarLancamentos([...financeiro.lancamentos, ...baixasDoCartao]);
+        gravarDaLoja(CHAVES.recebiveis, lojaId, [...recebiveisDaLoja(), ...recebiveisDaVenda]);
         if (fiadoLiberado) auditar('venda.fiado_liberado', null, { numero: venda.numero, valorCentavos: noFiado, autorizadoPor: fiadoLiberado.por.id });
         if (venda.descontoCentavos > 0) {
           const comSenha = venda.itens.find((i) => i.desconto?.autorizadoComSenha);
@@ -1794,6 +1887,18 @@ export function criarApiLocal({
       });
     },
 
+    async taxasParaReceberFiado() {
+      await preparar();
+      exigir('vender');
+      const t = taxasDaLoja();
+      return { ...t, baixaAutomatica: baixaAutomaticaDoCartao(t) };
+    },
+
+    /**
+     * Recebe o fiado (arquivo do Luan, 23/11/2026): todo ou parte, ou só um vencimento; dinheiro com troco (o troco
+     * não entra na gaveta); cartão com a taxa repassada ao cliente, que entra no banco na hora (baixa automática) ou
+     * fica a receber (manual). A `chave` do pedido evita receber duas vezes: o mesmo pedido devolve o mesmo resultado.
+     */
     async receberFiadoDoCliente(id, dados) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
@@ -1801,19 +1906,74 @@ export function criarApiLocal({
         exigirHojeNaoFechado();
         const c = clientesDaLoja().find((x) => x.id === id);
         if (!c || c.dadosExcluidos) throw new ErroApi(404, 'Cliente não encontrado.');
+        const todos = recebiveisDaLoja();
+        const chave = dados?.chave ?? null;
+        if (chave !== null && (typeof chave !== 'string' || chave.length < 8 || chave.length > 96)) throw new ErroApi(400, 'Identificador do recebimento inválido.');
+        const vencimento = dados?.vencimento ?? null;
+        if (vencimento !== null && !dataValida(vencimento)) throw new ErroApi(400, 'Vencimento inválido.');
+        if (chave) {
+          const feito = todos.find((x) => x.recebimento?.baixa?.chave === chave);
+          if (feito) {
+            const b = feito.recebimento!.baixa!;
+            const mesmo =
+              feito.cliente?.id === id &&
+              b.forma === dados?.forma &&
+              b.principalCentavos === dados?.valorCentavos &&
+              b.vencimento === vencimento &&
+              (b.forma !== 'dinheiro' || b.entregueCentavos === (dados?.entregueCentavos ?? b.principalCentavos));
+            if (!mesmo) throw new ErroApi(409, 'Este pedido de recebimento já foi usado para outro pagamento.');
+            return resultadoDaBaixa(b);
+          }
+        }
         // dinheiro entra na gaveta: só com o caixa de hoje aberto (DaniPets: "Para receber em dinheiro, abra o caixa de hoje")
         if (dados?.forma === 'dinheiro') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
+        const taxas = taxasDaLoja();
+        const cotacao = exigirOk(cotarRecebimentoFiado(dados?.valorCentavos, dados?.forma, taxas, dados?.entregueCentavos), 400);
+        // a taxa mudou entre a tela e a gravação: a pessoa confere o valor novo antes de cobrar
+        const previsto = dados?.brutoPrevistoCentavos;
+        if ((previsto != null && previsto !== cotacao.brutoCentavos) || (dados?.taxaPrevistaPct != null && dados.taxaPrevistaPct !== cotacao.percentual)) {
+          throw new ErroApi(409, 'A taxa da maquininha mudou. Confira o novo valor antes de confirmar.', [], 'taxa_mudou');
+        }
         const hoje = hojeNaLoja();
-        const todos = recebiveisDaLoja();
-        const f = fiadoDoCliente(todos, id, hoje);
-        const r = receberFiado(f, dados?.valorCentavos, dados?.forma, { cliente: { id: c.id, nome: c.nome }, em: agora().toISOString(), hoje, por: pessoa(quem), novoId, taxas: taxasDaLoja() });
+        const doCliente = fiadoDoCliente(todos, id, hoje);
+        const alvo = vencimento ? fiadoDoVencimento(doCliente, vencimento, hoje) : doCliente;
+        if (vencimento && alvo.devendoCentavos <= 0) throw new ErroApi(409, `${c.nome} não tem fiado em aberto com vencimento em ${dataBr(vencimento)}.`);
+        const em = agora().toISOString();
+        const por = pessoa(quem);
+        const r = receberFiado(alvo, cotacao.principalCentavos, cotacao.forma, { cliente: { id: c.id, nome: c.nome }, em, hoje, por, novoId, taxas });
         if (!r.ok) throw new ErroApi(r.erros[0]!.campo === '_' ? 409 : 400, r.erros[0]!.mensagem, r.erros);
-        const novos = new Map(r.valor.atualizados.map((x) => [x.id, x]));
-        const cartao = r.valor.cartao ? [comId(r.valor.cartao)] : [];
-        gravarDaLoja(CHAVES.recebiveis, lojaId, [...todos.map((x) => novos.get(x.id) ?? x), ...r.valor.partesPagas, ...cartao]);
-        if (r.valor.lancamento) juntarLancamentos([r.valor.lancamento]);
-        auditar('cliente.fiado_recebido', { tipo: 'cliente', id }, { valorCentavos: dados.valorCentavos, forma: dados.forma });
-        return { abatidas: r.valor.abatidas, ficaDevendoCentavos: f.devendoCentavos - (dados.valorCentavos as number) };
+        // cartão: na baixa automática entra no banco na hora; na manual fica a receber da operadora
+        let cartao = r.valor.cartao ? comId(r.valor.cartao) : null;
+        let lancamento = r.valor.lancamento;
+        if (cartao && baixaAutomaticaDoCartao(taxas)) {
+          const b = exigirOk(baixarCartaoNaHora(cartao, { em, por }));
+          cartao = b.recebivel;
+          lancamento = { ...b.lancamento, descricao: `${b.lancamento.descricao} • cobrado ${formatarCentavos(cotacao.brutoCentavos)} • taxa ${formatarCentavos(cotacao.taxaCentavos)}` };
+        }
+        const baixa: BaixaDoFiado = {
+          chave: chave ?? novoId(),
+          forma: cotacao.forma,
+          principalCentavos: cotacao.principalCentavos,
+          brutoCentavos: cotacao.brutoCentavos,
+          taxaCentavos: cotacao.taxaCentavos,
+          percentual: cotacao.percentual,
+          entregueCentavos: cotacao.entregueCentavos,
+          trocoCentavos: cotacao.trocoCentavos,
+          vencimento,
+          abatidas: r.valor.abatidas,
+          ficaDevendoCentavos: doCliente.devendoCentavos - cotacao.principalCentavos,
+        };
+        // as compras pagas guardam o recebimento (é o que devolve o mesmo resultado para o mesmo pedido)
+        const marcar = (x: Recebivel): Recebivel => (x.situacao === 'recebido' && x.recebimento ? { ...x, recebimento: { ...x.recebimento, baixa } } : x);
+        const novos = new Map(r.valor.atualizados.map((x) => [x.id, marcar(x)]));
+        gravarDaLoja(CHAVES.recebiveis, lojaId, [...todos.map((x) => novos.get(x.id) ?? x), ...r.valor.partesPagas.map(marcar), ...(cartao ? [cartao] : [])]);
+        if (lancamento) juntarLancamentos([lancamento]);
+        auditar(
+          'cliente.fiado_recebido',
+          { tipo: 'cliente', id },
+          { valorCentavos: baixa.principalCentavos, forma: baixa.forma, brutoCentavos: baixa.brutoCentavos, taxaCentavos: baixa.taxaCentavos, trocoCentavos: baixa.trocoCentavos, vencimento },
+        );
+        return resultadoDaBaixa(baixa);
       });
     },
 
@@ -1908,44 +2068,25 @@ export function criarApiLocal({
     async listarRetorno() {
       await preparar();
       exigirOperador();
-      const hoje = hojeNaLoja();
-      const r = regras();
-      const vendas = vendasDaLoja();
-      const lotes = lotesDaLoja();
-      const contatos = contatosDaLoja();
-      const clientes = clientesDaLoja().filter((c) => c.ativo && !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO);
-      const porId = new Map(clientesDaLoja().map((c) => [c.id, c]));
-      const analise = analisarRetorno({ clientes, ultimaCompra: ultimasCompras(vendas), lotes, contatos, cupons: cuponsDaLoja(), regras: r, hoje });
-      const base = (id: string) => {
-        const c = porId.get(id)!;
-        return { clienteId: id, nome: c.nome, telefone: c.telefone, bloqueio: motivoSemMensagem(c, 'retorno') };
-      };
-      /** O que levou na última compra (DaniPets: "Última compra em 10/10: Ração, Areia"). */
-      const itensDaUltima = (id: string) => {
-        const u = vendas.filter((v) => v.cliente?.id === id && v.status !== 'cancelada').sort((a, b) => b.criadaEm.localeCompare(a.criadaEm))[0];
-        return u ? u.itens.map((i) => i.nome).join(', ') : '';
-      };
-      const compras = vendas.filter((v) => v.cliente && v.status !== 'cancelada').map((v) => ({ clienteId: v.cliente!.id, dia: diaNoFuso(v.criadaEm, fuso), vendaNumero: v.numero }));
-      const resultado = resultadoDosLembretes(contatos, compras, hoje);
+      return painelRetorno();
+    },
+
+    /**
+     * Pendências de clientes do card da Visão geral (arquivo do Luan, 23/11/2026): fiado a vencer em 7 dias (quem vê
+     * o fiado de todos), cashback a vencer e promoções exclusivas (clientes sem comprar, com o cupom de retorno).
+     * As três tiram quem pediu "não incomodar" ou adiou os lembretes (só das listas, decisão do Luan).
+     */
+    async pendenciasDeClientes() {
+      await preparar();
+      const quem = exigirOperador();
+      const painel = painelRetorno();
+      const clientes = clientesDaLoja().filter((c) => !c.dadosExcluidos && c.nome !== NOME_CLIENTE_REMOVIDO);
+      const pct = painel.regras.retorno.cupomPct;
       return {
-        hoje,
-        regras: { cashback: r.cashback, retorno: r.retorno },
-        retorno: analise.retorno.map((x) => ({ ...base(x.clienteId), diasSemComprar: x.diasSemComprar, ultimaCompraDia: x.ultimaCompraDia, ultimaCompraItens: itensDaUltima(x.clienteId), cashbackCentavos: saldoCashback(lotes, porId.get(x.clienteId), hoje) })),
-        cashback: analise.cashback.map((x) => ({ ...base(x.clienteId), bloqueio: motivoSemMensagem(porId.get(x.clienteId)!, 'cashback'), venceEm: x.venceEm, valorCentavos: x.valorCentavos })),
-        fora: analise.fora.map((x) => ({ clienteId: x.clienteId, nome: porId.get(x.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO, motivo: x.motivo })),
-        resultado: {
-          linhas: resultado.linhas.slice(0, 100).map((l) => ({
-            contatoId: l.contato.id,
-            dia: l.contato.dia,
-            clienteNome: porId.get(l.contato.clienteId)?.nome ?? NOME_CLIENTE_REMOVIDO,
-            canal: l.contato.canal,
-            situacao: l.situacao,
-            voltou: l.voltou,
-          })),
-          enviados: resultado.enviados,
-          voltaram: resultado.voltaram,
-          taxaPct: resultado.taxaPct,
-        },
+        hoje: painel.hoje,
+        fiado: pode(quem.papel, 'clientes.fiado') ? fiadoAVencer(recebiveisDaLoja(), clientes, contatosDaLoja(), painel.hoje) : null,
+        cashback: painel.cashback,
+        promocao: pct > 0 ? painel.retorno.filter((x) => !x.bloqueio).map((x) => ({ ...x, percentual: pct })) : [],
       };
     },
 
@@ -2008,7 +2149,7 @@ export function criarApiLocal({
       };
     },
 
-    async mensagemParaCliente(clienteId, tipo) {
+    async mensagemParaCliente(clienteId, tipo, referencia = null) {
       await preparar();
       const quem = exigirOperador();
       if (!(TIPOS_CONTATO as readonly string[]).includes(tipo)) throw new ErroApi(400, 'Escolha o tipo de lembrete.');
@@ -2017,7 +2158,10 @@ export function criarApiLocal({
       const c = exigirClienteDaFidelidade(clienteId);
       const hoje = hojeNaLoja();
       const r = regras();
-      const f = fiadoDoCliente(recebiveisDaLoja(), c.id, hoje);
+      // a cobrança de um vencimento (lista "Fiado a vencer") fala do valor e da data daquele vencimento
+      const vencimento = tipo === 'cobranca' && referencia ? exigirVencimentoEmAberto(c, referencia, hoje) : null;
+      const todoFiado = fiadoDoCliente(recebiveisDaLoja(), c.id, hoje);
+      const f = vencimento ? fiadoDoVencimento(todoFiado, vencimento, hoje) : todoFiado;
       const existente = tipo === 'retorno' ? cupomAtivo(cuponsDaLoja(), c, hoje, r.retorno) : null;
       const cupom = tipo === 'retorno' && cadastroCompleto(c) && r.retorno.cupomPct > 0 ? (existente ? { pct: existente.pct, venceEm: existente.venceEm } : { pct: r.retorno.cupomPct, venceEm: somarDias(hoje, r.retorno.cupomValidadeDias) }) : null;
       const texto = mensagemDoCliente(tipo, {
@@ -2028,7 +2172,7 @@ export function criarApiLocal({
         ultimaCompraDia: ultimasCompras(vendasDaLoja()).get(c.id) ?? null,
         proximoVencimento: proximoVencimento(lotesDaLoja(), c, hoje),
         devendoCentavos: f.devendoCentavos,
-        vencimentoFiado: f.abertos[0]?.venceEm ?? null,
+        vencimentoFiado: vencimento ?? f.abertos[0]?.venceEm ?? null,
         cupom,
       });
       return { tipo, clienteId: c.id, nome: c.nome, telefone: c.telefone, texto, cupom, bloqueio: motivoSemMensagem(c, tipo) };
@@ -2043,13 +2187,22 @@ export function criarApiLocal({
         if (!(TIPOS_CONTATO as readonly string[]).includes(tipo) || (canal !== 'whatsapp' && canal !== 'outro')) throw new ErroApi(400, 'Lembrete inválido.');
         if (tipo === 'cobranca' && !pode(quem.papel, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
         const c = exigirClienteDaFidelidade(clienteId);
-        // pelo WhatsApp, só para quem tem WhatsApp e autorizou (o lembrete de pagamento só pede o WhatsApp)
+        // pelo WhatsApp, só para quem tem WhatsApp e autorizou (o lembrete de pagamento só pede o WhatsApp). O "não
+        // incomodar" não bloqueia aqui: só tira o cliente das listas de lembrete (decisão do Luan, 23/11/2026)
         const bloqueio = canal === 'whatsapp' ? motivoSemMensagem(c, tipo) : null;
         if (bloqueio) throw new ErroApi(409, bloqueio);
-        const r = registrarContato(c, tipo, canal, { dia: hojeNaLoja(), em: agora().toISOString(), por: pessoa(quem), novoId, cupons: cuponsDaLoja(), regras: regras().retorno });
+        // o lembrete de um vencimento (lista "Fiado a vencer") vale uma vez por vencimento
+        const referencia = tipo === 'cobranca' && dados?.referencia ? dados.referencia : null;
+        if (referencia) {
+          exigirVencimentoEmAberto(c, referencia, hojeNaLoja());
+          if (contatosDaLoja().some((k) => k.clienteId === c.id && k.tipo === 'cobranca' && k.referencia === referencia)) {
+            throw new ErroApi(409, 'O lembrete deste vencimento já foi registrado.');
+          }
+        }
+        const r = registrarContato(c, tipo, canal, { dia: hojeNaLoja(), em: agora().toISOString(), por: pessoa(quem), novoId, cupons: cuponsDaLoja(), regras: regras().retorno, referencia });
         gravarDaLoja(CHAVES.contatos, lojaId, [...contatosDaLoja(), r.contato]);
         if (r.cupom && r.cupomNovo) gravarCupons([...cuponsDaLoja(), r.cupom]);
-        auditar(ACAO_DO_CONTATO[tipo], { tipo: 'cliente', id: c.id }, { canal, ...(r.cupom ? { cupomPct: r.cupom.pct, cupomVenceEm: r.cupom.venceEm } : {}) });
+        auditar(ACAO_DO_CONTATO[tipo], { tipo: 'cliente', id: c.id }, { canal, ...(r.cupom ? { cupomPct: r.cupom.pct, cupomVenceEm: r.cupom.venceEm } : {}), ...(referencia ? { vencimento: vencimentoDaReferencia(referencia) } : {}) });
         return { contato: r.contato, cupom: r.cupom };
       });
     },
@@ -2173,17 +2326,27 @@ export function criarApiLocal({
     async lerTaxasCartao() {
       await preparar();
       exigir('financeiro');
-      return taxasDaLoja();
+      const t = taxasDaLoja();
+      return { ...t, baixaAutomatica: baixaAutomaticaDoCartao(t) };
     },
 
+    /**
+     * Taxas da maquininha: o Dono e o Administrador mudam as taxas; a baixa (automática ou manual) é escolha do
+     * Dono (pedido do Luan, 23/11/2026). Sem `baixaAutomatica`, fica como está.
+     */
     async salvarTaxasCartao(taxas) {
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
-        exigir('financeiro');
-        const validacao = validarTaxasCartao(taxas);
+        const quem = exigir('financeiro');
+        const atuais = taxasDaLoja();
+        const pedido = taxas && typeof taxas === 'object' && !('baixaAutomatica' in taxas) ? { ...taxas, baixaAutomatica: baixaAutomaticaDoCartao(atuais) } : taxas;
+        const validacao = validarTaxasCartao(pedido);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
+        if (validacao.valor.baixaAutomatica !== baixaAutomaticaDoCartao(atuais) && !pode(quem.papel, 'financeiro.baixa_cartao')) {
+          throw new ErroApi(403, mensagemSemPermissao('financeiro.baixa_cartao'));
+        }
         gravar(CHAVES.taxas, { ...ler<Record<string, TaxasCartao>>(CHAVES.taxas, {}), [lojaId]: validacao.valor });
-        auditar('financeiro.taxas');
+        auditar('financeiro.taxas', null, { debitoPct: validacao.valor.taxaPct.debito, creditoPct: validacao.valor.taxaPct.credito, baixaAutomatica: validacao.valor.baixaAutomatica });
         return validacao.valor;
       });
     },

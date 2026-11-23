@@ -209,7 +209,7 @@ function FaixaDemo({
           </p>
           <label className="demo-check">
             <input type="checkbox" checked={exemplos} onChange={(e) => aoMudarExemplos(e.target.checked)} />
-            Mostrar pendências de exemplo (as de verdade ainda não foram definidas)
+            Mostrar também exemplos de pendências
           </label>
           {!logado && (
             <button

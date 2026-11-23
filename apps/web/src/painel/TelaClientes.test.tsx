@@ -81,14 +81,15 @@ describe('Clientes · lista e conta', () => {
     expect(txt(screen.getByRole('region', { name: 'Extrato' }).textContent)).toMatch(/Compra no fiado.*\+ R\$ 30,00.*Compra #00001/);
 
     await userEvent.click(screen.getByRole('button', { name: 'Receber fiado' }));
-    const valor = within(janela()).getByLabelText('Valor recebido (R$)') as HTMLInputElement;
+    const valor = within(janela()).getByLabelText('Valor a baixar (R$)') as HTMLInputElement;
     expect(valor.value).toBe('30,00');
     await userEvent.clear(valor);
     await userEvent.type(valor, '10');
-    await userEvent.selectOptions(within(janela()).getByLabelText('Forma de pagamento'), 'pix');
-    expect(txt(within(janela()).getByText('Fica devendo').nextElementSibling?.textContent)).toBe('R$ 20,00');
+    await userEvent.click(within(janela()).getByRole('button', { name: 'Pix' }));
+    expect(within(janela()).getByRole('button', { name: 'Pix' }).getAttribute('aria-pressed')).toBe('true');
+    expect(txt(within(janela()).getByLabelText('Prévia do recebimento').textContent)).toBe('Receber no PixR$ 10,00Saldo após a baixaR$ 20,00Abate primeiro#00001 (R$ 10,00)');
     await userEvent.click(within(janela()).getByRole('button', { name: 'Confirmar recebimento' }));
-    expect(txt((await screen.findByText(/^Recebido R\$/)).textContent)).toBe('Recebido R$ 10,00 de Maria em Pix: abateu #00001 (R$ 10,00). Fica devendo R$ 20,00.');
+    expect(txt((await screen.findByText(/^Baixa de R\$/)).textContent)).toBe('Baixa de R$ 10,00 confirmada. Pix: R$ 10,00 · saldo em aberto R$ 20,00.');
 
     await userEvent.click(screen.getByRole('button', { name: '← Voltar para a lista' }));
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Seções de Clientes' })).getByRole('button', { name: /^Fiado/ }));
