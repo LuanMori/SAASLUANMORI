@@ -1256,3 +1256,21 @@ h2 { font-size: 1.05rem; }
   }
   .fin-totais { padding: 12px 14px; }
 }
+
+/* ------------------------------------------------------------------ Relatórios em abas (Fase 2, módulo 10) */
+.rel-aba { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.rel-abas { margin-top: -4px; }
+.rel-campo-botao { justify-content: flex-end; }
+.rel-campo-botao .botao { white-space: nowrap; }
+.rel-check { align-self: end; padding-bottom: 10px; }
+.rel-cabeca-acoes { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.rel-nota { margin: 0; padding: 10px 20px 14px; border-top: 1px solid var(--borda); color: var(--suave); font-size: 0.85rem; }
+.rel-tabela .tabela-vendas td { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.rel-cartao small { font-size: 0.78rem; }
+@media (max-width: 560px) {
+  .rel-campo-botao { grid-column: 1 / -1; }
+  .rel-campo-botao .botao { width: 100%; white-space: normal; }
+  .rel-check { grid-column: 1 / -1; padding-bottom: 0; }
+  .rel-tabela .tabela-vendas td { max-width: none; }
+  .rel-tabela .tabela-vendas td[data-rotulo]::before { content: attr(data-rotulo) ': '; color: var(--suave); font-size: 0.8rem; }
+}

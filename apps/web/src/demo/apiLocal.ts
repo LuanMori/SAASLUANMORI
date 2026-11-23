@@ -2741,6 +2741,18 @@ export function criarApiLocal({
         .sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.criadoEm.localeCompare(b.criadoEm));
     },
 
+    async registrarExportacao(dados) {
+      await preparar();
+      return gravarOperacao(() => {
+        exigir('relatorios');
+        const d = (dados ?? {}) as { assunto?: unknown; de?: unknown; ate?: unknown; abas?: unknown };
+        const assunto = typeof d.assunto === 'string' ? d.assunto.trim().slice(0, 40) : '';
+        if (!assunto) throw new ErroApi(400, 'Diga o que foi exportado.');
+        const dia = (v: unknown) => (dataValida(v) ? v : null);
+        auditar('relatorios.exportado', null, { assunto, de: dia(d.de), ate: dia(d.ate), abas: typeof d.abas === 'number' && Number.isInteger(d.abas) ? d.abas : null });
+      });
+    },
+
     /** Conta a pagar sem compra (aluguel, energia, boleto): Dono e Administrador. */
     async cadastrarContaAPagar(dados) {
       await preparar(atrasoMs * 2);

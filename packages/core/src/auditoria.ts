@@ -49,6 +49,8 @@ export const ACOES_AUDITORIA = {
   'compra.lote_baixado': 'Baixa de lote (validade)',
   'conta_pagar.paga': 'Conta paga',
   'conta_pagar.criada': 'Conta a pagar lançada',
+  // relatórios
+  'relatorios.exportado': 'Relatório exportado para Excel',
   // caixa do dia
   'caixa.aberto': 'Abertura de caixa',
   'caixa.sangria': 'Sangria',
@@ -226,6 +228,12 @@ export function resumirAuditoria(
     case 'conta_pagar.paga':
       partes.push(dinheiro(d.valorCentavos), conta(d.conta));
       break;
+    case 'relatorios.exportado': {
+      const periodo = diaBr(d.de) || diaBr(d.ate) ? `${diaBr(d.de) ?? 'início'} a ${diaBr(d.ate) ?? 'hoje'}` : 'todo o período';
+      const abas = typeof d.abas === 'number' && Number.isInteger(d.abas) && d.abas > 0 ? `${d.abas} ${d.abas === 1 ? 'aba' : 'abas'}` : null;
+      partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, periodo, abas);
+      break;
+    }
     case 'conta_pagar.criada':
       partes.push(dinheiro(d.valorCentavos), diaBr(d.vencimento) && `vence ${diaBr(d.vencimento)}`, typeof d.categoria === 'string' && d.categoria ? d.categoria : null);
       break;

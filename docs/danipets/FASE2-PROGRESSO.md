@@ -16,7 +16,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 7. Fidelidade | **Concluído** (20/11/2026) |
 | 8. Vale-troca | **Concluído** (20/11/2026) |
 | 9. Financeiro | **Concluído** (23/11/2026) |
-| 10. Relatórios | a fazer |
+| 10. Relatórios | **Concluído** (23/11/2026) |
 | 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer |
 | 15. Consolidação (Fase 3) | a fazer |
 
@@ -647,6 +647,74 @@ Sem tabela nova (decisão P3): o Financeiro fica na demonstração (o contrato `
   - conta de energia (exemplo) paga pelo Banco Itaú;
   - tema escuro; celular (390 px) sem rolagem para o lado e os cards em duas colunas;
   - console sem erros.
+
+---
+
+## Módulo 10 — Relatórios
+
+O pedido do Luan (23/11/2026, 3ª imagem): *"Relatórios, quero que traga todas as informações referentes ao sistema, mas
+de forma organizada por abas e maneiras de filtrar, e também dando a opção de exportar todas as informações para o
+Excel."*
+
+### Como ficou
+
+- **Período no topo**, valendo para todas as abas: Todas, Hoje, Ontem, Últimos 7 dias, Este mês ou De/Até.
+- **Abas**, cada uma com os filtros dela e **Exportar esta aba (Excel)**, que leva o que a tabela mostra:
+  - **Vendas** (a de antes): quem vendeu, cliente e pagamento; total, ticket médio, itens, descontos, devoluções,
+    canceladas e taxas; por quem vendeu, por forma de pagamento e a lista das vendas. No Excel: vendas, itens
+    vendidos, pagamentos e devoluções;
+  - **Produtos** (DaniPets REL-03 e REL-04): mais vendidos (por R$, quantidade ou lucro), sem o devolvido; custo
+    médio da hora da venda; **lucro estimado** = vendas dos produtos com custo − custo − taxas de cartão − cashback
+    usado, com a margem. Produto vendido sem custo fica de fora e é contado à parte; sem custo nenhum, o lucro
+    aparece como "—" (sem inventar número);
+  - **Estoque** (REL-08): posição no período (no início, entradas, ajustes, vendido, devolvido, no fim, mínimo,
+    situação, custo médio e valor em estoque) e os movimentos; filtros de busca, situação e inativos;
+  - **Clientes**: compras e total no período, ticket médio, última compra, fiado em aberto e vencido, limite, e os
+    vales-troca emitidos; filtros de busca, "compraram no período", "com fiado" e inativos. O CPF sai mascarado;
+  - **Financeiro**: lançamentos (com o nome que a loja deu a cada conta), despesas por categoria, o que há a receber
+    e a pagar; filtros de conta, entradas/saídas e categoria;
+  - **Caixa**: cada dia (abertura, fechamento, esperado, contado, diferença, justificativa, situação), com "só os
+    dias com diferença";
+  - **Compras**: compras e itens comprados, por fornecedor e pagamento;
+  - **Histórico** (REL-09): quem fez o quê, com filtros de pessoa, ação e busca.
+- **Exportar tudo (Excel)**: um arquivo com 17 abas — Resumo (período, total vendido, devoluções, vendas líquidas,
+  ticket médio, custo, taxas, cashback, lucro estimado, entradas e saídas), Vendas, Itens vendidos, Pagamentos,
+  Devoluções, Produtos vendidos, Posição de estoque, Movimentos de estoque, Clientes, Vales-troca, Lançamentos,
+  A receber, A pagar, Caixa do dia, Compras, Itens comprados e Histórico.
+- **O arquivo do Excel** (.xlsx) é feito no próprio navegador, sem biblioteca de fora (`apps/web/src/relatorios/xlsx.ts`):
+  dinheiro vai como número com formato "R$" (dá para somar no Excel), datas como data, a primeira linha fica em
+  negrito, congelada e com filtro. Texto nunca vira fórmula (proteção contra fórmula, REL-10). O nome do arquivo diz o
+  assunto e o período (ex.: `relatorio-tudo-2026-11-01-a-2026-11-23.xlsx`).
+- **Histórico**: cada exportação fica registrada ("Relatório exportado para Excel": o assunto, o período e quantas
+  abas), por causa da LGPD (a planilha pode levar dados de clientes).
+- Parte que o servidor ainda não tiver fica de fora (a aba avisa) e o resto continua.
+
+### O que ficou para outro módulo (e por quê)
+
+- **CSV**: o Excel já cobre; se precisar de CSV para outro programa, entra em Dados e backup (módulo 13).
+- **Custo nos produtos dos exemplos**: os exemplos da demonstração não têm compras, então o lucro deles aparece como
+  "sem custo registrado"; ao registrar uma compra, o custo passa a valer nas próximas vendas.
+
+### Servidor
+
+Sem tabela nova: os relatórios leem as outras partes. `registrarExportacao` entrou no contrato (`ApiRelatorios`); no
+sistema real, sem essa parte, a exportação funciona e só não fica no histórico.
+
+### Testes e conferência
+
+- **Testes automáticos**:
+  - núcleo 406 (o resumo "Relatório exportado para Excel" entrou no teste do histórico);
+  - servidor 134;
+  - tela 393 (+17): 6 do arquivo do Excel (CRC, ZIP, nomes de aba, datas, tipos das células, texto que parece
+    fórmula, primeira linha congelada e com filtro), 7 das planilhas (lucro estimado com o custo da hora da venda e
+    sem o devolvido, sem custo, posição de estoque no período, clientes com CPF mascarado, caixa, histórico, as 17
+    abas do "tudo", nome do arquivo e parte que falta no servidor) e 4 da tela (as 8 abas, filtros, período do topo,
+    exportar esta aba e exportar tudo com o registro no histórico). Os 7 testes antigos de Relatórios continuam.
+- **Navegador**:
+  - as 8 abas abrem com a tabela de cada uma;
+  - "Exportar esta aba" e "Exportar tudo" baixam o .xlsx (17 abas);
+  - o arquivo baixado abre no openpyxl (tipos, formato "R$", data, linha congelada, filtro) e no LibreOffice;
+  - celular (390 px) sem rolagem para o lado; console sem erros.
 
 ---
 

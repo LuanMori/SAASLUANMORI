@@ -665,7 +665,24 @@ export interface ApiLoja {
  * estoque (baixa e devolução), clientes (histórico), financeiro (Caixa, Banco e cartão a receber),
  * Visão geral e Relatórios.
  */
-export type ApiPainel = ApiProdutos & ApiVendas & ApiEstoque & ApiClientes & ApiFinanceiro & ApiLoja & ApiFornecedores & ApiCompras & ApiCaixa & ApiFidelidade & ApiVales;
+// ---- Relatórios (Fase 2, módulo 10): os dados vêm das outras partes; aqui só o registro de quem exportou.
+export interface ApiRelatorios {
+  /** Registra no histórico que alguém exportou relatórios para o Excel (o assunto, o período e quantas abas). */
+  registrarExportacao(dados: { assunto: string; de: string | null; ate: string | null; abas: number }): Promise<void>;
+}
+
+export type ApiPainel = ApiProdutos &
+  ApiVendas &
+  ApiEstoque &
+  ApiClientes &
+  ApiFinanceiro &
+  ApiLoja &
+  ApiFornecedores &
+  ApiCompras &
+  ApiCaixa &
+  ApiFidelidade &
+  ApiVales &
+  ApiRelatorios;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

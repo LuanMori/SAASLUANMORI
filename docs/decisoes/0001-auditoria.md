@@ -70,6 +70,9 @@ conta). Os nomes que a loja dá às contas ("Banco Itaú") são lidos na hora de
 fez: nos detalhes fica só o id da conta (`caixa` ou `banco`). Trocar o nome entra como "regras da loja alteradas"
 (categorias de despesa e nomes das contas), sem o nome novo.
 
+Módulo 10 (Relatórios, 23/11/2026): relatório exportado para Excel (o assunto — Vendas, Clientes, Tudo… —, o período e
+quantas abas). O conteúdo da planilha não vai para o histórico.
+
 O resumo de cada linha ("venda nº 00012 • R$ 5,00 de desconto • autorizado por Ana") sai de
 `resumirAuditoria` (`@saas/core`), igual no servidor e na demonstração; o nome de quem autorizou é
 buscado na hora (nos detalhes fica só o id). **Cada domínio novo entra aqui** (caixa, compras,
