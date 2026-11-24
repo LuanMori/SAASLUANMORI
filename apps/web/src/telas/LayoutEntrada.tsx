@@ -1,108 +1,100 @@
-// apps/web/src/telas/LayoutEntrada.tsx — o molde das telas antes de entrar (entrada e primeiro acesso), no formato da
-// imagem do Luan (24/11/2026): à esquerda, o painel verde com a loja em destaque (o desenho da loja num selo, o nome
-// dela, a frase e os destaques do sistema); à direita, a nossa logo e o formulário. No celular, o painel vira uma
-// faixa com a loja e a frase.
-// Sem imagem de fora (a página não carrega nada de outro endereço): o fundo de prateleiras é um desenho em SVG,
-// desfocado, e as curvas dos cantos são gradientes.
+// apps/web/src/telas/LayoutEntrada.tsx — o molde das telas antes de entrar (entrada e primeiro acesso), no modelo do
+// Luan (24/11/2026): fundo claro com manchas verdes; à esquerda a logo com "PDV · Estoque · Financeiro", a chamada,
+// o texto e os recursos; no meio a ilustração da loja; à direita o cartão de entrada, com a logo e a loja do endereço
+// num selo. O tema e o Suporte ficam no canto. No celular, ficam a logo e o cartão.
+// Sem imagem de fora (a página não carrega nada de outro endereço): a ilustração é um SVG feito por código
+// (ilustracaoLoja.ts) e as manchas são gradientes.
 import type { ReactNode } from 'react';
 import { Logo } from '../Logo';
 import { MARCA } from '../marca';
+import { ILUSTRACAO_LOJA } from './ilustracaoLoja';
+
+const ILUSTRACAO = ILUSTRACAO_LOJA();
 
 export function LayoutEntrada({ loja, acoes, children }: { loja: { nome: string } | null; acoes: ReactNode; children: ReactNode }) {
   return (
     <div className="entrada">
-      <PainelDaLoja loja={loja} />
-      <div className="entrada-lado">
-        <div className="entrada-acoes">{acoes}</div>
-        <main className="entrada-coluna">
-          <div className="entrada-logo">
-            <Logo />
+      <div className="entrada-acoes">{acoes}</div>
+      <section className="entrada-vitrine" aria-label="Apresentação">
+        <div className="entrada-vitrine-marca">
+          <Logo />
+          <p className="entrada-vitrine-linha">{MARCA.linha}</p>
+        </div>
+        <div className="entrada-vitrine-corpo">
+          <div className="entrada-vitrine-texto">
+            <p className="entrada-vitrine-chamada">
+              {MARCA.chamada.map((linha, i) => (
+                <span key={linha}>
+                  {i > 0 && <br />}
+                  {linha}
+                </span>
+              ))}
+            </p>
+            <span className="entrada-vitrine-traco" aria-hidden="true" />
+            <p className="entrada-vitrine-descricao">{MARCA.descricao}</p>
+            <ul className="entrada-vitrine-recursos" aria-label="Recursos do sistema">
+              {MARCA.recursos.map((r) => (
+                <li key={r.texto}>
+                  <span className="entrada-vitrine-icone">
+                    <IconeRecurso icone={r.icone} />
+                  </span>
+                  {r.texto}
+                </li>
+              ))}
+            </ul>
           </div>
-          {children}
-        </main>
-        <footer className="entrada-rodape">
-          <Logo tamanho="pequena" />
-        </footer>
-      </div>
+          <div className="entrada-vitrine-ilustracao" aria-hidden="true">
+            <img src={ILUSTRACAO} alt="" width={552} height={350} />
+          </div>
+        </div>
+      </section>
+      <main className="entrada-cartao">
+        <div className="entrada-logo">
+          <Logo />
+        </div>
+        {loja && (
+          <p className="entrada-loja-selo" aria-label={`Loja: ${loja.nome}`}>
+            <IconeLojaPequena />
+            <span>{loja.nome}</span>
+          </p>
+        )}
+        {children}
+      </main>
     </div>
   );
 }
 
-/** A loja do endereço, com a frase e os destaques do sistema. O nome da loja é lido pelo título do formulário. */
-function PainelDaLoja({ loja }: { loja: { nome: string } | null }) {
+function IconeLojaPequena() {
   return (
-    <aside className="entrada-marca" aria-label="Apresentação">
-      <div className="entrada-marca-prateleiras" aria-hidden="true" />
-      <div className="entrada-marca-conteudo">
-        <span className="entrada-marca-selo" aria-hidden="true">
-          <IconeLoja />
-        </span>
-        <p className="entrada-marca-loja" aria-hidden="true">
-          {loja?.nome ?? MARCA.nome}
-        </p>
-        <p className="entrada-marca-slogan">{MARCA.slogan}</p>
-        <span className="entrada-marca-traco" aria-hidden="true" />
-        <ul className="entrada-marca-destaques" aria-label="Recursos do sistema">
-          {MARCA.destaques.map((d) => (
-            <li key={d.titulo}>
-              <IconeDestaque icone={d.icone} />
-              <b>{d.titulo}</b>
-              <span>{d.texto}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </aside>
-  );
-}
-
-/** A fachada da loja: letreiro, toldo listrado com a borda recortada, vitrine, porta e calçada. */
-function IconeLoja() {
-  return (
-    <svg className="entrada-marca-icone-loja" viewBox="0 0 96 96" fill="none" strokeLinecap="round" strokeLinejoin="round" focusable="false">
-      {/* fachada (fica atrás do toldo) */}
-      <path d="M17 40v44h62V40" fill="rgba(255,255,255,0.08)" stroke="#fff" strokeWidth="3.4" />
-      {/* vitrine, com o reflexo */}
-      <rect x="23" y="52" width="25" height="19" rx="3" fill="rgba(134,239,192,0.22)" stroke="#fff" strokeWidth="3" />
-      <path d="M28 66l6-9M34 66l3.5-5" stroke="rgba(255,255,255,0.6)" strokeWidth="2" />
-      {/* porta */}
-      <path d="M55 84V55a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v29" fill="#86efc0" stroke="#fff" strokeWidth="3" />
-      <circle cx="68.5" cy="69" r="1.8" fill="#05452f" />
-      {/* calçada */}
-      <path d="M8 84h80" stroke="#fff" strokeWidth="3.4" />
-      {/* letreiro */}
-      <rect x="12" y="10" width="72" height="11" rx="3.5" fill="#86efc0" stroke="#fff" strokeWidth="3" />
-      {/* toldo: 4 gomos, alternando verde e branco, com a borda recortada */}
-      <path d="M14 21h17l-2 17a9.5 7 0 0 1-19 0Z" fill="#86efc0" stroke="#fff" strokeWidth="2.8" />
-      <path d="M31 21h17v17a9.5 7 0 0 1-19 0Z" fill="#fff" stroke="#fff" strokeWidth="2.8" />
-      <path d="M48 21h17l2 17a9.5 7 0 0 1-19 0Z" fill="#86efc0" stroke="#fff" strokeWidth="2.8" />
-      <path d="M65 21h17l4 17a9.5 7 0 0 1-19 0Z" fill="#fff" stroke="#fff" strokeWidth="2.8" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 9.5 5.6 5h12.8L20 9.5" />
+      <path d="M4 9.5c0 1.2.9 2.1 2 2.1s2-.9 2-2.1c0 1.2.9 2.1 2 2.1h4c1.1 0 2-.9 2-2.1 0 1.2.9 2.1 2 2.1s2-.9 2-2.1" />
+      <path d="M5.5 12.5V19h13v-6.5M10 19v-4h4v4" />
     </svg>
   );
 }
 
-function IconeDestaque({ icone }: { icone: (typeof MARCA.destaques)[number]['icone'] }) {
+function IconeRecurso({ icone }: { icone: (typeof MARCA.recursos)[number]['icone'] }) {
   return (
-    <svg className="entrada-marca-icone" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {icone === 'pdv' && (
         <>
-          <path d="M2.5 3.5h2.6l2.3 11h10.9l2.2-7.5H6.2" />
-          <circle cx="9.5" cy="19" r="1.6" />
-          <circle cx="17" cy="19" r="1.6" />
+          <rect x="4" y="9.5" width="16" height="10" rx="1.6" />
+          <path d="M7.5 9.5V4.5h9v5M8 13h2M11 13h2M14 13h2M8 16h8" />
         </>
       )}
       {icone === 'estoque' && (
         <>
-          <path d="M3.5 12.5h7v7h-7zM13.5 12.5h7v7h-7zM8.5 4.5h7v7h-7z" />
-          <path d="M6 15h2M16 15h2M11 7h2" />
+          <path d="M12 3.5 20 8v8l-8 4.5L4 16V8Z" />
+          <path d="M4 8l8 4.5L20 8M12 12.5v8" />
         </>
       )}
       {icone === 'financeiro' && (
         <>
-          <path d="M4 20.5h16" />
-          <rect x="5" y="12" width="3.2" height="6" rx="1" />
-          <rect x="10.4" y="8" width="3.2" height="10" rx="1" />
-          <rect x="15.8" y="4" width="3.2" height="14" rx="1" />
+          <path d="M4 20h16" />
+          <rect x="5.5" y="12.5" width="3" height="5" rx="0.8" />
+          <rect x="10.5" y="8.5" width="3" height="9" rx="0.8" />
+          <rect x="15.5" y="4.5" width="3" height="13" rx="0.8" />
         </>
       )}
     </svg>

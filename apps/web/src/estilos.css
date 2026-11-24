@@ -37,10 +37,11 @@
   --fundo-pdv: #eef2f0;
   --fundo-entrada: #f2f4f3;
   /* tela de entrada: o painel da marca (verde) e o lado do formulário */
-  --marca-fundo-1: #0d6a48;
-  --marca-fundo-2: #08482f;
-  --marca-fundo-3: #04261a;
-  --entrada-painel: #f8faf9;
+  --entrada-fundo: #f3f8f5;
+  --entrada-mancha: rgba(11, 127, 85, 0.1);
+  --entrada-mancha-forte: rgba(11, 127, 85, 0.09);
+  --entrada-cartao-borda: rgba(16, 70, 45, 0.07);
+  --marca-texto: #0f3d2e;
   color-scheme: light;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--texto);
@@ -146,83 +147,64 @@ h2 { font-size: 1.05rem; }
 }
 
 /* ------------------------------------------------------------------ Logo (provisória) */
-.logo { display: inline-flex; align-items: center; gap: 12px; color: var(--texto-forte); }
-.logo-simbolo { width: 48px; height: 48px; flex: none; color: var(--primaria-texto); }
-.logo-nome { font-weight: 700; font-size: 1.7rem; letter-spacing: -0.01em; }
+.logo { display: inline-flex; align-items: center; gap: 12px; color: var(--marca-texto); }
+.logo-simbolo { width: 48px; height: 48px; flex: none; color: var(--primaria); filter: drop-shadow(0 4px 10px rgba(11, 127, 85, 0.25)); }
+.logo-nome { font-weight: 700; font-size: 1.7rem; letter-spacing: -0.015em; }
 .logo-pequena { gap: 8px; }
 .logo-pequena .logo-simbolo { width: 26px; height: 26px; }
 .logo-pequena .logo-nome { font-size: 1rem; }
 
 /* ------------------------------------------------------------------ Tela de entrada
-   Pedido do Luan (24/11/2026, com a imagem de referência): mais da nossa marca e menos do nome do cliente.
-   À esquerda, o painel da marca; à direita, o formulário (a loja aparece só nele), com o canto arredondado por cima
-   do verde. No celular, o painel vira uma faixa. Sem imagem de fora: gradientes, círculos de luz e pontos em SVG. */
-.entrada { min-height: 100vh; display: grid; grid-template-columns: minmax(380px, 44%) minmax(0, 1fr); background: var(--marca-fundo-3); }
+   Modelo do Luan (24/11/2026): fundo claro com manchas verdes; à esquerda a logo, a chamada, o texto e os recursos;
+   no meio a ilustração da loja (SVG feito por código); à direita o cartão de entrada, com a loja do endereço num
+   selo. O tema e o Suporte ficam no canto. Sem imagem de fora. */
+.entrada {
+  position: relative; isolation: isolate; overflow: hidden; min-height: 100vh;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); align-items: center; gap: clamp(24px, 3vw, 56px);
+  padding: 40px clamp(20px, 5vw, 88px); background: var(--entrada-fundo);
+}
+.entrada::before, .entrada::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
+.entrada::before { width: 1100px; height: 900px; right: -440px; top: -430px; background: radial-gradient(closest-side, var(--entrada-mancha), transparent 72%); }
+.entrada::after { width: 1000px; height: 720px; left: -380px; bottom: -440px; background: radial-gradient(closest-side, var(--entrada-mancha), transparent 72%); }
 
-.entrada-marca {
-  position: relative; isolation: isolate; overflow: hidden; min-width: 0; color: #fff;
-  display: flex; flex-direction: column; justify-content: center; padding: 56px 72px 56px 44px;
-  background: linear-gradient(165deg, var(--marca-fundo-1) 0%, var(--marca-fundo-2) 50%, var(--marca-fundo-3) 100%);
+.entrada-vitrine { min-width: 0; display: flex; flex-direction: column; gap: 34px; }
+.entrada-vitrine-marca .logo { gap: 14px; }
+.entrada-vitrine-marca .logo-simbolo { width: 62px; height: 62px; }
+.entrada-vitrine-marca .logo-nome { font-size: 2.3rem; }
+.entrada-vitrine-linha { margin: 6px 0 0 76px; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--suave); }
+.entrada-vitrine-corpo { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); align-items: center; }
+.entrada-vitrine-texto { position: relative; z-index: 1; }
+.entrada-vitrine-chamada { margin: 0; font-size: clamp(2.2rem, 3.5vw, 3.3rem); font-weight: 800; line-height: 1.08; letter-spacing: -0.025em; color: var(--marca-texto); }
+.entrada-vitrine-traco { display: block; width: 72px; height: 4px; margin: 24px 0 22px; border-radius: 4px; background: var(--primaria); }
+.entrada-vitrine-descricao { margin: 0; max-width: 340px; font-size: 1.06rem; line-height: 1.55; color: var(--texto); }
+.entrada-vitrine-recursos { list-style: none; margin: 30px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.entrada-vitrine-recursos li { display: flex; align-items: center; gap: 14px; font-size: 1.04rem; color: var(--texto-forte); }
+.entrada-vitrine-icone { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; background: var(--primaria-clara); color: var(--primaria-texto); }
+.entrada-vitrine-icone svg { width: 24px; height: 24px; }
+.entrada-vitrine-ilustracao { position: relative; isolation: isolate; min-width: 0; margin-left: -64px; }
+/* a mancha verde atrás da loja */
+.entrada-vitrine-ilustracao::before {
+  content: ''; position: absolute; inset: -6% 6% 2% 14%; z-index: -1;
+  border-radius: 46% 54% 42% 58% / 56% 40% 60% 44%; background: var(--entrada-mancha-forte);
 }
-/* fundo de prateleiras (desenho, não foto), desfocado e mais apagado no meio, onde fica o texto */
-.entrada-marca-prateleiras {
-  position: absolute; inset: -24px; z-index: -2; pointer-events: none; opacity: 0.17; filter: blur(3px);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='150' viewBox='0 0 240 150'%3E%3Cg fill='%23ffffff'%3E%3Crect x='0' y='136' width='240' height='6' fill-opacity='0.55'/%3E%3Crect x='10' y='80' width='20' height='56' rx='4' fill-opacity='0.35'/%3E%3Crect x='34' y='62' width='16' height='74' rx='6' fill-opacity='0.5'/%3E%3Crect x='54' y='92' width='28' height='44' rx='3' fill-opacity='0.3'/%3E%3Crect x='86' y='72' width='18' height='64' rx='5' fill-opacity='0.45'/%3E%3Crect x='108' y='84' width='30' height='52' rx='3' fill-opacity='0.32'/%3E%3Crect x='142' y='58' width='16' height='78' rx='7' fill-opacity='0.5'/%3E%3Crect x='162' y='96' width='26' height='40' rx='3' fill-opacity='0.3'/%3E%3Crect x='192' y='76' width='20' height='60' rx='4' fill-opacity='0.42'/%3E%3Crect x='216' y='88' width='18' height='48' rx='4' fill-opacity='0.34'/%3E%3C/g%3E%3C/svg%3E"); background-size: 240px 150px;
-  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.35), #000 78%);
-  mask-image: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.35), #000 78%);
-}
-/* as curvas verde-claras dos cantos (como na imagem de referência) */
-.entrada-marca::before, .entrada-marca::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
-.entrada-marca::before {
-  width: 720px; height: 720px; left: -470px; top: -540px;
-  background: linear-gradient(140deg, #34e3a0 0%, #14b57a 45%, rgba(11, 127, 85, 0.15) 100%);
-  box-shadow: 0 0 60px rgba(52, 227, 160, 0.25);
-}
-.entrada-marca::after {
-  width: 820px; height: 820px; right: -560px; bottom: -650px;
-  background: linear-gradient(320deg, #34e3a0 0%, #14b57a 45%, rgba(11, 127, 85, 0.15) 100%);
-  box-shadow: 0 0 60px rgba(52, 227, 160, 0.25);
-}
-.entrada-marca-conteudo { width: 100%; max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; text-align: center; }
-/* a fachada da loja num selo de vidro */
-.entrada-marca-selo {
-  display: grid; place-items: center; width: 148px; height: 148px; border-radius: 36px;
-  background: linear-gradient(155deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05));
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(8px);
-}
-.entrada-marca-icone-loja { width: 112px; height: 112px; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.25)); }
-.entrada-marca-loja {
-  margin: 28px 0 0; max-width: 100%; font-size: clamp(2.6rem, 4.4vw, 3.8rem); font-weight: 800; line-height: 1.05;
-  letter-spacing: -0.025em; overflow-wrap: anywhere; text-shadow: 0 4px 28px rgba(0, 0, 0, 0.3);
-}
-.entrada-marca-slogan { margin: 14px 0 0; font-size: 1.2rem; color: rgba(255, 255, 255, 0.94); }
-.entrada-marca-traco {
-  width: 96px; height: 5px; margin: 26px 0 36px; border-radius: 5px;
-  background: linear-gradient(90deg, #34e3a0, #14b57a); box-shadow: 0 0 18px rgba(52, 227, 160, 0.45);
-}
-.entrada-marca-destaques { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.entrada-marca-destaques li {
-  display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 18px 10px 16px;
-  background: rgba(2, 24, 16, 0.38); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 16px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06); backdrop-filter: blur(6px);
-}
-.entrada-marca-icone { width: 32px; height: 32px; margin-bottom: 6px; color: #34e3a0; }
-.entrada-marca-destaques b { font-size: 1.05rem; }
-.entrada-marca-destaques span { font-size: 0.85rem; line-height: 1.3; color: rgba(255, 255, 255, 0.9); overflow-wrap: anywhere; }
+.entrada-vitrine-ilustracao img { display: block; width: 100%; height: auto; }
+:root[data-tema='escuro'] .entrada-vitrine-ilustracao img { filter: brightness(0.9) saturate(0.95); }
 
-.entrada-lado {
-  position: relative; z-index: 1; min-width: 0; margin-left: -28px; padding: 84px 32px 20px;
-  display: flex; flex-direction: column; align-items: center;
-  background: var(--entrada-painel); border-radius: 28px 0 0 28px; box-shadow: -18px 0 48px rgba(3, 40, 26, 0.22);
+.entrada-cartao {
+  position: relative; z-index: 1; min-width: 0; display: flex; flex-direction: column;
+  padding: 38px 36px 32px; background: var(--superficie); border: 1px solid var(--entrada-cartao-borda); border-radius: 24px;
+  box-shadow: 0 30px 70px rgba(16, 70, 45, 0.12), 0 4px 14px rgba(16, 70, 45, 0.05);
 }
-.entrada-coluna { width: 100%; max-width: 440px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
-.entrada-logo { display: flex; justify-content: center; margin-bottom: 34px; }
+.entrada-logo { display: flex; justify-content: center; margin-bottom: 20px; }
+.entrada-loja-selo {
+  align-self: center; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; margin: 0 0 16px; padding: 5px 12px 5px 9px;
+  border-radius: 999px; background: var(--primaria-clara); color: var(--primaria-texto); font-size: 0.86rem; font-weight: 600;
+}
+.entrada-loja-selo svg { width: 18px; height: 18px; flex: none; }
+.entrada-loja-selo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entrada-form { width: 100%; display: flex; flex-direction: column; }
-.entrada-loja { font-size: 2.5rem; font-weight: 500; letter-spacing: -0.01em; color: var(--texto-forte); text-align: center; line-height: 1.15; overflow-wrap: anywhere; }
-.entrada-boas-vindas { margin: 8px 0 6px; text-align: center; font-size: 1.6rem; font-weight: 600; color: var(--primaria-texto); }
-.entrada-subtitulo { margin: 0 0 28px; text-align: center; font-size: 0.98rem; color: var(--suave); }
+.entrada-titulo { margin: 0; text-align: center; font-size: 1.75rem; font-weight: 700; line-height: 1.2; color: var(--marca-texto); overflow-wrap: anywhere; }
+.entrada-subtitulo { margin: 8px 0 26px; text-align: center; font-size: 0.98rem; color: var(--suave); }
 .entrada-form > .alerta { margin: 0 0 18px; }
 
 .entrada-campo { display: flex; flex-direction: column; margin-bottom: 20px; }
@@ -241,26 +223,18 @@ h2 { font-size: 1.05rem; }
 .entrada-olho { border: 0; background: none; padding: 6px; margin-right: -4px; cursor: pointer; color: var(--suave); border-radius: 8px; display: grid; }
 .entrada-olho:hover { background: var(--primaria-clara); color: var(--primaria-texto); }
 .entrada-olho .icone { color: inherit; }
-.entrada-olho:focus-visible, .entrada-link:focus-visible, .entrada-suporte-botao:focus-visible, .entrada-dica:focus-visible, .entrada-tema:focus-visible {
+.entrada-olho:focus-visible, .entrada-link:focus-visible, .entrada-suporte-botao:focus-visible, .entrada-tema:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 2px;
 }
 .entrada-caps { margin-top: 6px; font-size: 0.85rem; color: var(--aviso); }
 
-.entrada-dica { position: relative; display: inline-grid; color: var(--primaria-texto); cursor: help; border-radius: 50%; }
-.entrada-dica .icone { width: 20px; height: 20px; color: inherit; }
-.entrada-dica-balao {
-  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); width: max-content; max-width: 240px;
-  background: #1c2430; color: #fff; font-size: 0.82rem; padding: 8px 12px; border-radius: 10px; line-height: 1.35;
-  opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 2;
-}
-.entrada-dica:hover .entrada-dica-balao, .entrada-dica:focus-visible .entrada-dica-balao { opacity: 1; }
 
 .entrada-botao {
   height: 54px; margin-top: 4px; border-radius: 12px; font-weight: 600; font-size: 1.05rem;
   box-shadow: 0 2px 6px color-mix(in srgb, var(--primaria) 30%, transparent);
 }
 .entrada-botao:disabled {
-  background: color-mix(in srgb, var(--primaria) 55%, var(--entrada-painel)); border-color: transparent; color: #fff;
+  background: color-mix(in srgb, var(--primaria) 55%, var(--superficie)); border-color: transparent; color: #fff;
   cursor: not-allowed; opacity: 1; box-shadow: none;
 }
 .entrada-link {
@@ -272,7 +246,7 @@ h2 { font-size: 1.05rem; }
 
 /* Suporte: pílula com fone de ouvido no canto superior direito */
 /* canto de cima: tema claro / escuro (pedido do Luan, 24/11/2026) e Suporte */
-.entrada-acoes { position: absolute; top: 16px; right: 16px; z-index: 3; display: flex; align-items: flex-start; gap: 10px; }
+.entrada-acoes { position: absolute; top: 18px; right: 22px; z-index: 3; display: flex; align-items: flex-start; gap: 10px; }
 .entrada-tema {
   display: grid; place-items: center; width: 48px; height: 48px; padding: 0; flex: none;
   background: var(--superficie); border: 1px solid color-mix(in srgb, var(--primaria) 35%, var(--superficie)); border-radius: 50%;
@@ -300,29 +274,27 @@ h2 { font-size: 1.05rem; }
 .entrada-suporte-caixa p { margin: 0 0 8px; }
 .entrada-suporte-caixa a { color: var(--primaria-texto); font-weight: 600; overflow-wrap: anywhere; }
 
-.entrada-rodape { width: 100%; max-width: 440px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--borda); display: flex; justify-content: center; }
-
-/* tablet e celular: o painel vira uma faixa com a loja e a frase; o formulário sobe por cima dela e não repete o nome
-   da loja na tela (o título continua lá para quem usa leitor de tela) */
+/* tela média: sem a ilustração; celular e tablet: a logo em cima e o cartão */
+@media (max-width: 1200px) {
+  .entrada-vitrine-corpo { grid-template-columns: minmax(0, 1fr); }
+  .entrada-vitrine-ilustracao { display: none; }
+}
 @media (max-width: 900px) {
-  .entrada { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .entrada-marca { padding: 22px 20px 54px; }
-  .entrada-marca::before { width: 420px; height: 420px; left: -300px; top: -330px; }
-  .entrada-marca::after { width: 420px; height: 420px; right: -310px; bottom: -330px; }
-  .entrada-marca-selo { width: 68px; height: 68px; border-radius: 18px; }
-  .entrada-marca-icone-loja { width: 52px; height: 52px; }
-  .entrada-marca-loja { margin-top: 12px; font-size: 2rem; }
-  .entrada-marca-slogan { margin-top: 6px; font-size: 0.95rem; }
-  .entrada-marca-traco, .entrada-marca-destaques { display: none; }
-  .entrada-lado { margin: -28px 0 0; padding: 18px 16px 20px; border-radius: 28px 28px 0 0; box-shadow: 0 -12px 36px rgba(3, 40, 26, 0.18); }
-  .entrada-acoes { position: static; align-self: flex-end; margin-bottom: 6px; }
-  .entrada-coluna { justify-content: flex-start; }
-  .entrada-logo { margin-bottom: 18px; }
-  .entrada-loja-nome { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .entrada { grid-template-columns: minmax(0, 1fr); align-items: start; align-content: start; gap: 24px; padding: 84px 16px 28px; }
+  .entrada-vitrine { align-items: center; gap: 8px; }
+  /* tablet: a ilustração entre a marca e o cartão (sem o texto) */
+  .entrada-vitrine-corpo { display: block; width: 100%; max-width: 420px; }
+  .entrada-vitrine-texto { display: none; }
+  .entrada-vitrine-ilustracao { display: block; margin: 0; }
+  .entrada-vitrine-marca .logo-simbolo { width: 48px; height: 48px; }
+  .entrada-vitrine-marca .logo-nome { font-size: 1.8rem; }
+  .entrada-vitrine-linha { margin: 6px 0 0; text-align: center; }
+  .entrada-cartao { width: 100%; max-width: 460px; justify-self: center; padding: 28px 20px 24px; }
+  .entrada-cartao .entrada-logo { display: none; }
 }
 @media (max-width: 640px) {
-  .entrada-loja { font-size: 1.8rem; }
-  .entrada-boas-vindas { font-size: 1.35rem; }
+  .entrada-vitrine-corpo { display: none; }
+  .entrada-titulo { font-size: 1.5rem; }
   .entrada-subtitulo { margin-bottom: 22px; }
 }
 
@@ -1281,16 +1253,17 @@ h2 { font-size: 1.05rem; }
   --sucesso-linha: #182a20;
   --fundo-pdv: #151816;
   --fundo-entrada: #121413;
-  --marca-fundo-1: #0a5539;
-  --marca-fundo-2: #063723;
-  --marca-fundo-3: #021810;
-  --entrada-painel: #141716;
+  --entrada-fundo: #0f1412;
+  --entrada-mancha: rgba(11, 127, 85, 0.16);
+  --entrada-mancha-forte: rgba(11, 127, 85, 0.13);
+  --entrada-cartao-borda: #2a302c;
+  --marca-texto: #e9f4ee;
 }
 :root[data-tema='escuro'] .botao-perigo { background: #b3301e; border-color: #b3301e; }
 :root[data-tema='escuro'] .botao-perigo:hover { background: #962716; }
 :root[data-tema='escuro'] .sidebar { box-shadow: inset -1px 0 0 var(--borda); }
 :root[data-tema='escuro'] .modal-caixa { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); }
-:root[data-tema='escuro'] .entrada-botao:disabled { background: color-mix(in srgb, var(--primaria) 45%, var(--entrada-painel)); color: rgba(255, 255, 255, 0.75); }
+:root[data-tema='escuro'] .entrada-botao:disabled { background: color-mix(in srgb, var(--primaria) 45%, var(--superficie)); color: rgba(255, 255, 255, 0.75); }
 
 /* ------------------------------------------------------------------ Financeiro (Fase 2, módulo 9) */
 .fin-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }

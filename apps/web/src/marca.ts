@@ -9,12 +9,16 @@ export const MARCA = {
     texto: 'Precisa de ajuda? Fale com o suporte do Nome da empresa.',
     email: 'suporte@nomedaempresa.com.br',
   },
-  /** Frase do painel da tela de entrada, embaixo do nome da loja (pedido do Luan, 24/11/2026). */
-  slogan: 'Gestão integrada e eficiente para o seu negócio',
-  /** Os destaques do sistema no painel da tela de entrada (o ícone de cada um fica em telas/LayoutEntrada.tsx). */
-  destaques: [
-    { icone: 'pdv', titulo: 'PDV', texto: 'Vendas ágeis e seguras' },
-    { icone: 'estoque', titulo: 'Estoque', texto: 'Lotes e validades sob controle' },
-    { icone: 'financeiro', titulo: 'Financeiro', texto: 'Fluxo de caixa e resultados' },
+  /** A linha embaixo da logo, na tela de entrada (modelo do Luan, 24/11/2026). */
+  linha: 'PDV · Estoque · Financeiro',
+  /** A chamada da tela de entrada: cada item, uma linha. */
+  chamada: ['Sua loja,', 'mais organizada', 'e lucrativa.'],
+  /** O texto embaixo da chamada. */
+  descricao: 'Um sistema completo para gerenciar vendas (PDV), estoque, financeiro e o dia a dia do seu negócio.',
+  /** Os recursos listados na tela de entrada (o ícone de cada um fica em telas/LayoutEntrada.tsx). */
+  recursos: [
+    { icone: 'pdv', texto: 'PDV e vendas' },
+    { icone: 'estoque', texto: 'Controle de estoque' },
+    { icone: 'financeiro', texto: 'Gestão financeira' },
   ],
 } as const;

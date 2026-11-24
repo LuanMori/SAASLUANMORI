@@ -938,3 +938,38 @@ esta.
   rótulos novos; a ajuda da senha.
 - **Navegador:** PC (1366 e 1920 px), tablet e celular, no claro e no escuro, mais o primeiro acesso: sem rolagem para
   o lado (no PC e no tablet, sem rolagem nenhuma); o tema continua trocando e sendo guardado; console sem erros.
+
+### 24/11/2026 (modelo novo do Luan): marca, chamada, ilustração da loja e cartão de entrada
+
+O Luan mandou um modelo novo da tela de entrada (a imagem "LojaGestor"). A tela segue o modelo:
+
+- **Fundo claro** com manchas verdes suaves (no escuro, o fundo escurece e as manchas continuam verdes).
+- **À esquerda:**
+  - a logo nova: a fachada da loja, em branco, num quadrado verde. Ao lado vai o nome da empresa (por enquanto "Nome
+    da empresa") e embaixo "PDV · ESTOQUE · FINANCEIRO";
+  - a chamada "Sua loja, mais organizada e lucrativa." e o texto "Um sistema completo para gerenciar vendas (PDV),
+    estoque, financeiro e o dia a dia do seu negócio.";
+  - os recursos, com ícones: "PDV e vendas", "Controle de estoque", "Gestão financeira".
+- **No meio, a ilustração da loja em 3D** (isométrica), sobre uma mancha verde:
+  - a loja com o toldo listrado verde e branco, o telhado verde e o letreiro com o ícone da loja;
+  - a vitrine com prateleiras e a porta;
+  - a estante aberta com caixas de papelão e uma planta;
+  - o caixa com o monitor do gráfico, as caixas e a planta na frente.
+
+  É desenhada por código (`apps/web/src/telas/ilustracaoLoja.ts`), sem imagem de fora.
+- **À direita, o cartão de entrada:**
+  - a logo, a loja do endereço num selo ("Loja A") e "Bem-vindo de volta!";
+  - "Acesse sua conta e gerencie sua loja.", os campos Usuário ("Ex.: maria.silva") e Senha ("Digite sua senha", com
+    o olho para mostrar), Entrar e "Esqueceu a senha?".
+
+  O selo da loja não estava no modelo. Ficou pequeno, para a pessoa saber em que loja está entrando.
+- O tema claro / escuro e o Suporte continuam no canto de cima.
+- **Tela média** (até 1200 px): sem a ilustração. **Tablet:** a marca, a ilustração e o cartão, um embaixo do outro.
+  **Celular:** a marca e o cartão.
+- O **primeiro acesso** usa o mesmo cartão ("Crie a sua senha").
+- Os textos da marca ficam em `apps/web/src/marca.ts` e a logo em `apps/web/src/Logo.tsx`. O nome "LojaGestor" do
+  modelo ainda não entrou: o nome continua "Nome da empresa" até o Luan confirmar.
+- **Testes:** tela 408: a marca, a chamada, o texto e os recursos; a ilustração embutida e escondida do leitor de tela;
+  o selo da loja; o título "Bem-vindo de volta!".
+- **Navegador:** PC (1366 e 1920 px), tablet e celular, no claro e no escuro, mais o primeiro acesso: sem rolagem
+  nenhuma; o tema continua trocando e sendo guardado; console sem erros.

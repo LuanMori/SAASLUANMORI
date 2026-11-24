@@ -114,11 +114,10 @@ export function TelaCriarSenha({ loja, aoSair, ...resto }: Omit<PropsForm, 'rotu
   return (
     <LayoutEntrada loja={loja} acoes={<BotaoTema className="entrada-tema" />}>
       <section className="entrada-form" aria-labelledby="cs-titulo">
-        <h1 id="cs-titulo" className="entrada-loja entrada-loja-nome">
-          {loja.nome}
+        <h1 id="cs-titulo" className="entrada-titulo">
+          Crie a sua senha
         </h1>
-        <p className="entrada-boas-vindas">Crie a sua senha</p>
-        <p className="suave cs-texto">
+        <p className="entrada-subtitulo cs-texto">
           Olá, {resto.pessoa.nome}. Por segurança, troque a senha provisória por uma senha pessoal, que só você vai saber. Ela vale para entrar no sistema e para autorizar operações no caixa.
         </p>
         <FormTrocarSenha {...resto} rotuloAtual="Senha provisória que você recebeu" textoBotao="Criar a minha senha" />

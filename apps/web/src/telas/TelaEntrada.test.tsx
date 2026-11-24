@@ -21,28 +21,34 @@ function montar(aoEntrar = vi.fn(async (): Promise<ResultadoEntrada> => ({ ok: t
 }
 
 describe('TelaEntrada', () => {
-  it('mostra a loja do subdomínio, sem escolher loja', () => {
+  it('mostra a loja do subdomínio num selo do cartão, sem escolher loja', () => {
     montar();
-    expect(screen.getByRole('heading', { name: 'Pet Shop da Ana' })).toBeTruthy();
-    expect(screen.getByText('Boas-vindas')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta!' })).toBeTruthy();
+    expect(screen.getByText('Acesse sua conta e gerencie sua loja.')).toBeTruthy();
+    expect(screen.getByLabelText('Loja: Pet Shop da Ana').textContent).toBe('Pet Shop da Ana');
     expect(screen.queryByRole('combobox')).toBeNull();
   });
 
-  it('no formato da imagem do Luan: a loja em destaque no painel, com a frase e os destaques; a nossa logo no formulário', () => {
+  it('no modelo do Luan: a marca com "PDV · Estoque · Financeiro", a chamada, o texto e os recursos; a ilustração é só enfeite', () => {
     montar();
-    const painel = screen.getByRole('complementary', { name: 'Apresentação' });
-    expect(within(painel).getByText('Pet Shop da Ana')).toBeTruthy(); // grande, ao lado do desenho da loja
-    expect(within(painel).getByText('Gestão integrada e eficiente para o seu negócio')).toBeTruthy();
-    expect(within(within(painel).getByRole('list', { name: 'Recursos do sistema' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'PDVVendas ágeis e seguras',
-      'EstoqueLotes e validades sob controle',
-      'FinanceiroFluxo de caixa e resultados',
+    const vitrine = screen.getByRole('region', { name: 'Apresentação' });
+    expect(within(vitrine).getByText(MARCA.nome)).toBeTruthy();
+    expect(within(vitrine).getByText('PDV · Estoque · Financeiro')).toBeTruthy();
+    expect(vitrine.querySelector('.entrada-vitrine-chamada')?.textContent).toBe('Sua loja,mais organizadae lucrativa.');
+    expect(within(vitrine).getByText(/Um sistema completo para gerenciar vendas \(PDV\)/)).toBeTruthy();
+    expect(within(within(vitrine).getByRole('list', { name: 'Recursos do sistema' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'PDV e vendas',
+      'Controle de estoque',
+      'Gestão financeira',
     ]);
-    expect(within(painel).queryByText(MARCA.nome)).toBeNull();
-    expect(screen.getAllByText(MARCA.nome)).toHaveLength(2); // a logo em cima do formulário e a do rodapé
-    expect(screen.getByText('Acesse sua conta para continuar.')).toBeTruthy();
-    // o título (para o leitor de tela) é o da loja, uma vez só
-    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Pet Shop da Ana']);
+    // a ilustração da loja: desenho embutido (sem endereço de fora), escondido do leitor de tela
+    const img = document.querySelector('.entrada-vitrine-ilustracao img') as HTMLImageElement;
+    expect(img.getAttribute('src')).toMatch(/^data:image\/svg\+xml,/);
+    expect(img.alt).toBe('');
+    expect(img.closest('[aria-hidden="true"]')).toBeTruthy();
+    // a logo: na vitrine e no cartão; o único título é o do cartão
+    expect(screen.getAllByText(MARCA.nome)).toHaveLength(2);
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Bem-vindo de volta!']);
   });
 
   it('Entrar só libera com usuário e senha preenchidos', async () => {
@@ -87,9 +93,9 @@ describe('TelaEntrada', () => {
     expect((senha as HTMLInputElement).type).toBe('password');
   });
 
-  it('"Esqueceu sua senha?" orienta a pedir ao responsável pela loja', async () => {
+  it('"Esqueceu a senha?" orienta a pedir ao responsável pela loja', async () => {
     montar();
-    await userEvent.click(screen.getByRole('button', { name: 'Esqueceu sua senha?' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Esqueceu a senha?' }));
     expect(screen.getByRole('status').textContent).toBe('Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas por e-mail.');
   });
 

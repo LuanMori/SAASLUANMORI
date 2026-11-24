@@ -53,7 +53,7 @@ describe('App (sistema real, login próprio)', () => {
   it('sem sessão: tela de entrada com o nome da loja; o login manda loja, usuário e senha e abre a área logada', async () => {
     const pedidos = servidor({ 'GET /sessao': semSessao, 'GET /sessao/loja': lojaA, 'POST /sessao': () => [200, DONA], ...listas });
     render(<App urlApi="/api" lojaDev="lojaa" />);
-    expect(await screen.findByRole('heading', { name: 'Loja A' })).toBeTruthy();
+    expect(await screen.findByLabelText('Loja: Loja A')).toBeTruthy();
     await entrar();
     expect(await screen.findByRole('heading', { name: 'Usuários' })).toBeTruthy();
     expect(pedidos.find((p) => p.rota === 'POST /sessao')?.corpo).toEqual({ loja: 'lojaa', usuario: 'dona', senha: 'minha-senha-boa' });

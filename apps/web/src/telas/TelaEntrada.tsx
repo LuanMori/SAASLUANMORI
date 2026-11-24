@@ -1,7 +1,7 @@
 // apps/web/src/telas/TelaEntrada.tsx
 // Tela de entrada (login) com usuário e senha. A loja já vem do subdomínio, então a
 // pessoa não escolhe a loja aqui. Usuário e senha são cadastrados pelo Dono ou pelo
-// super admin; por isso "Esqueceu sua senha?" orienta a pedir a eles.
+// super admin; por isso "Esqueceu a senha?" orienta a pedir a eles.
 //
 // A tela não sabe COMO o login é feito: quem usa passa `aoEntrar`, que devolve
 // { ok: true } ou { ok: false, mensagem }. Mensagens de erro não dizem se o que
@@ -38,7 +38,7 @@ export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
         <FormEntrada loja={loja} aoEntrar={aoEntrar} aviso={aviso} />
       ) : (
         <section className="entrada-form" aria-labelledby="entrada-titulo">
-          <h1 id="entrada-titulo" className="entrada-loja">
+          <h1 id="entrada-titulo" className="entrada-titulo">
             Endereço não encontrado
           </h1>
           <p className="alerta alerta-erro" role="alert">
@@ -50,7 +50,7 @@ export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
   );
 }
 
-function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome: string } }) {
+function FormEntrada({ aoEntrar, aviso }: Required<Props> & { loja: { nome: string } }) {
   const [usuario, setUsuario] = useState('');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
@@ -88,11 +88,10 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
 
   return (
     <form className="entrada-form" onSubmit={enviar} noValidate aria-labelledby="entrada-titulo">
-      <h1 id="entrada-titulo" className="entrada-loja entrada-loja-nome">
-        {loja.nome}
+      <h1 id="entrada-titulo" className="entrada-titulo">
+        Bem-vindo de volta!
       </h1>
-      <p className="entrada-boas-vindas">Boas-vindas</p>
-      <p className="entrada-subtitulo">Acesse sua conta para continuar.</p>
+      <p className="entrada-subtitulo">Acesse sua conta e gerencie sua loja.</p>
 
       {(erro ?? aviso) && (
         <p className="alerta alerta-erro" role="alert">
@@ -103,7 +102,6 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
       <div className="entrada-campo">
         <div className="entrada-rotulo">
           <label htmlFor="entrada-usuario">Usuário</label>
-          <Dica texto="Use o usuário cadastrado pelo responsável da loja (ex.: maria.silva)." />
         </div>
         <div className="entrada-caixa">
           <IconeUsuario />
@@ -115,7 +113,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="Digite seu usuário"
+            placeholder="Ex.: maria.silva"
             maxLength={64}
           />
         </div>
@@ -148,7 +146,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
             aria-label={mostrarSenha ? 'Esconder senha' : 'Mostrar senha'}
             aria-pressed={mostrarSenha}
           >
-            {mostrarSenha ? <IconeOlhoAberto /> : <IconeOlhoFechado />}
+            {mostrarSenha ? <IconeOlhoFechado /> : <IconeOlhoAberto />}
           </button>
         </div>
         {capsLock && (
@@ -163,7 +161,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
       </button>
 
       <button type="button" className="entrada-link" onClick={() => setAjudaSenha((v) => !v)} aria-expanded={ajudaSenha}>
-        Esqueceu sua senha?
+        Esqueceu a senha?
       </button>
       {ajudaSenha && (
         <p className="alerta" role="status">
@@ -192,17 +190,6 @@ function BotaoSuporte() {
         </div>
       )}
     </div>
-  );
-}
-
-function Dica({ texto }: { texto: string }) {
-  return (
-    <span className="entrada-dica" tabIndex={0} role="img" aria-label={texto} title={texto}>
-      <IconeInfo />
-      <span className="entrada-dica-balao" aria-hidden="true">
-        {texto}
-      </span>
-    </span>
   );
 }
 
@@ -237,13 +224,6 @@ const IconeOlhoAberto = () => (
   <Svg>
     <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
     <circle cx="12" cy="12" r="3" />
-  </Svg>
-);
-const IconeInfo = () => (
-  <Svg>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 11v5" />
-    <circle cx="12" cy="7.8" r="0.6" fill="currentColor" />
   </Svg>
 );
 const IconeFone = () => (
