@@ -874,3 +874,31 @@ O pedido: *"colocar o tema claro e escuro na tela de entrada no sistema"*.
 - **Navegador:** PC (1366 px) e celular (390 px), no claro e no escuro: o botão fica na mesma linha do Suporte, sem
   rolagem para o lado; recarregar mantém a escolha; entrar com o escuro abre o painel escuro; trocar na barra e sair
   deixa a entrada no claro; computador no escuro sem escolha abre a entrada escura; console sem erros.
+
+### 24/11/2026: tela de entrada mais profissional, com mais da nossa marca
+
+O pedido (com a imagem de referência): *"Deixe mais profissional e implante na tela de início, acredito que possua muito
+o nome do cliente e pouco o nome da nossa empresa."*
+
+- **Duas metades.** À esquerda, o painel verde da **nossa marca**:
+  - a logo grande, o nome da empresa, a frase "Gestão completa para o seu negócio";
+  - três destaques do sistema: PDV (vendas rápidas), Estoque (controle de lotes) e Financeiro (fluxo e resultados);
+  - "© ano Nome da empresa" no pé.
+
+  À direita, o formulário, num painel claro com o canto arredondado por cima do verde.
+- **A loja aparece uma vez só**: no formulário, com o rótulo "Acesso à loja" em cima do nome (na referência, o nome da
+  loja aparecia duas vezes e grande). O nome da empresa aparece no painel e no pé do formulário.
+- O tema claro / escuro e o Suporte continuam no canto. No escuro, o verde do painel fica mais fechado.
+- **Celular e tablet** (até 900 px): o painel vira uma faixa verde com a logo e a frase, e o formulário sobe por cima
+  dela. Os destaques ficam só no computador.
+- O **primeiro acesso** (criar a senha) usa o mesmo molde, com o rótulo "Primeiro acesso".
+- O nome, a frase e os destaques ficam em `apps/web/src/marca.ts`, para trocar num lugar só quando o nome da empresa
+  for definido. O molde fica em `apps/web/src/telas/LayoutEntrada.tsx`.
+- **Sem imagem de fora** (a página não carrega nada de outro endereço): os fundos são gradientes, círculos de luz e uma
+  textura de pontos em SVG. A foto de prateleiras da referência não entrou: precisaria de uma imagem nossa, com
+  direito de uso.
+- Na demonstração, a tela de entrada deixou de rolar 3 px por causa da faixa amarela de cima.
+- **Testes:** tela 408 (+1): o painel tem o nome, a frase e os destaques, e a loja aparece uma vez só.
+- **Navegador:** PC (1366 e 1920 px), tablet (820 px) e celular (390 px), no claro e no escuro, mais o primeiro acesso:
+  sem rolagem para o lado; no PC e no tablet, sem rolagem nenhuma; console sem erros. O tema continua trocando e
+  sendo guardado.

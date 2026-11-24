@@ -6,7 +6,7 @@ import { LIMITES_USUARIO, validarSenhaNova } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiConta, ErroApi } from '../api';
 import { BotaoTema } from '../BotaoTema';
-import { Logo } from '../Logo';
+import { LayoutEntrada } from '../telas/LayoutEntrada';
 import { Modal } from './caixa/Modal';
 
 interface PropsForm {
@@ -112,26 +112,21 @@ export function ModalTrocarSenha({ aoFechar, aoTrocar, ...resto }: Omit<PropsFor
 /** Primeiro acesso (senha provisória): a pessoa só usa o sistema depois de criar a própria senha. */
 export function TelaCriarSenha({ loja, aoSair, ...resto }: Omit<PropsForm, 'rotuloAtual' | 'textoBotao' | 'aoCancelar'> & { loja: { nome: string }; aoSair: () => void }) {
   return (
-    <div className="entrada">
-      <div className="entrada-acoes">
-        <BotaoTema className="entrada-tema" />
-      </div>
-      <main className="entrada-coluna">
-        <Logo />
-        <section className="entrada-form" aria-labelledby="cs-titulo">
-          <h1 id="cs-titulo" className="entrada-loja">
-            {loja.nome}
-          </h1>
-          <p className="entrada-boas-vindas">Crie a sua senha</p>
-          <p className="suave cs-texto">
-            Olá, {resto.pessoa.nome}. A senha que você recebeu é provisória: crie agora a sua, que só você vai saber. Ela vale para entrar e para autorizar no caixa.
-          </p>
-          <FormTrocarSenha {...resto} rotuloAtual="Senha provisória que você recebeu" textoBotao="Criar a minha senha" />
-          <button type="button" className="entrada-link" onClick={aoSair}>
-            Sair
-          </button>
-        </section>
-      </main>
-    </div>
+    <LayoutEntrada acoes={<BotaoTema className="entrada-tema" />}>
+      <section className="entrada-form" aria-labelledby="cs-titulo">
+        <p className="entrada-sobre">Primeiro acesso</p>
+        <h1 id="cs-titulo" className="entrada-loja">
+          {loja.nome}
+        </h1>
+        <p className="entrada-boas-vindas">Crie a sua senha</p>
+        <p className="suave cs-texto">
+          Olá, {resto.pessoa.nome}. A senha que você recebeu é provisória: crie agora a sua, que só você vai saber. Ela vale para entrar e para autorizar no caixa.
+        </p>
+        <FormTrocarSenha {...resto} rotuloAtual="Senha provisória que você recebeu" textoBotao="Criar a minha senha" />
+        <button type="button" className="entrada-link" onClick={aoSair}>
+          Sair
+        </button>
+      </section>
+    </LayoutEntrada>
   );
 }

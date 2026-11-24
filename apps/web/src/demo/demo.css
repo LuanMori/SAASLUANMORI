@@ -11,7 +11,9 @@
 .demo-detalhes { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; }
 .demo-detalhes p { margin: 0; text-align: center; }
 .demo-detalhes code { background: var(--superficie); padding: 1px 5px; border-radius: 4px; color: var(--texto); }
-.demo-faixa + .entrada { min-height: calc(100vh - 40px); }
+/* a entrada ocupa só o resto da altura debaixo da faixa (qualquer que seja a altura dela): sem rolagem à toa */
+#raiz:has(> .demo-faixa + .entrada) { min-height: 100vh; display: flex; flex-direction: column; }
+#raiz:has(> .demo-faixa + .entrada) > .entrada { flex: 1 0 auto; min-height: 0; }
 .demo-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .demo-check input { accent-color: var(--primaria); }
 :root[data-tema='escuro'] { --demo-borda: #4d3f17; --demo-borda-botao: #6a5620; --demo-botao: #2b2414; }

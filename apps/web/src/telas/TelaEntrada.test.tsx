@@ -1,8 +1,9 @@
 // apps/web/src/telas/TelaEntrada.test.tsx
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { subdominioDoEndereco } from '@saas/core';
+import { MARCA } from '../marca';
 import { type ResultadoEntrada, TelaEntrada } from './TelaEntrada';
 
 afterEach(cleanup);
@@ -25,6 +26,22 @@ describe('TelaEntrada', () => {
     expect(screen.getByRole('heading', { name: 'Pet Shop da Ana' })).toBeTruthy();
     expect(screen.getByText('Boas-vindas')).toBeTruthy();
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('mais da nossa marca, menos da loja: o painel tem o nome, a frase e os destaques; a loja aparece uma vez só', () => {
+    montar();
+    const painel = screen.getByRole('complementary', { name: MARCA.nome });
+    expect(within(painel).getByText(MARCA.nome)).toBeTruthy();
+    expect(within(painel).getByText('Gestão completa para o seu negócio')).toBeTruthy();
+    expect(within(within(painel).getByRole('list', { name: 'O que o sistema faz' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'PDVVendas rápidas',
+      'EstoqueControle de lotes',
+      'FinanceiroFluxo e resultados',
+    ]);
+    expect(within(painel).queryByText('Pet Shop da Ana')).toBeNull();
+    expect(screen.getAllByText('Pet Shop da Ana')).toHaveLength(1); // só no formulário
+    expect(screen.getByText('Acesso à loja')).toBeTruthy();
+    expect(screen.getAllByText(MARCA.nome).length).toBe(2); // o painel e o rodapé do formulário
   });
 
   it('Entrar só libera com usuário e senha preenchidos', async () => {

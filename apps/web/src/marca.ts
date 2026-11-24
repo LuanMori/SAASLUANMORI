@@ -9,4 +9,12 @@ export const MARCA = {
     texto: 'Fale com o suporte do Nome da empresa.',
     email: 'suporte@nomedaempresa.com.br',
   },
+  /** Frase do painel da marca, na tela de entrada (pedido do Luan, 24/11/2026). */
+  slogan: 'Gestão completa para o seu negócio',
+  /** Os destaques do sistema no painel da marca (o ícone de cada um fica em telas/LayoutEntrada.tsx). */
+  destaques: [
+    { icone: 'pdv', titulo: 'PDV', texto: 'Vendas rápidas' },
+    { icone: 'estoque', titulo: 'Estoque', texto: 'Controle de lotes' },
+    { icone: 'financeiro', titulo: 'Financeiro', texto: 'Fluxo e resultados' },
+  ],
 } as const;

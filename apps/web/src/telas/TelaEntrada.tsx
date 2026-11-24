@@ -7,10 +7,11 @@
 // { ok: true } ou { ok: false, mensagem }. Mensagens de erro não dizem se o que
 // errou foi o usuário ou a senha (não ajuda quem tenta adivinhar contas).
 // No canto, o tema claro / escuro (pedido do Luan, 24/11/2026: o mesmo botão da barra lateral) e o Suporte.
+// O molde (painel da nossa marca à esquerda, formulário à direita) fica em LayoutEntrada.tsx; a loja aparece só aqui.
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { BotaoTema } from '../BotaoTema';
-import { Logo } from '../Logo';
 import { MARCA } from '../marca';
+import { LayoutEntrada } from './LayoutEntrada';
 
 export type ResultadoEntrada = { ok: true } | { ok: false; mensagem: string };
 
@@ -24,30 +25,27 @@ interface Props {
 
 export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
   return (
-    <div className="entrada">
-      <div className="entrada-acoes">
-        <BotaoTema className="entrada-tema" />
-        {loja && <BotaoSuporte />}
-      </div>
-      <main className="entrada-coluna">
-        <Logo />
-        {loja ? (
-          <FormEntrada loja={loja} aoEntrar={aoEntrar} aviso={aviso} />
-        ) : (
-          <section className="entrada-form" aria-labelledby="entrada-titulo">
-            <h1 id="entrada-titulo" className="entrada-loja">
-              Endereço não encontrado
-            </h1>
-            <p className="alerta alerta-erro" role="alert">
-              Este endereço não corresponde a nenhuma loja ativa. Confira o link com o dono da sua loja.
-            </p>
-          </section>
-        )}
-      </main>
-      <footer className="entrada-rodape">
-        <Logo tamanho="pequena" />
-      </footer>
-    </div>
+    <LayoutEntrada
+      acoes={
+        <>
+          <BotaoTema className="entrada-tema" />
+          {loja && <BotaoSuporte />}
+        </>
+      }
+    >
+      {loja ? (
+        <FormEntrada loja={loja} aoEntrar={aoEntrar} aviso={aviso} />
+      ) : (
+        <section className="entrada-form" aria-labelledby="entrada-titulo">
+          <h1 id="entrada-titulo" className="entrada-loja">
+            Endereço não encontrado
+          </h1>
+          <p className="alerta alerta-erro" role="alert">
+            Este endereço não corresponde a nenhuma loja ativa. Confira o link com o dono da sua loja.
+          </p>
+        </section>
+      )}
+    </LayoutEntrada>
   );
 }
 
@@ -89,6 +87,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
 
   return (
     <form className="entrada-form" onSubmit={enviar} noValidate aria-labelledby="entrada-titulo">
+      <p className="entrada-sobre">Acesso à loja</p>
       <h1 id="entrada-titulo" className="entrada-loja">
         {loja.nome}
       </h1>
