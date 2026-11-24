@@ -6,7 +6,9 @@
 // A tela não sabe COMO o login é feito: quem usa passa `aoEntrar`, que devolve
 // { ok: true } ou { ok: false, mensagem }. Mensagens de erro não dizem se o que
 // errou foi o usuário ou a senha (não ajuda quem tenta adivinhar contas).
+// No canto, o tema claro / escuro (pedido do Luan, 24/11/2026: o mesmo botão da barra lateral) e o Suporte.
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { BotaoTema } from '../BotaoTema';
 import { Logo } from '../Logo';
 import { MARCA } from '../marca';
 
@@ -23,7 +25,10 @@ interface Props {
 export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
   return (
     <div className="entrada">
-      {loja && <BotaoSuporte />}
+      <div className="entrada-acoes">
+        <BotaoTema className="entrada-tema" />
+        {loja && <BotaoSuporte />}
+      </div>
       <main className="entrada-coluna">
         <Logo />
         {loja ? (

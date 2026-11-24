@@ -175,7 +175,7 @@ h2 { font-size: 1.05rem; }
 .entrada-olho { border: 0; background: none; padding: 6px; margin-right: -4px; cursor: pointer; color: var(--suave); border-radius: 8px; display: grid; }
 .entrada-olho:hover { background: var(--primaria-clara); color: var(--primaria-texto); }
 .entrada-olho .icone { color: inherit; }
-.entrada-olho:focus-visible, .entrada-link:focus-visible, .entrada-suporte-botao:focus-visible, .entrada-dica:focus-visible {
+.entrada-olho:focus-visible, .entrada-link:focus-visible, .entrada-suporte-botao:focus-visible, .entrada-dica:focus-visible, .entrada-tema:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 2px;
 }
 .entrada-caps { margin-top: 6px; font-size: 0.85rem; color: var(--aviso); }
@@ -202,7 +202,16 @@ h2 { font-size: 1.05rem; }
 .entrada-link + .alerta { text-align: center; }
 
 /* Suporte: pílula com fone de ouvido no canto superior direito */
-.entrada-suporte { position: absolute; top: 16px; right: 16px; z-index: 3; }
+/* canto de cima: tema claro / escuro (pedido do Luan, 24/11/2026) e Suporte */
+.entrada-acoes { position: absolute; top: 16px; right: 16px; z-index: 3; display: flex; align-items: flex-start; gap: 10px; }
+.entrada-tema {
+  display: grid; place-items: center; width: 48px; height: 48px; padding: 0; flex: none;
+  background: var(--superficie); border: 1px solid color-mix(in srgb, var(--primaria) 35%, var(--superficie)); border-radius: 50%;
+  color: var(--primaria-texto); cursor: pointer; box-shadow: 0 1px 3px rgba(16, 40, 30, 0.08); transition: background 0.12s;
+}
+.entrada-tema:hover { background: var(--primaria-clara); }
+.entrada-tema svg { width: 22px; height: 22px; }
+.entrada-suporte { position: relative; }
 .entrada-suporte-botao {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px 8px 10px;
   background: var(--superficie); border: 1px solid color-mix(in srgb, var(--primaria) 35%, var(--superficie)); border-radius: 999px;

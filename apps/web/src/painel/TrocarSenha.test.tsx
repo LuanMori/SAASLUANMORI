@@ -59,6 +59,15 @@ describe('Crie a sua senha (primeiro acesso)', () => {
     expect(trocar).toHaveBeenLastCalledWith('certa-123', 'cavalo-bateria-grampo');
   });
 
+  it('o primeiro acesso também tem o tema claro / escuro', async () => {
+    montar(vi.fn());
+    await userEvent.click(screen.getByRole('button', { name: /^Usar o tema/ }));
+    const agora = document.documentElement.dataset.tema;
+    expect(screen.getByRole('button', { name: `Usar o tema ${agora === 'escuro' ? 'claro' : 'escuro'}` })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: /^Usar o tema/ }));
+    expect(document.documentElement.dataset.tema).not.toBe(agora);
+  });
+
   it('dá para sair sem criar a senha', async () => {
     const { aoSair } = montar(vi.fn());
     await userEvent.click(screen.getByRole('button', { name: 'Sair' }));

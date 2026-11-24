@@ -823,3 +823,23 @@ servidor agora. Decisão completa: [`../decisoes/0006-adm-sup-e-personalizado.md
   - o suporte entra na Loja B, aparece como "Suporte · Adm. Sup", cadastra um Dono, não aparece na lista, e o
     histórico diz "Suporte";
   - console sem erros.
+
+---
+
+## Tela de entrada — ajustes pedidos pelo Luan
+
+### 24/11/2026: tema claro / escuro já na entrada
+
+O pedido: *"colocar o tema claro e escuro na tela de entrada no sistema"*.
+
+- No canto de cima da tela de entrada, à esquerda do **Suporte**, o mesmo botão de tema da barra lateral (lua = usar o
+  escuro; sol = usar o claro). Também aparece no "Endereço não encontrado" e na tela de **criar a senha** do primeiro
+  acesso.
+- A escolha é uma só para o sistema inteiro e fica guardada neste navegador: trocar na entrada vale depois de entrar,
+  e trocar na barra lateral vale na entrada depois de sair. Sem escolha, segue o claro/escuro do computador.
+- O botão virou um componente só (`apps/web/src/BotaoTema.tsx`), usado na barra lateral e nas telas de entrada.
+- **Testes:** tela 401 (+2): o botão na entrada (ao lado do Suporte, troca e guarda; também sem loja) e no primeiro
+  acesso.
+- **Navegador:** PC (1366 px) e celular (390 px), no claro e no escuro: o botão fica na mesma linha do Suporte, sem
+  rolagem para o lado; recarregar mantém a escolha; entrar com o escuro abre o painel escuro; trocar na barra e sair
+  deixa a entrada no claro; computador no escuro sem escolha abre a entrada escura; console sem erros.

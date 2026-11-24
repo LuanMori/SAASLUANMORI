@@ -5,6 +5,7 @@
 import { LIMITES_USUARIO, validarSenhaNova } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiConta, ErroApi } from '../api';
+import { BotaoTema } from '../BotaoTema';
 import { Logo } from '../Logo';
 import { Modal } from './caixa/Modal';
 
@@ -112,6 +113,9 @@ export function ModalTrocarSenha({ aoFechar, aoTrocar, ...resto }: Omit<PropsFor
 export function TelaCriarSenha({ loja, aoSair, ...resto }: Omit<PropsForm, 'rotuloAtual' | 'textoBotao' | 'aoCancelar'> & { loja: { nome: string }; aoSair: () => void }) {
   return (
     <div className="entrada">
+      <div className="entrada-acoes">
+        <BotaoTema className="entrada-tema" />
+      </div>
       <main className="entrada-coluna">
         <Logo />
         <section className="entrada-form" aria-labelledby="cs-titulo">

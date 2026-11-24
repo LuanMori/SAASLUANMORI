@@ -79,6 +79,21 @@ describe('TelaEntrada', () => {
     render(<TelaEntrada loja={null} aoEntrar={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Endereço não encontrado' })).toBeTruthy();
     expect(screen.queryByLabelText('Insira seu usuário')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Usar o tema escuro' })).toBeTruthy(); // o tema vale mesmo sem loja
+  });
+
+  it('tema claro / escuro no canto, ao lado do Suporte: troca e guarda a escolha neste navegador', async () => {
+    localStorage.clear();
+    montar();
+    const canto = screen.getByRole('button', { name: 'Suporte' }).closest('.entrada-acoes') as HTMLElement;
+    expect(canto.contains(screen.getByRole('button', { name: 'Usar o tema escuro' }))).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Usar o tema escuro' }));
+    expect(document.documentElement.dataset.tema).toBe('escuro');
+    expect(localStorage.getItem('saas:tema')).toBe('escuro');
+    // a escolha continua depois de entrar: a barra lateral lê o mesmo tema (tema.ts)
+    await userEvent.click(screen.getByRole('button', { name: 'Usar o tema claro' }));
+    expect(document.documentElement.dataset.tema).toBe('claro');
+    expect(localStorage.getItem('saas:tema')).toBe('claro');
   });
 });
 

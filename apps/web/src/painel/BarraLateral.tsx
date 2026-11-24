@@ -5,8 +5,8 @@
 //   botão de tema, Trocar senha, Sair) · versão no rodapé.
 // Itens que o papel não pode ver somem; grupo sem item visível some junto.
 import { nomeDoPapel, type PapelNaLoja } from '@saas/core';
+import { BotaoTema } from '../BotaoTema';
 import { MARCA } from '../marca';
-import { usarTema } from '../tema';
 import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from './menu';
 
 export interface DadosBarra {
@@ -32,26 +32,6 @@ export function iniciais(nome: string): string {
     .filter((p) => p.length > 2 || /^[A-Z0-9]$/.test(p));
   const letras = (partes.length > 1 ? [partes[0], partes[partes.length - 1]] : partes).map((p) => p?.[0] ?? '');
   return (letras.join('') || nome.trim().charAt(0)).toUpperCase() || '?';
-}
-
-/** Tema claro / escuro (DaniPets: "☾ Tema escuro" / "☀ Tema claro"). A escolha fica neste navegador. */
-function BotaoTema() {
-  const { tema, alternar } = usarTema();
-  const proximo = tema === 'escuro' ? 'claro' : 'escuro';
-  return (
-    <button type="button" className="sideuser-theme" aria-label={`Usar o tema ${proximo}`} title={`Tema ${proximo}`} onClick={alternar}>
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-        {tema === 'escuro' ? (
-          <>
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" />
-          </>
-        ) : (
-          <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
-        )}
-      </svg>
-    </button>
-  );
 }
 
 export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocarSenha, versao = 'V0.1' }: Props) {
@@ -106,7 +86,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocar
             <b>{pessoa.nome}</b>
             <small>{nomeDoPapel(pessoa.papel)}</small>
           </div>
-          <BotaoTema />
+          <BotaoTema className="sideuser-theme" />
         </div>
         <div className="sideuser-actions">
           <button type="button" onClick={aoTrocarSenha} disabled={!aoTrocarSenha}>
