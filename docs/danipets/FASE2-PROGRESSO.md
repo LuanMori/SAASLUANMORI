@@ -824,6 +824,37 @@ servidor agora. Decisão completa: [`../decisoes/0006-adm-sup-e-personalizado.md
     histórico diz "Suporte";
   - console sem erros.
 
+### 24/11/2026: Vendedor ou Personalizado em cartões; o Personalizado tela por tela
+
+O pedido: *"na criação de usuários ainda está presente o usuário dono e adm, queria algo como vendedor e personalizado.
+Personalizado você escolhe o que a pessoa tem acesso."* (O arquivo que o Luan conferiu era da versão anterior, sem o
+ajuste de 23/11; o ajuste já tirava Dono e Administrador da lista. Agora a escolha ficou mais clara.)
+
+- **Papel em cartões**, no lugar da lista: **Vendedor** (com o que ele faz, tirado da matriz de permissões: "Vender na
+  Frente de caixa, abrir e fechar o caixa, cadastrar e consultar clientes e cadastrar produto novo.") e
+  **Personalizado** ("Você escolhe o que a pessoa acessa, tela por tela."). Vendedor vem marcado.
+  - Para o suporte, Dono e Administrador aparecem à parte, em "Só o suporte, na implantação".
+  - Ao editar alguém que já é Dono ou Administrador, o papel dele aparece à parte, em "Papel atual" (o Dono pode
+    passá-lo a Vendedor ou Personalizado). Na própria pessoa, os cartões ficam travados.
+- **O que esta pessoa acessa**, tela por tela, na ordem do menu: Frente de caixa, Caixa do dia, Produtos e estoque,
+  Compras, Clientes, Financeiro, Relatórios, Dados e backup e Regras da loja.
+  - Marcar a tela dá o acesso a ela (o mesmo que o menu pede). Dentro dela ficam os extras, por exemplo: Clientes →
+    ver o CPF completo, limite de fiado; Frente de caixa → desconto acima do limite e cancelar sem senha.
+  - O extra só fica liberado com a tela marcada, e desmarcar a tela tira os extras.
+  - Produtos e estoque (todos consultam) e Regras da loja (valem em várias telas) não têm tela para marcar: só os
+    extras.
+  - A mesma regra vale no servidor e na demonstração: um extra mandado sem a tela é recusado ("Para “Ver o CPF
+    completo do cliente”, marque também a tela “Clientes”.").
+  - Os grupos ficam em `@saas/core` (`TELAS_DO_PERSONALIZADO`). Um teste confere que cada função que se pode dar
+    aparece uma vez e que cada tela pede, no menu, o mesmo acesso da escolha.
+- **Testes:** núcleo 410 (+1: telas do Personalizado, regra do extra na criação e na alteração); servidor (a regra do
+  extra no POST e no PATCH); tela 407 (+6): cartões com o que cada papel faz, telas e extras, editar o Personalizado,
+  o Administrador à parte na edição, a própria pessoa travada, e o menu × telas do Personalizado.
+- **Navegador:** o Dono vê só os cartões Vendedor e Personalizado; as 9 telas com as 20 funções; o extra de Clientes
+  travado sem Clientes; o Personalizado criado só vê no menu o que foi marcado; o suporte vê também Dono e
+  Administrador em "Só o suporte, na implantação"; claro e escuro, PC e celular, sem rolagem para o lado; console sem
+  erros.
+
 ---
 
 ## Tela de entrada — ajustes pedidos pelo Luan

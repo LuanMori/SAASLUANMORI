@@ -72,6 +72,45 @@ export const PERMISSOES_CONCEDIVEIS: readonly Permissao[] = LISTA_PERMISSOES.fil
 const CONCEDIVEIS = new Set<Permissao>(PERMISSOES_CONCEDIVEIS);
 export const ehPermissaoConcedivel = (p: unknown): p is Permissao => typeof p === 'string' && CONCEDIVEIS.has(p as Permissao);
 
+/**
+ * O Personalizado tela por tela (pedido do Luan, 24/11/2026: "Personalizado você escolhe o que a pessoa tem acesso").
+ * `acesso` abre a tela (é o que o menu pede); os `extras` são o que se faz dentro dela e só valem com o acesso.
+ * Sem `acesso`: a tela é de todos (a consulta de Produtos e estoque) ou a função vale em várias telas (as regras da
+ * loja). Cada função que se pode dar ao Personalizado está aqui uma vez só (teste).
+ */
+export interface TelaDoPersonalizado {
+  tela: string;
+  acesso: Permissao | null;
+  extras: readonly Permissao[];
+}
+
+export const TELAS_DO_PERSONALIZADO: readonly TelaDoPersonalizado[] = [
+  { tela: 'Frente de caixa', acesso: 'vender', extras: ['desconto.acima_do_limite', 'estorno'] },
+  { tela: 'Caixa do dia', acesso: 'caixa', extras: ['caixa.retirada', 'caixa.diferenca', 'caixa.desfazer'] },
+  { tela: 'Produtos e estoque', acesso: null, extras: ['produtos.cadastrar', 'produtos.alterar', 'estoque.lancar'] },
+  { tela: 'Compras', acesso: 'compras', extras: [] },
+  { tela: 'Clientes', acesso: 'clientes', extras: ['clientes.desativar', 'clientes.limite', 'clientes.cpf', 'clientes.fiado'] },
+  { tela: 'Financeiro', acesso: 'financeiro', extras: [] },
+  { tela: 'Relatórios', acesso: 'relatorios', extras: [] },
+  { tela: 'Dados e backup', acesso: 'dados', extras: [] },
+  { tela: 'Regras da loja', acesso: null, extras: ['loja.configurar'] },
+];
+
+/** A tela que um extra pede (o acesso a ela), ou null se a função não depende de tela nenhuma. */
+export function telaQueAFuncaoPede(p: Permissao): TelaDoPersonalizado | null {
+  return TELAS_DO_PERSONALIZADO.find((t) => t.acesso !== null && t.extras.includes(p)) ?? null;
+}
+
+/** Tira os extras que ficaram sem o acesso à tela deles (eles não valeriam), na ordem da lista de permissões. */
+export function funcoesCoerentes(lista: readonly Permissao[]): Permissao[] {
+  const marcadas = new Set(lista);
+  return PERMISSOES_CONCEDIVEIS.filter((p) => {
+    if (!marcadas.has(p)) return false;
+    const t = telaQueAFuncaoPede(p);
+    return !t || marcadas.has(t.acesso!);
+  });
+}
+
 type PapelDaMatriz = 'super_admin' | 'dono' | 'administrador' | 'vendedor';
 
 /** A matriz. Adm. Sup e Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */

@@ -24,6 +24,8 @@ function montar(id = 'ana', papel: 'dono' | 'administrador' | 'vendedor' | 'supe
 }
 
 const linha = async (nome: string) => (await screen.findByRole('cell', { name: new RegExp(`^${nome}`) })).closest('tr') as HTMLElement;
+/** Os papéis que a janela oferece (cartões), na ordem em que aparecem. */
+const papeisDa = (janela: HTMLElement) => within(janela).getAllByRole('radio').map((r) => (r as HTMLInputElement).value);
 
 describe('TelaUsuarios', () => {
   it('lista a equipe com papel e situação; a própria linha não tem Desativar nem Nova senha', async () => {
@@ -74,8 +76,7 @@ describe('TelaUsuarios', () => {
     const ana = await linha('Ana');
     expect(within(ana).queryByRole('button')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
-    const papeis = within(screen.getByRole('dialog', { name: 'Novo usuário' })).getAllByRole('option').map((o) => o.textContent);
-    expect(papeis).toEqual(['Vendedor', 'Personalizado']); // Dono e Administrador, só o Adm. Sup
+    expect(papeisDa(screen.getByRole('dialog', { name: 'Novo usuário' }))).toEqual(['vendedor', 'personalizado']); // Dono e Administrador, só o Adm. Sup
     expect(within(screen.getByRole('dialog', { name: 'Novo usuário' })).getByText(/são cadastrados pelo suporte \(Adm\. Sup\)/)).toBeTruthy();
   });
 
@@ -161,17 +162,18 @@ describe('TelaUsuarios: Personalizado e Adm. Sup (pedido do Luan, 23/11/2026)', 
     await linha('Ana');
     await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
     const janela = screen.getByRole('dialog', { name: 'Novo usuário' });
-    expect(within(janela).getAllByRole('option').map((o) => o.textContent)).toEqual(['Vendedor', 'Personalizado']);
+    expect(papeisDa(janela)).toEqual(['vendedor', 'personalizado']);
+    expect((within(janela).getByRole('radio', { name: /^Vendedor/ }) as HTMLInputElement).checked).toBe(true); // o padrão
     await userEvent.type(within(janela).getByLabelText('Nome'), 'Gil Souza');
     await userEvent.type(within(janela).getByLabelText('Usuário (login)'), 'gil');
-    await userEvent.selectOptions(within(janela).getByLabelText('Papel'), 'personalizado');
-    const funcoes = within(janela).getByRole('group', { name: 'Funções do Personalizado' });
+    await userEvent.click(within(janela).getByRole('radio', { name: /^Personalizado/ }));
+    const funcoes = within(janela).getByRole('group', { name: 'O que esta pessoa acessa' });
     expect(within(funcoes).queryByLabelText(/Cadastrar, alterar e desativar usuários/)).toBeNull(); // não se dá
     expect(within(funcoes).queryByLabelText(/Dar brinde/)).toBeNull(); // só do Dono
     await userEvent.click(within(janela).getByRole('button', { name: 'Cadastrar' }));
     expect(within(janela).getByText('Marque pelo menos uma função para o Personalizado.')).toBeTruthy();
-    await userEvent.click(within(funcoes).getByLabelText('Vender na Frente de caixa'));
-    await userEvent.click(within(funcoes).getByLabelText('Relatórios e vendas de outros dias'));
+    await userEvent.click(within(funcoes).getByRole('checkbox', { name: 'Frente de caixa' }));
+    await userEvent.click(within(funcoes).getByRole('checkbox', { name: 'Relatórios' }));
     await userEvent.click(within(janela).getByRole('button', { name: 'Cadastrar' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Pronto' }));
     const gil = await linha('Gil Souza');
@@ -183,7 +185,95 @@ describe('TelaUsuarios: Personalizado e Adm. Sup (pedido do Luan, 23/11/2026)', 
     montar('adm-sup', 'super_admin');
     await linha('Ana');
     await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
-    const papeis = within(screen.getByRole('dialog', { name: 'Novo usuário' })).getAllByRole('option').map((o) => o.textContent);
-    expect(papeis).toEqual(['Dono', 'Administrador', 'Vendedor', 'Personalizado']);
+    const janela = screen.getByRole('dialog', { name: 'Novo usuário' });
+    expect(papeisDa(janela)).toEqual(['vendedor', 'personalizado', 'dono', 'administrador']);
+    expect(within(janela).getByText('Só o suporte, na implantação')).toBeTruthy();
+    expect(within(janela).queryByText(/são cadastrados pelo suporte/)).toBeNull();
+  });
+
+  it('Vendedor e Personalizado em cartões, com o que cada um faz', async () => {
+    montar();
+    await linha('Ana');
+    await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
+    const janela = screen.getByRole('dialog', { name: 'Novo usuário' });
+    expect(within(janela).getByRole('radio', { name: /^Vendedor/ }).closest('label')?.textContent).toBe(
+      'VendedorVender na Frente de caixa, abrir e fechar o caixa, cadastrar e consultar clientes e cadastrar produto novo.',
+    );
+    expect(within(janela).getByRole('radio', { name: /^Personalizado/ }).closest('label')?.textContent).toBe('PersonalizadoVocê escolhe o que a pessoa acessa, tela por tela.');
+    expect(within(janela).queryByRole('group', { name: 'O que esta pessoa acessa' })).toBeNull(); // só no Personalizado
+  });
+
+  it('Personalizado tela por tela: o extra só com a tela marcada; tirar a tela tira os extras; editar mantém', async () => {
+    montar();
+    await linha('Ana');
+    await userEvent.click(screen.getByRole('button', { name: '+ Novo usuário' }));
+    const janela = screen.getByRole('dialog', { name: 'Novo usuário' });
+    await userEvent.type(within(janela).getByLabelText('Nome'), 'Lia Rocha');
+    await userEvent.type(within(janela).getByLabelText('Usuário (login)'), 'lia');
+    await userEvent.click(within(janela).getByRole('radio', { name: /^Personalizado/ }));
+    const telas = within(janela).getByRole('group', { name: 'O que esta pessoa acessa' });
+    expect(within(telas).getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual([
+      'Frente de caixa',
+      'Caixa do dia',
+      'Produtos e estoque',
+      'Compras',
+      'Clientes',
+      'Financeiro',
+      'Relatórios',
+      'Dados e backup',
+      'Regras da loja',
+    ]);
+    const clientes = within(telas).getByRole('group', { name: 'Clientes' });
+    const cpf = within(clientes).getByRole('checkbox', { name: 'Ver o CPF completo do cliente' }) as HTMLInputElement;
+    expect(cpf.disabled).toBe(true); // sem a tela, o extra não vale
+    await userEvent.click(within(clientes).getByRole('checkbox', { name: 'Clientes' }));
+    expect(cpf.disabled).toBe(false);
+    await userEvent.click(cpf);
+    await userEvent.click(within(clientes).getByRole('checkbox', { name: 'Clientes' })); // tira a tela...
+    expect(cpf.checked).toBe(false); // ...e o extra sai junto
+    expect(cpf.disabled).toBe(true);
+    await userEvent.click(within(clientes).getByRole('checkbox', { name: 'Clientes' }));
+    await userEvent.click(cpf);
+    // Produtos e estoque é de todos: os extras valem sem marcar a tela
+    const produtos = within(telas).getByRole('group', { name: 'Produtos e estoque' });
+    expect(within(produtos).queryByRole('checkbox', { name: 'Produtos e estoque' })).toBeNull();
+    await userEvent.click(within(produtos).getByRole('checkbox', { name: 'Cadastrar produto novo' }));
+    await userEvent.click(within(janela).getByRole('button', { name: 'Cadastrar' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Pronto' }));
+    expect(within(await linha('Lia Rocha')).getByRole('cell', { name: /^Personalizado/ }).textContent).toBe('Personalizado · 3 funções');
+    const lia = (await api('ana', 'dono').listarUsuarios()).find((u) => u.usuario === 'lia')!;
+    expect(lia.permissoes).toEqual(['clientes', 'clientes.cpf', 'produtos.cadastrar']);
+
+    // editar: as telas marcadas voltam marcadas; trocar Clientes por Financeiro
+    await userEvent.click(within(await linha('Lia Rocha')).getByRole('button', { name: 'Editar Lia Rocha' }));
+    const edicao = screen.getByRole('dialog', { name: 'Editar Lia Rocha' });
+    const telasEd = within(edicao).getByRole('group', { name: 'O que esta pessoa acessa' });
+    expect((within(telasEd).getByRole('checkbox', { name: 'Clientes' }) as HTMLInputElement).checked).toBe(true);
+    expect((within(telasEd).getByRole('checkbox', { name: 'Ver o CPF completo do cliente' }) as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(within(telasEd).getByRole('checkbox', { name: 'Clientes' }));
+    await userEvent.click(within(telasEd).getByRole('checkbox', { name: 'Financeiro' }));
+    await userEvent.click(within(edicao).getByRole('button', { name: 'Salvar' }));
+    await waitFor(async () => expect((await api('ana', 'dono').listarUsuarios()).find((u) => u.usuario === 'lia')!.permissoes).toEqual(['produtos.cadastrar', 'financeiro']));
+  });
+
+  it('editando o Caio (Administrador), o Dono vê o papel atual à parte e pode passá-lo a Vendedor', async () => {
+    montar();
+    await userEvent.click(within(await linha('Caio')).getByRole('button', { name: 'Editar Caio' }));
+    const edicao = screen.getByRole('dialog', { name: 'Editar Caio' });
+    expect(papeisDa(edicao)).toEqual(['vendedor', 'personalizado', 'administrador']);
+    expect(within(edicao).getByText('Papel atual')).toBeTruthy();
+    expect((within(edicao).getByRole('radio', { name: /^Administrador/ }) as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(within(edicao).getByRole('radio', { name: /^Vendedor/ }));
+    await userEvent.click(within(edicao).getByRole('button', { name: 'Salvar' }));
+    await waitFor(async () => expect((await api('ana', 'dono').listarUsuarios()).find((u) => u.usuario === 'caio')!.papel).toBe('vendedor'));
+  });
+
+  it('a própria pessoa não troca o próprio papel: os cartões ficam travados', async () => {
+    montar();
+    await userEvent.click(within(await linha('Ana')).getByRole('button', { name: 'Editar Ana' }));
+    const edicao = screen.getByRole('dialog', { name: 'Editar Ana' });
+    expect(within(edicao).getAllByRole('radio').every((r) => (r as HTMLInputElement).disabled)).toBe(true);
+    expect((within(edicao).getByRole('radio', { name: /^Dono/ }) as HTMLInputElement).checked).toBe(true);
+    expect(within(edicao).getByText('Ninguém muda o próprio papel nem as próprias funções. Peça a outro Dono.')).toBeTruthy();
   });
 });

@@ -6,6 +6,8 @@
 // Pedido do Luan (23/11/2026): o Dono e o Administrador cadastram só Vendedor e Personalizado (o Personalizado tem
 // as funções marcadas para ele); o Dono (na implantação) e o Administrador, só o Adm. Sup cadastra. O Adm. Sup não
 // aparece na lista; no histórico, aparece como "Suporte".
+// 24/11/2026: o papel se escolhe em cartões (Vendedor ou Personalizado) e o Personalizado, tela por tela: marcar a
+// tela dá o acesso a ela; os extras de cada tela só valem com ela (TELAS_DO_PERSONALIZADO, de @saas/core).
 import {
   type AlteracaoUsuario,
   LIMITES_USUARIO,
@@ -27,8 +29,12 @@ import {
   PERMISSOES_CONCEDIVEIS,
   type PapelNaLoja,
   type QuemAcessa,
+  funcoesCoerentes,
+  LISTA_PERMISSOES,
+  TELAS_DO_PERSONALIZADO,
+  type TelaDoPersonalizado,
 } from '@saas/core';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useId, useState } from 'react';
 import { type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
 import { Modal } from './caixa/Modal';
 import { dataNoFuso, horaNoFuso, plural } from './formato';
@@ -359,20 +365,127 @@ function CampoSenhaProvisoria({ valor, aoMudar, erro, id }: { valor: string; aoM
   );
 }
 
-/** As funções que quem cadastra pode dar a um Personalizado (as que se podem dar e que ele mesmo tem). */
-function FuncoesDoPersonalizado({ eu, marcadas, aoMudar, erro }: { eu: QuemAcessa; marcadas: readonly Permissao[]; aoMudar: (l: Permissao[]) => void; erro?: string }) {
-  const lista = PERMISSOES_CONCEDIVEIS.filter((p) => pode(eu, p));
-  const marcar = (p: Permissao, sim: boolean) => aoMudar(lista.filter((x) => (x === p ? sim : marcadas.includes(x))));
+/** "Vender na Frente de caixa, abrir e fechar o caixa, cadastrar e consultar clientes e cadastrar produto novo." */
+function frase(itens: readonly string[]): string {
+  const partes = itens.map((t, i) => (i === 0 ? t : t.charAt(0).toLowerCase() + t.slice(1)));
+  return `${partes.length > 1 ? `${partes.slice(0, -1).join(', ')} e ${partes.at(-1)}` : (partes[0] ?? '')}.`;
+}
+
+/** O que cada papel faz, no cartão da escolha (o do Vendedor sai da matriz de permissões: muda junto com ela). */
+const DESCRICAO_DO_PAPEL: Record<PapelDeLoja, string> = {
+  vendedor: frase(LISTA_PERMISSOES.filter((p) => pode('vendedor', p)).map((p) => PERMISSOES[p])),
+  personalizado: 'Você escolhe o que a pessoa acessa, tela por tela.',
+  dono: 'Tudo na loja.',
+  administrador: 'Tudo, menos o que é só do Dono.',
+};
+
+/** Vendedor ou Personalizado. Dono e Administrador, só o suporte (ou o papel atual, ao editar alguém que já é). */
+function EscolhaDoPapel({
+  opcoes,
+  valor,
+  aoMudar,
+  ehSuporte,
+  desabilitada = false,
+  erro,
+}: {
+  opcoes: readonly PapelDeLoja[];
+  valor: PapelDeLoja;
+  aoMudar: (p: PapelDeLoja) => void;
+  ehSuporte: boolean;
+  desabilitada?: boolean;
+  erro?: string;
+}) {
+  const nome = useId();
+  const daEquipe = opcoes.filter((p) => p === 'vendedor' || p === 'personalizado');
+  const outros = opcoes.filter((p) => p === 'dono' || p === 'administrador');
+  const cartao = (p: PapelDeLoja) => (
+    <label key={p} className={`us-papel-cartao${valor === p ? ' us-papel-on' : ''}${desabilitada ? ' us-papel-off' : ''}`}>
+      <input type="radio" name={nome} value={p} checked={valor === p} onChange={() => aoMudar(p)} disabled={desabilitada} />
+      <span className="us-papel-texto">
+        <b>{NOME_PAPEL[p]}</b>
+        <small>{DESCRICAO_DO_PAPEL[p]}</small>
+      </span>
+    </label>
+  );
   return (
-    <fieldset className="us-funcoes">
-      <legend>Funções do Personalizado</legend>
-      <p className="modal-dica">Marque o que esta pessoa pode fazer. O que é só do Dono e a gestão de usuários não podem ser dados.</p>
-      <div className="us-funcoes-lista">
-        {lista.map((p) => (
-          <label key={p}>
-            <input type="checkbox" checked={marcadas.includes(p)} onChange={(e) => marcar(p, e.target.checked)} /> {PERMISSOES[p]}
-          </label>
-        ))}
+    <fieldset className="us-papel">
+      <legend>Papel</legend>
+      <div className="us-papel-opcoes">{daEquipe.map(cartao)}</div>
+      {outros.length > 0 && (
+        <>
+          <p className="us-papel-grupo">{ehSuporte ? 'Só o suporte, na implantação' : 'Papel atual'}</p>
+          <div className="us-papel-opcoes">{outros.map(cartao)}</div>
+        </>
+      )}
+      {erro && <span className="campo-erro">{erro}</span>}
+    </fieldset>
+  );
+}
+
+/** Explicação das telas sem um "acesso" para marcar. */
+const NOTA_DA_TELA: Record<string, string> = {
+  'Produtos e estoque': 'Todos consultam os produtos e o estoque.',
+  'Regras da loja': 'Nas telas que têm regras: Caixa do dia, Clientes, Produtos e estoque, Financeiro e Dados e backup.',
+};
+
+/**
+ * O que o Personalizado acessa, tela por tela. Marcar a tela dá o acesso a ela; os extras de cada tela só ficam
+ * liberados com ela marcada, e tirar a tela tira os extras (a mesma regra que o servidor confere). Só aparece o que
+ * quem cadastra também tem.
+ */
+function AcessoDoPersonalizado({ eu, marcadas, aoMudar, erro }: { eu: QuemAcessa; marcadas: readonly Permissao[]; aoMudar: (l: Permissao[]) => void; erro?: string }) {
+  const id = useId();
+  const tem = new Set(marcadas);
+  const telas = TELAS_DO_PERSONALIZADO.filter((t) => t.acesso === null || pode(eu, t.acesso))
+    .map((t) => ({ ...t, extras: t.extras.filter((p) => pode(eu, p)) }))
+    .filter((t) => t.acesso !== null || t.extras.length > 0);
+  const mudar = (t: TelaDoPersonalizado, p: Permissao, sim: boolean) => {
+    const novo = new Set(tem);
+    if (sim) novo.add(p);
+    else {
+      novo.delete(p);
+      if (p === t.acesso) t.extras.forEach((x) => novo.delete(x));
+    }
+    aoMudar(funcoesCoerentes([...novo]));
+  };
+  return (
+    <fieldset className="us-acesso">
+      <legend>O que esta pessoa acessa</legend>
+      <p className="modal-dica">Marque as telas e, em cada uma, o que mais ela pode fazer. A Visão geral, a consulta de produtos e o Suporte são de todos.</p>
+      <div className="us-acesso-telas">
+        {telas.map((t, i) => {
+          const marcada = t.acesso !== null && tem.has(t.acesso);
+          const liberada = t.acesso === null || marcada;
+          const desc = t.acesso ? (PERMISSOES[t.acesso] !== t.tela ? PERMISSOES[t.acesso] : null) : (NOTA_DA_TELA[t.tela] ?? null);
+          const idDesc = `${id}-${i}`;
+          return (
+            <div key={t.tela} className={`us-acesso-tela${marcada ? ' us-acesso-on' : ''}`} role="group" aria-label={t.tela}>
+              {t.acesso ? (
+                <label className="us-acesso-nome">
+                  <input type="checkbox" checked={marcada} onChange={(e) => mudar(t, t.acesso!, e.target.checked)} aria-describedby={desc ? idDesc : undefined} />
+                  {t.tela}
+                </label>
+              ) : (
+                <span className="us-acesso-nome us-acesso-de-todos">{t.tela}</span>
+              )}
+              {desc && (
+                <small id={idDesc} className="us-acesso-desc">
+                  {desc}
+                </small>
+              )}
+              {t.extras.length > 0 && (
+                <div className="us-acesso-extras">
+                  {t.extras.map((p) => (
+                    <label key={p} className={liberada ? undefined : 'us-acesso-off'}>
+                      <input type="checkbox" checked={liberada && tem.has(p)} disabled={!liberada} onChange={(e) => mudar(t, p, e.target.checked)} />
+                      {PERMISSOES[p]}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       {erro && <span className="campo-erro">{erro}</span>}
     </fieldset>
@@ -404,7 +517,7 @@ function ModalNovoUsuario({
 
   async function enviar(ev: FormEvent) {
     ev.preventDefault();
-    const dados = { nome, usuario, papel, senha, ...(papel === 'personalizado' ? { permissoes } : {}) };
+    const dados = { nome, usuario, papel, senha, ...(papel === 'personalizado' ? { permissoes: funcoesCoerentes(permissoes) } : {}) };
     const v = validarNovoUsuario(dados);
     if (!v.ok) {
       setErros(Object.fromEntries(v.erros.map((e) => [e.campo, e.mensagem])));
@@ -427,31 +540,21 @@ function ModalNovoUsuario({
     <Modal titulo="Novo usuário" aoFechar={aoFechar} larga={papel === 'personalizado'}>
       <form className="modal-form" onSubmit={enviar} noValidate>
         <p className="modal-sub">A pessoa entra com o usuário e a senha provisória; no primeiro acesso ela cria a própria senha.</p>
-        <div className="campo">
-          <label htmlFor="us-nome">Nome</label>
-          <input id="us-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={LIMITES_USUARIO.nomeMax} autoComplete="off" />
-          {erros.nome && <span className="campo-erro">{erros.nome}</span>}
-        </div>
         <div className="modal-grade">
+          <div className="campo">
+            <label htmlFor="us-nome">Nome</label>
+            <input id="us-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={LIMITES_USUARIO.nomeMax} autoComplete="off" />
+            {erros.nome && <span className="campo-erro">{erros.nome}</span>}
+          </div>
           <div className="campo">
             <label htmlFor="us-login">Usuário (login)</label>
             <input id="us-login" value={usuario} onChange={(e) => setUsuario(e.target.value.toLowerCase())} maxLength={LIMITES_USUARIO.loginMax} autoCapitalize="none" spellCheck={false} placeholder="ex.: maria.silva" autoComplete="off" />
             {erros.usuario && <span className="campo-erro">{erros.usuario}</span>}
           </div>
-          <div className="campo">
-            <label htmlFor="us-papel">Papel</label>
-            <select id="us-papel" value={papel} onChange={(e) => setPapel(e.target.value as PapelDeLoja)}>
-              {opcoes.map((p) => (
-                <option key={p} value={p}>
-                  {NOME_PAPEL[p]}
-                </option>
-              ))}
-            </select>
-            {erros.papel && <span className="campo-erro">{erros.papel}</span>}
-          </div>
         </div>
+        <EscolhaDoPapel opcoes={opcoes} valor={papel} aoMudar={setPapel} ehSuporte={opcoes.includes('dono')} erro={erros.papel} />
         {!opcoes.includes('dono') && <p className="modal-dica">{SO_PELO_SUPORTE}</p>}
-        {papel === 'personalizado' && <FuncoesDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} erro={erros.permissoes} />}
+        {papel === 'personalizado' && <AcessoDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} erro={erros.permissoes} />}
         <CampoSenhaProvisoria id="us-senha" valor={senha} aoMudar={setSenha} erro={erros.senha} />
         {erro && (
           <p className="alerta alerta-erro" role="alert">
@@ -491,7 +594,9 @@ function ModalEditarUsuario({
   const opcoes = PAPEIS_DE_LOJA.filter((p) => p === atual || papeisQuePodeCriar(eu).includes(p));
   const [nome, setNome] = useState(u.nome);
   const [papel, setPapel] = useState<PapelDeLoja>(atual);
-  const [permissoes, setPermissoes] = useState<Permissao[]>(() => PERMISSOES_CONCEDIVEIS.filter((p) => (u.permissoes ?? []).includes(p)));
+  // como a tela mostra: sem os extras que ficaram sem a tela deles (não valeriam)
+  const antes = funcoesCoerentes(PERMISSOES_CONCEDIVEIS.filter((p) => (u.permissoes ?? []).includes(p)));
+  const [permissoes, setPermissoes] = useState<Permissao[]>(antes);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
@@ -500,8 +605,8 @@ function ModalEditarUsuario({
     const mudanca: AlteracaoUsuario = {};
     if (nome.trim() !== u.nome) mudanca.nome = nome;
     if (papel !== atual) mudanca.papel = papel;
-    if (papel === 'personalizado' && JSON.stringify(permissoes) !== JSON.stringify(PERMISSOES_CONCEDIVEIS.filter((p) => (u.permissoes ?? []).includes(p)))) {
-      mudanca.permissoes = permissoes;
+    if (papel === 'personalizado' && (papel !== atual || JSON.stringify(funcoesCoerentes(permissoes)) !== JSON.stringify(antes))) {
+      mudanca.permissoes = funcoesCoerentes(permissoes);
     }
     if (Object.keys(mudanca).length === 0) return aoFechar();
     setErro(null);
@@ -522,19 +627,10 @@ function ModalEditarUsuario({
           <label htmlFor="us-ed-nome">Nome</label>
           <input id="us-ed-nome" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={LIMITES_USUARIO.nomeMax} autoComplete="off" />
         </div>
-        <div className="campo">
-          <label htmlFor="us-ed-papel">Papel</label>
-          <select id="us-ed-papel" value={papel} onChange={(e) => setPapel(e.target.value as PapelDeLoja)} disabled={ehEu}>
-            {opcoes.map((p) => (
-              <option key={p} value={p}>
-                {NOME_PAPEL[p]}
-              </option>
-            ))}
-          </select>
-          {ehEu && <span className="modal-dica">Ninguém muda o próprio papel. Peça a outro Dono.</span>}
-          {!ehEu && !papeisQuePodeCriar(eu).includes('dono') && <span className="modal-dica">{SO_PELO_SUPORTE}</span>}
-        </div>
-        {papel === 'personalizado' && !ehEu && <FuncoesDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} />}
+        <EscolhaDoPapel opcoes={opcoes} valor={papel} aoMudar={setPapel} ehSuporte={papeisQuePodeCriar(eu).includes('dono')} desabilitada={ehEu} />
+        {ehEu && <p className="modal-dica">Ninguém muda o próprio papel nem as próprias funções. Peça a outro Dono.</p>}
+        {!ehEu && !papeisQuePodeCriar(eu).includes('dono') && <p className="modal-dica">{SO_PELO_SUPORTE}</p>}
+        {papel === 'personalizado' && !ehEu && <AcessoDoPersonalizado eu={eu} marcadas={permissoes} aoMudar={setPermissoes} />}
         <p className="modal-dica">
           O usuário (login) <span className="mono">{u.usuario}</span> não muda.
         </p>

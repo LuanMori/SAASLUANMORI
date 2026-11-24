@@ -27,6 +27,11 @@ usuário"); o Adm. Sup aparece como **"Suporte"**; fazer na **demonstração e n
   que são só do Dono (brinde, mexer em Dono, excluir dados, ciência do caixa, baixa do cartão, liberar dia
   fechado e fiado) e menos "cadastrar usuários". Quem cadastra só dá as funções que ele mesmo tem. As funções
   ficam no usuário (`permissoes`); trocar o papel para outro apaga as funções.
+- **Tela por tela** (24/11/2026, "Personalizado você escolhe o que a pessoa tem acesso"): as funções aparecem
+  agrupadas pelas telas do menu (`TELAS_DO_PERSONALIZADO`). Marcar a tela dá o acesso a ela; os extras de uma tela
+  (ex.: o CPF completo, em Clientes) só valem com ela, e o servidor recusa um extra sem a tela. Produtos e estoque
+  (consulta de todos) e Regras da loja (em várias telas) só têm extras. Na criação, o papel se escolhe em cartões:
+  Vendedor ou Personalizado (Dono e Administrador, à parte, só para o suporte).
 - **O menu segue as funções:** "Frente de caixa" pede Vender e "Clientes" pede Clientes (Dono, Administrador e
   Vendedor têm as duas, então nada muda para eles). Visão geral, Produtos e estoque (consulta) e Suporte ficam
   para todos.

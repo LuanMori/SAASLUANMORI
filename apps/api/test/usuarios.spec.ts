@@ -86,6 +86,11 @@ describe('Tela Usuários (API)', () => {
     expect(p.body).toMatchObject({ papel: 'personalizado', permissoes: ['vender', 'relatorios'] });
     // o Personalizado não recebe o que é só do Dono nem a gestão de usuários
     await http().post('/usuarios').set('Cookie', cookie.dona!).send({ ...novo, usuario: 'lia', papel: 'personalizado', permissoes: ['usuarios'] }).expect(400);
+    // o extra de uma tela só com a tela (24/11/2026): o CPF completo pede Clientes
+    const solto = await http().post('/usuarios').set('Cookie', cookie.dona!).send({ ...novo, usuario: 'lia', papel: 'personalizado', permissoes: ['clientes.cpf'] }).expect(400);
+    expect(JSON.stringify(solto.body)).toContain('Para “Ver o CPF completo do cliente”, marque também a tela “Clientes”.');
+    await http().patch(`/usuarios/${p.body.id}`).set('Cookie', cookie.dona!).send({ permissoes: ['relatorios', 'estorno'] }).expect(400);
+    await http().patch(`/usuarios/${p.body.id}`).set('Cookie', cookie.dona!).send({ permissoes: ['vender', 'estorno', 'relatorios'] }).expect(200);
   });
 
   it('login repetido -> 409; campo estranho e senha fraca -> 400', async () => {

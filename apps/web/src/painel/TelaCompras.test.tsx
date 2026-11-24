@@ -184,7 +184,8 @@ describe('Compras · registrar, estornar, pagar e dar baixa (módulo 4)', () => 
     await userEvent.click(await screen.findByRole('button', { name: /^Pagar Compra NF 55/ }));
     await userEvent.click(within(janela()).getByRole('button', { name: 'Pagar' }));
     await screen.findByText('Conta paga: R$ 12,00 saíram de Conta bancária.');
-    expect(screen.getByText('Nenhuma conta a pagar em aberto. As compras a prazo aparecem aqui.')).toBeTruthy();
+    // a lista recarrega logo depois do aviso: espera por ela (com a máquina ocupada, a recarga atrasa)
+    expect(await screen.findByText('Nenhuma conta a pagar em aberto. As compras a prazo aparecem aqui.')).toBeTruthy();
   });
 
   it('lote vencendo aparece e a baixa é feita pela tela', async () => {

@@ -15,7 +15,7 @@
 // O servidor confere tudo de novo, e o banco tem uma trava própria para papel e Dono.
 import { CONTROLE, ehObjeto } from './interno';
 import { ehAdmSup, ehPapelDeLoja, NOME_PAPEL, PAPEIS_DE_LOJA, type PapelDeLoja, type PapelNaLoja } from './papeis';
-import { ehPermissaoConcedivel, mensagemSemPermissao, type Permissao, PERMISSOES_CONCEDIVEIS, pode, type QuemAcessa } from './permissoes';
+import { ehPermissaoConcedivel, mensagemSemPermissao, type Permissao, PERMISSOES, PERMISSOES_CONCEDIVEIS, pode, type QuemAcessa, telaQueAFuncaoPede } from './permissoes';
 import type { ErroCampo, Resultado } from './resultado';
 
 export const LIMITES_USUARIO = { nomeMin: 2, nomeMax: 120, loginMin: 2, loginMax: 40, senhaMin: 8, senhaMax: 128 } as const;
@@ -125,6 +125,12 @@ function lerPermissoes(valor: unknown, erros: ErroCampo[]): Permissao[] {
   }
   // na ordem da lista de permissões (a mesma em toda tela e em todo registro)
   const marcadas = new Set(valor as Permissao[]);
+  // o extra de uma tela só vale com o acesso a ela (ex.: o CPF completo, só com Clientes)
+  const solta = PERMISSOES_CONCEDIVEIS.find((p) => marcadas.has(p) && telaQueAFuncaoPede(p) !== null && !marcadas.has(telaQueAFuncaoPede(p)!.acesso!));
+  if (solta) {
+    erros.push({ campo: 'permissoes', mensagem: `Para “${PERMISSOES[solta]}”, marque também a tela “${telaQueAFuncaoPede(solta)!.tela}”.` });
+    return [];
+  }
   return PERMISSOES_CONCEDIVEIS.filter((p) => marcadas.has(p));
 }
 

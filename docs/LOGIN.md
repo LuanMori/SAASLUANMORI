@@ -79,7 +79,7 @@ loja já usa.
 | Trocar a senha | pede a senha atual; errar 5 vezes bloqueia e derruba a sessão; troca derruba as sessões dos outros aparelhos | `POST /sessao/senha` |
 | Desativar / nova senha pelo Dono | derruba na hora as sessões abertas da pessoa | `usuarios.service.ts` |
 | Quem cadastra | O Dono e o Administrador cadastram **Vendedor** e **Personalizado**. **Dono e Administrador: só o suporte** (Adm. Sup) cadastra ou dá esses papéis. Mexer em Dono (alterar, desativar, nova senha): só outro Dono ou o suporte. Ninguém desativa a si mesmo nem muda o próprio papel ou as próprias funções. A loja nunca fica sem um Dono ativo | `conferirGestaoDeUsuario` + trava no banco |
-| Personalizado | só as funções marcadas para ele (pelo menos uma). Não recebe as funções só do Dono nem a de cadastrar usuários; quem cadastra só dá as funções que tem | `permissoes.ts` (`PERMISSOES_CONCEDIVEIS`) + `usuario.ts` |
+| Personalizado | só as funções marcadas para ele (pelo menos uma), escolhidas tela por tela: o extra de uma tela só vale com ela marcada. Não recebe as funções só do Dono nem a de cadastrar usuários; quem cadastra só dá as funções que tem | `permissoes.ts` (`PERMISSOES_CONCEDIVEIS`, `TELAS_DO_PERSONALIZADO`) + `usuario.ts` |
 | Excluir dados (LGPD) | só o Dono, só de usuário desativado; fica "Usuário removido" no histórico | `POST /usuarios/:id/excluir-dados` |
 
 O banco tem uma trava própria (trigger `usuarios_trava_api`): mesmo que a API tivesse um erro, a role

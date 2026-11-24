@@ -28,6 +28,9 @@ import {
   validarSenhaNova,
   papeisQuePodeCriar,
   PERMISSOES_CONCEDIVEIS,
+  TELAS_DO_PERSONALIZADO,
+  funcoesCoerentes,
+  telaQueAFuncaoPede,
 } from '../src';
 
 const campos = (r: { ok: boolean; erros?: { campo: string }[] }) => (!r.ok && r.erros ? r.erros.map((e) => e.campo) : []);
@@ -60,6 +63,31 @@ describe('permissões (matriz única, do DaniPets)', () => {
     expect(mensagemSemPermissao('financeiro')).toBe('Financeiro: só o Dono ou o Administrador.');
     expect(mensagemSemPermissao('brinde')).toBe('Dar brinde (preço R$ 0,00) sem pedir senha: só o Dono.');
     expect(mensagemSemPermissao('vender')).toBe('Vender na Frente de caixa: só o Dono, o Administrador ou o Vendedor.');
+  });
+
+  it('Personalizado tela por tela: cada função que se pode dar aparece uma vez; o extra pede o acesso à tela dele', () => {
+    const todas = TELAS_DO_PERSONALIZADO.flatMap((t) => [...(t.acesso ? [t.acesso] : []), ...t.extras]);
+    expect([...todas].sort()).toEqual([...PERMISSOES_CONCEDIVEIS].sort());
+    expect(new Set(todas).size).toBe(todas.length);
+    expect(TELAS_DO_PERSONALIZADO.map((t) => t.tela)).toEqual([
+      'Frente de caixa',
+      'Caixa do dia',
+      'Produtos e estoque',
+      'Compras',
+      'Clientes',
+      'Financeiro',
+      'Relatórios',
+      'Dados e backup',
+      'Regras da loja',
+    ]);
+    expect(telaQueAFuncaoPede('clientes.cpf')?.tela).toBe('Clientes');
+    expect(telaQueAFuncaoPede('estorno')?.acesso).toBe('vender');
+    expect(telaQueAFuncaoPede('produtos.cadastrar')).toBeNull(); // Produtos e estoque: todos consultam
+    expect(telaQueAFuncaoPede('loja.configurar')).toBeNull(); // regras: em várias telas
+    expect(telaQueAFuncaoPede('clientes')).toBeNull(); // o acesso em si
+    // sem o acesso, o extra sai; a ordem é a da lista
+    expect(funcoesCoerentes(['clientes.cpf', 'relatorios', 'caixa.desfazer', 'produtos.cadastrar'])).toEqual(['produtos.cadastrar', 'relatorios']);
+    expect(funcoesCoerentes(['clientes.cpf', 'clientes', 'vender', 'estorno'])).toEqual(['vender', 'clientes', 'clientes.cpf', 'estorno']);
   });
 
   it('as regras da venda usam a mesma matriz', () => {
@@ -181,6 +209,11 @@ describe('quem gerencia quem', () => {
     expect(mensagem(validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['brinde'] }))).toBe('Esta função não pode ser dada a um Personalizado: brinde.');
     expect(mensagem(validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['usuarios'] }))).toMatch(/não pode ser dada/);
     expect(mensagem(validarNovoUsuario({ ...base, papel: 'vendedor', permissoes: ['vender'] }))).toBe('Funções escolhidas só no papel Personalizado.');
+    // o extra de uma tela pede o acesso a ela (na criação e na alteração; o servidor usa a mesma regra)
+    expect(mensagem(validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['clientes.cpf'] }))).toBe('Para “Ver o CPF completo do cliente”, marque também a tela “Clientes”.');
+    expect(mensagem(validarAlteracaoUsuario({ permissoes: ['relatorios', 'estorno'] }))).toBe('Para “Cancelar venda e devolver itens sem pedir senha”, marque também a tela “Frente de caixa”.');
+    const coerente = validarNovoUsuario({ ...base, papel: 'personalizado', permissoes: ['clientes.cpf', 'clientes', 'produtos.cadastrar', 'loja.configurar'] });
+    expect(coerente.ok && coerente.valor.permissoes).toEqual(['clientes', 'clientes.cpf', 'produtos.cadastrar', 'loja.configurar']);
     expect(PERMISSOES_CONCEDIVEIS).not.toContain('usuarios');
     expect(PERMISSOES_CONCEDIVEIS).not.toContain('caixa.ciencia');
     expect(PERMISSOES_CONCEDIVEIS).toContain('financeiro');
