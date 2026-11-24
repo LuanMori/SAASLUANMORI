@@ -6,15 +6,15 @@ export const MARCA = {
   nome: 'Nome da empresa',
   /** Contato mostrado no botão "Suporte" da tela de entrada. */
   suporte: {
-    texto: 'Fale com o suporte do Nome da empresa.',
+    texto: 'Precisa de ajuda? Fale com o suporte do Nome da empresa.',
     email: 'suporte@nomedaempresa.com.br',
   },
-  /** Frase do painel da marca, na tela de entrada (pedido do Luan, 24/11/2026). */
-  slogan: 'Gestão completa para o seu negócio',
-  /** Os destaques do sistema no painel da marca (o ícone de cada um fica em telas/LayoutEntrada.tsx). */
+  /** Frase do painel da tela de entrada, embaixo do nome da loja (pedido do Luan, 24/11/2026). */
+  slogan: 'Gestão integrada e eficiente para o seu negócio',
+  /** Os destaques do sistema no painel da tela de entrada (o ícone de cada um fica em telas/LayoutEntrada.tsx). */
   destaques: [
-    { icone: 'pdv', titulo: 'PDV', texto: 'Vendas rápidas' },
-    { icone: 'estoque', titulo: 'Estoque', texto: 'Controle de lotes' },
-    { icone: 'financeiro', titulo: 'Financeiro', texto: 'Fluxo e resultados' },
+    { icone: 'pdv', titulo: 'PDV', texto: 'Vendas ágeis e seguras' },
+    { icone: 'estoque', titulo: 'Estoque', texto: 'Lotes e validades sob controle' },
+    { icone: 'financeiro', titulo: 'Financeiro', texto: 'Fluxo de caixa e resultados' },
   ],
 } as const;

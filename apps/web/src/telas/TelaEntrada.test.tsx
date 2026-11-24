@@ -14,8 +14,8 @@ function montar(aoEntrar = vi.fn(async (): Promise<ResultadoEntrada> => ({ ok: t
   render(<TelaEntrada loja={loja} aoEntrar={aoEntrar} />);
   return {
     aoEntrar,
-    usuario: screen.getByLabelText('Insira seu usuário'),
-    senha: screen.getByLabelText('Insira sua senha'),
+    usuario: screen.getByLabelText('Usuário'),
+    senha: screen.getByLabelText('Senha'),
     entrar: screen.getByRole('button', { name: 'Entrar' }),
   };
 }
@@ -28,20 +28,21 @@ describe('TelaEntrada', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
   });
 
-  it('mais da nossa marca, menos da loja: o painel tem o nome, a frase e os destaques; a loja aparece uma vez só', () => {
+  it('no formato da imagem do Luan: a loja em destaque no painel, com a frase e os destaques; a nossa logo no formulário', () => {
     montar();
-    const painel = screen.getByRole('complementary', { name: MARCA.nome });
-    expect(within(painel).getByText(MARCA.nome)).toBeTruthy();
-    expect(within(painel).getByText('Gestão completa para o seu negócio')).toBeTruthy();
-    expect(within(within(painel).getByRole('list', { name: 'O que o sistema faz' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'PDVVendas rápidas',
-      'EstoqueControle de lotes',
-      'FinanceiroFluxo e resultados',
+    const painel = screen.getByRole('complementary', { name: 'Apresentação' });
+    expect(within(painel).getByText('Pet Shop da Ana')).toBeTruthy(); // grande, ao lado do desenho da loja
+    expect(within(painel).getByText('Gestão integrada e eficiente para o seu negócio')).toBeTruthy();
+    expect(within(within(painel).getByRole('list', { name: 'Recursos do sistema' })).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'PDVVendas ágeis e seguras',
+      'EstoqueLotes e validades sob controle',
+      'FinanceiroFluxo de caixa e resultados',
     ]);
-    expect(within(painel).queryByText('Pet Shop da Ana')).toBeNull();
-    expect(screen.getAllByText('Pet Shop da Ana')).toHaveLength(1); // só no formulário
-    expect(screen.getByText('Acesso à loja')).toBeTruthy();
-    expect(screen.getAllByText(MARCA.nome).length).toBe(2); // o painel e o rodapé do formulário
+    expect(within(painel).queryByText(MARCA.nome)).toBeNull();
+    expect(screen.getAllByText(MARCA.nome)).toHaveLength(2); // a logo em cima do formulário e a do rodapé
+    expect(screen.getByText('Acesse sua conta para continuar.')).toBeTruthy();
+    // o título (para o leitor de tela) é o da loja, uma vez só
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Pet Shop da Ana']);
   });
 
   it('Entrar só libera com usuário e senha preenchidos', async () => {
@@ -86,16 +87,16 @@ describe('TelaEntrada', () => {
     expect((senha as HTMLInputElement).type).toBe('password');
   });
 
-  it('"Esqueceu sua senha?" orienta a pedir ao dono', async () => {
+  it('"Esqueceu sua senha?" orienta a pedir ao responsável pela loja', async () => {
     montar();
     await userEvent.click(screen.getByRole('button', { name: 'Esqueceu sua senha?' }));
-    expect(screen.getByRole('status').textContent).toMatch(/dono da loja/);
+    expect(screen.getByRole('status').textContent).toBe('Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas por e-mail.');
   });
 
   it('endereço sem loja: não mostra formulário', () => {
     render(<TelaEntrada loja={null} aoEntrar={vi.fn()} />);
     expect(screen.getByRole('heading', { name: 'Endereço não encontrado' })).toBeTruthy();
-    expect(screen.queryByLabelText('Insira seu usuário')).toBeNull();
+    expect(screen.queryByLabelText('Usuário')).toBeNull();
     expect(screen.getByRole('button', { name: 'Usar o tema escuro' })).toBeTruthy(); // o tema vale mesmo sem loja
   });
 

@@ -112,15 +112,14 @@ export function ModalTrocarSenha({ aoFechar, aoTrocar, ...resto }: Omit<PropsFor
 /** Primeiro acesso (senha provisória): a pessoa só usa o sistema depois de criar a própria senha. */
 export function TelaCriarSenha({ loja, aoSair, ...resto }: Omit<PropsForm, 'rotuloAtual' | 'textoBotao' | 'aoCancelar'> & { loja: { nome: string }; aoSair: () => void }) {
   return (
-    <LayoutEntrada acoes={<BotaoTema className="entrada-tema" />}>
+    <LayoutEntrada loja={loja} acoes={<BotaoTema className="entrada-tema" />}>
       <section className="entrada-form" aria-labelledby="cs-titulo">
-        <p className="entrada-sobre">Primeiro acesso</p>
-        <h1 id="cs-titulo" className="entrada-loja">
+        <h1 id="cs-titulo" className="entrada-loja entrada-loja-nome">
           {loja.nome}
         </h1>
         <p className="entrada-boas-vindas">Crie a sua senha</p>
         <p className="suave cs-texto">
-          Olá, {resto.pessoa.nome}. A senha que você recebeu é provisória: crie agora a sua, que só você vai saber. Ela vale para entrar e para autorizar no caixa.
+          Olá, {resto.pessoa.nome}. Por segurança, troque a senha provisória por uma senha pessoal, que só você vai saber. Ela vale para entrar no sistema e para autorizar operações no caixa.
         </p>
         <FormTrocarSenha {...resto} rotuloAtual="Senha provisória que você recebeu" textoBotao="Criar a minha senha" />
         <button type="button" className="entrada-link" onClick={aoSair}>

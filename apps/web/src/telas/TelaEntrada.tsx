@@ -26,6 +26,7 @@ interface Props {
 export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
   return (
     <LayoutEntrada
+      loja={loja}
       acoes={
         <>
           <BotaoTema className="entrada-tema" />
@@ -41,7 +42,7 @@ export function TelaEntrada({ loja, aoEntrar, aviso = null }: Props) {
             Endereço não encontrado
           </h1>
           <p className="alerta alerta-erro" role="alert">
-            Este endereço não corresponde a nenhuma loja ativa. Confira o link com o dono da sua loja.
+            Este endereço não corresponde a nenhuma loja ativa. Confira o link com o responsável pela loja.
           </p>
         </section>
       )}
@@ -87,11 +88,11 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
 
   return (
     <form className="entrada-form" onSubmit={enviar} noValidate aria-labelledby="entrada-titulo">
-      <p className="entrada-sobre">Acesso à loja</p>
-      <h1 id="entrada-titulo" className="entrada-loja">
+      <h1 id="entrada-titulo" className="entrada-loja entrada-loja-nome">
         {loja.nome}
       </h1>
       <p className="entrada-boas-vindas">Boas-vindas</p>
+      <p className="entrada-subtitulo">Acesse sua conta para continuar.</p>
 
       {(erro ?? aviso) && (
         <p className="alerta alerta-erro" role="alert">
@@ -101,8 +102,8 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
 
       <div className="entrada-campo">
         <div className="entrada-rotulo">
-          <label htmlFor="entrada-usuario">Insira seu usuário</label>
-          <Dica texto="Use o usuário que o dono da loja cadastrou para você." />
+          <label htmlFor="entrada-usuario">Usuário</label>
+          <Dica texto="Use o usuário cadastrado pelo responsável da loja (ex.: maria.silva)." />
         </div>
         <div className="entrada-caixa">
           <IconeUsuario />
@@ -114,7 +115,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder="Ex.: maria.silva"
+            placeholder="Digite seu usuário"
             maxLength={64}
           />
         </div>
@@ -122,7 +123,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
 
       <div className="entrada-campo">
         <div className="entrada-rotulo">
-          <label htmlFor="entrada-senha">Insira sua senha</label>
+          <label htmlFor="entrada-senha">Senha</label>
         </div>
         <div className="entrada-caixa">
           <IconeCadeado />
@@ -136,6 +137,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
             onKeyDown={verCapsLock}
             onBlur={() => setCapsLock(false)}
             autoComplete="current-password"
+            placeholder="Digite sua senha"
             maxLength={128}
             aria-describedby={capsLock ? 'entrada-caps' : undefined}
           />
@@ -151,7 +153,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
         </div>
         {capsLock && (
           <span id="entrada-caps" className="entrada-caps">
-            Caps Lock ligado
+            Caps Lock ativado
           </span>
         )}
       </div>
@@ -165,7 +167,7 @@ function FormEntrada({ loja, aoEntrar, aviso }: Required<Props> & { loja: { nome
       </button>
       {ajudaSenha && (
         <p className="alerta" role="status">
-          Peça ao dono da loja para criar uma senha nova para você. Por segurança, a senha não é enviada por e-mail.
+          Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas por e-mail.
         </p>
       )}
     </form>

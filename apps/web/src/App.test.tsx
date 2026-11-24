@@ -44,8 +44,8 @@ const listas: Record<string, Rota> = {
 };
 
 async function entrar(usuario = 'dona', senha = 'minha-senha-boa') {
-  await userEvent.type(await screen.findByLabelText('Insira seu usuário'), usuario);
-  await userEvent.type(screen.getByLabelText('Insira sua senha'), senha);
+  await userEvent.type(await screen.findByLabelText('Usuário'), usuario);
+  await userEvent.type(screen.getByLabelText('Senha'), senha);
   await userEvent.click(screen.getByRole('button', { name: 'Entrar' }));
 }
 
@@ -69,7 +69,7 @@ describe('App (sistema real, login próprio)', () => {
     render(<App urlApi="/api" lojaDev="lojaa" />);
     await entrar('dona', 'errada');
     expect(await screen.findByText('Usuário ou senha incorretos.')).toBeTruthy();
-    expect((screen.getByLabelText('Insira sua senha') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Senha') as HTMLInputElement).value).toBe('');
   });
 
   it('com sessão aberta, entra direto; abas que o servidor ainda não tem mostram o aviso', async () => {
@@ -101,14 +101,14 @@ describe('App (sistema real, login próprio)', () => {
     });
     render(<App urlApi="/api" lojaDev="lojaa" />);
     expect(await screen.findByText('Sua sessão terminou. Entre de novo.')).toBeTruthy();
-    expect(screen.getByLabelText('Insira seu usuário')).toBeTruthy();
+    expect(screen.getByLabelText('Usuário')).toBeTruthy();
   });
 
   it('Sair encerra a sessão no servidor', async () => {
     const pedidos = servidor({ 'GET /sessao': () => [200, DONA], 'POST /sessao/sair': () => [204, null], 'GET /sessao/loja': lojaA, ...listas });
     render(<App urlApi="/api" lojaDev="lojaa" />);
     await userEvent.click(await screen.findByRole('button', { name: 'Sair' }));
-    await waitFor(() => expect(screen.getByLabelText('Insira seu usuário')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Usuário')).toBeTruthy());
     expect(pedidos.map((p) => p.rota)).toContain('POST /sessao/sair');
   });
 

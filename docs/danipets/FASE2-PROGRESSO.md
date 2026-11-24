@@ -902,3 +902,39 @@ o nome do cliente e pouco o nome da nossa empresa."*
 - **Navegador:** PC (1366 e 1920 px), tablet (820 px) e celular (390 px), no claro e no escuro, mais o primeiro acesso:
   sem rolagem para o lado; no PC e no tablet, sem rolagem nenhuma; console sem erros. O tema continua trocando e
   sendo guardado.
+
+### 24/11/2026 (depois): de volta ao formato da imagem do Luan, com frases e desenho mais profissionais
+
+O pedido: *"Gostei mais da minha imagem enviada, continue com ela mas deixe com frases mais profissionais e a casa que
+está no lado esquerdo deixe mais profissional também."* A versão anterior (com a nossa marca no painel) foi trocada por
+esta.
+
+- **Painel da esquerda, como na imagem:**
+  - verde-escuro, com as curvas verde-claras nos cantos e um fundo de prateleiras desfocado. É um desenho em SVG, não
+    foto: a página não carrega nada de fora;
+  - a **loja em destaque**: o desenho da loja num selo de vidro, o nome dela grande, a frase e os três destaques.
+- **O desenho da loja**, refeito: letreiro, toldo listrado verde e branco com a borda recortada, vitrine com reflexo,
+  porta com maçaneta e calçada, com traço uniforme e as cores da marca.
+- **À direita, como na imagem:** a nossa logo em cima, o nome da loja, "Boas-vindas", o formulário, "Esqueceu sua
+  senha?" e a logo pequena no pé. O tema e o Suporte continuam no canto.
+- **Frases mais profissionais:**
+  - frase do painel: "Gestão integrada e eficiente para o seu negócio";
+  - destaques: PDV ("Vendas ágeis e seguras"), Estoque ("Lotes e validades sob controle") e Financeiro ("Fluxo de
+    caixa e resultados");
+  - embaixo de "Boas-vindas": "Acesse sua conta para continuar.";
+  - campos "Usuário" e "Senha" (antes "Insira seu usuário" e "Insira sua senha"), com "Digite seu usuário" e "Digite
+    sua senha" dentro deles. A dica do usuário diz "Use o usuário cadastrado pelo responsável da loja (ex.:
+    maria.silva).";
+  - "Esqueceu sua senha?": "Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas
+    por e-mail.";
+  - Suporte: "Precisa de ajuda? Fale com o suporte do Nome da empresa.";
+  - endereço sem loja: "Confira o link com o responsável pela loja."; Caps Lock: "Caps Lock ativado";
+  - primeiro acesso: "Por segurança, troque a senha provisória por uma senha pessoal, que só você vai saber. Ela vale
+    para entrar no sistema e para autorizar operações no caixa."
+- O botão **Entrar** parado (antes de digitar usuário e senha) fica verde-claro, como na imagem, em vez de cinza.
+- **Celular e tablet:** o painel vira uma faixa com o selo da loja, o nome e a frase. O formulário mostra a logo,
+  "Boas-vindas" e os campos. O nome da loja não se repete na tela: o título continua lá para o leitor de tela.
+- **Testes:** tela 408: o painel tem a loja, a frase e os destaques; a nossa logo fica no formulário e no pé; os
+  rótulos novos; a ajuda da senha.
+- **Navegador:** PC (1366 e 1920 px), tablet e celular, no claro e no escuro, mais o primeiro acesso: sem rolagem para
+  o lado (no PC e no tablet, sem rolagem nenhuma); o tema continua trocando e sendo guardado; console sem erros.
