@@ -37,6 +37,15 @@ jobs:
           done
           psql -X --set=ON_ERROR_STOP=1 -c "ALTER ROLE saas_app LOGIN PASSWORD '$SAAS_APP_DB_PASSWORD'"
       - run: mvn -B -f apps/java/pom.xml test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build:core
+      - name: Validar os contratos de cadastro da API original no banco de testes
+        env:
+          TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres-ci@localhost:5432/postgres
+        run: npm test -w @saas/api -- --runTestsByPath test/codigos.spec.ts
   html:
     runs-on: ubuntu-latest
     steps:
