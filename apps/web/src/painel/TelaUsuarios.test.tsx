@@ -133,7 +133,7 @@ describe('descreverAuditoria e senha sorteada', () => {
 });
 
 describe('na barra lateral', () => {
-  it('Usuários abre a tela; "Trocar senha" abre a janela e troca de verdade', async () => {
+  it('Usuários abre a tela; o nome no canto abre Meu usuário, que troca a senha de verdade', async () => {
     render(
       <TelaPainel
         loja={{ nome: 'Loja A' }}
@@ -145,13 +145,14 @@ describe('na barra lateral', () => {
       />,
     );
     expect(await screen.findByRole('heading', { name: 'Usuários' })).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: 'Trocar senha' }));
-    const janela = screen.getByRole('dialog', { name: 'Trocar minha senha' });
-    await userEvent.type(within(janela).getByLabelText('Senha atual'), 'demo1234');
-    await userEvent.type(within(janela).getByLabelText('Senha nova'), 'uma-frase-facil-de-lembrar');
-    await userEvent.type(within(janela).getByLabelText('Repita a senha nova'), 'uma-frase-facil-de-lembrar');
-    await userEvent.click(within(janela).getByRole('button', { name: 'Trocar a senha' }));
-    expect(await screen.findByText(/Senha trocada/)).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Meu usuário: Ana, Dono' }));
+    const cartao = await screen.findByRole('region', { name: 'Trocar a senha' });
+    await userEvent.type(within(cartao).getByLabelText('Senha atual'), 'demo1234');
+    await userEvent.type(within(cartao).getByLabelText('Senha nova'), 'uma-frase-facil-de-lembrar');
+    await userEvent.type(within(cartao).getByLabelText('Repita a senha nova'), 'uma-frase-facil-de-lembrar');
+    await userEvent.click(within(cartao).getByRole('button', { name: 'Trocar a senha' }));
+    expect(await within(cartao).findByText(/Senha trocada/)).toBeTruthy();
+    expect((within(cartao).getByLabelText('Senha atual') as HTMLInputElement).value).toBe(''); // o formulário volta vazio
     expect((await entrarDemo('lojaa', 'ana', 'uma-frase-facil-de-lembrar', { atrasoMs: 0 })).ok).toBe(true);
   });
 });

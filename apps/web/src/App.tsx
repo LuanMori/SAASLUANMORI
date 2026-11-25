@@ -12,8 +12,11 @@ import { TelaPainel } from './painel/TelaPainel';
 import { TelaCriarSenha } from './painel/TrocarSenha';
 import { TelaEntrada } from './telas/TelaEntrada';
 
-/** Abas que o servidor já atende. As outras mostram um aviso até chegar a vez delas (a demonstração tem todas). */
-export const SECOES_COM_SERVIDOR: readonly IdSecao[] = ['usuarios'];
+/**
+ * Abas que o servidor já atende. As outras mostram um aviso até chegar a vez delas (a demonstração tem todas). Em Meu
+ * usuário, trocar a senha já funciona; a foto e as entradas e saídas avisam dentro da aba.
+ */
+export const SECOES_COM_SERVIDOR: readonly IdSecao[] = ['usuarios', 'meu-usuario'];
 
 type Estado =
   | { tipo: 'carregando' }

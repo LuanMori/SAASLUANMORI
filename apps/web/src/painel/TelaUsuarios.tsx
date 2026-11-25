@@ -211,7 +211,7 @@ export function TelaUsuarios({ api, eu, fuso, agora = () => new Date() }: Props)
               </div>
             )}
             <p className="card-rodape">
-              Desativar tira o acesso na hora (as sessões abertas terminam) e mantém o histórico. Para a sua própria senha, use “Trocar senha” na barra lateral.
+              Desativar tira o acesso na hora (as sessões abertas terminam) e mantém o histórico. Para trocar a sua própria senha, use a aba Meu usuário (ou clique no seu nome, no canto de baixo da barra lateral).
             </p>
           </section>
 

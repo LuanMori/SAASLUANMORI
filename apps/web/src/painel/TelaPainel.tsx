@@ -1,8 +1,9 @@
 // apps/web/src/painel/TelaPainel.tsx
 // Área logada: barra lateral (DaniPets V9.3.3) + conteúdo da seção escolhida.
 // Já têm conteúdo: Visão geral (vendas de hoje), Frente de caixa, Caixa do dia, Produtos e estoque,
-// Compras, Clientes, Financeiro, Relatórios (todas as vendas), Usuários e Dados e backup (dados da loja). As
-// outras seções ficam em branco até chegar a vez delas.
+// Compras, Clientes, Financeiro, Relatórios (todas as vendas), Usuários, Dados e backup (dados da loja) e Meu usuário
+// (foto, entradas e saídas e a troca de senha; abre também pelo nome, no canto de baixo da barra). As outras seções
+// ficam em branco até chegar a vez delas.
 // Os nomes que a loja deu às contas ("Banco Itaú") vão para todas as telas (ContextoNomesDasContas).
 // Os dados da loja (nome, descrição, logo) e as regras (desconto sem senha...) vêm da API
 // (lerConfiguracao); enquanto não chegam, ou se o servidor ainda não tiver essa parte, valem o nome
@@ -14,7 +15,7 @@
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
 import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelNaLoja } from '@saas/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type ApiSistema, MENSAGEM_SEM_SERVIDOR } from '../api';
+import { type ApiSistema, MENSAGEM_SEM_SERVIDOR, type UsuarioDaLoja } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
 import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
@@ -28,11 +29,11 @@ import { TelaCompras } from './TelaCompras';
 import { TelaDadosBackup } from './TelaDadosBackup';
 import { TelaFinanceiro } from './TelaFinanceiro';
 import { TelaFrenteCaixa } from './TelaFrenteCaixa';
+import { TelaMeuUsuario } from './TelaMeuUsuario';
 import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
 import { TelaUsuarios } from './TelaUsuarios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
-import { ModalTrocarSenha } from './TrocarSenha';
 import { usarViradaDoDia } from './usarViradaDoDia';
 
 interface Props extends DadosBarra {
@@ -79,9 +80,9 @@ export function TelaPainel({
   secoesDisponiveis = null,
 }: Props) {
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
-  const [trocandoSenha, setTrocandoSenha] = useState(false);
-  const [aviso, setAviso] = useState<string | null>(null);
   const [config, setConfig] = useState<ConfiguracaoDaLoja | null>(null);
+  /** A foto do perfil (Meu usuário), no canto da barra lateral. */
+  const [foto, setFoto] = useState<string | null>(null);
   /** Dia cujo caixa fechou sozinho na virada da meia-noite (com o sistema aberto). */
   const [fechouSozinho, setFechouSozinho] = useState<string | null>(null);
   usarInatividade(inatividadeMin, aoInatividade ?? aoSair);
@@ -109,6 +110,14 @@ export function TelaPainel({
     carregarConfig();
     return aoMudaremOsDados(carregarConfig);
   }, [carregarConfig]);
+  // a foto do perfil: na abertura, quando outra aba muda e depois de salvar em "Meu usuário"
+  const carregarPerfil = useCallback(() => {
+    api.meuPerfil().then((p: UsuarioDaLoja) => setFoto(p.foto ?? null), () => undefined); // sem essa parte no servidor: fica a inicial do nome
+  }, [api]);
+  useEffect(() => {
+    carregarPerfil();
+    return aoMudaremOsDados(carregarPerfil);
+  }, [carregarPerfil]);
   const lojaDaBarra = config ? { nome: config.dados.nome, descricao: config.dados.descricao, logo: config.dados.logo } : loja;
   const nomesDasContas = config?.regras.financeiro.nomesContas ?? NOME_CONTA;
   // quem está logado, com as funções do Personalizado (as telas perguntam `pode(acesso, ...)`)
@@ -130,10 +139,8 @@ export function TelaPainel({
     pendencias
       ?.filter((p) => (!p.soGestor || gestor) && (!p.soDono || dono))
       .map((p) => (p.acao?.secao && !pode(p.acao.secao) ? { ...p, acao: undefined } : p)) ?? null;
-  const escolher = (id: IdSecao) => {
-    setAviso(null);
-    setSecao(id);
-  };
+  const escolher = (id: IdSecao) => setSecao(id);
+  const sessaoEncerrada = (mensagem: string) => (aoSessaoEncerrada ?? (() => aoSair()))(mensagem);
 
   if (permitido && disponivel(secao) && secao === 'frente-de-caixa') {
     return (
@@ -160,13 +167,8 @@ export function TelaPainel({
   return (
     <ContextoNomesDasContas.Provider value={nomesDasContas}>
       <div className="painel-app">
-        <BarraLateral loja={lojaDaBarra} pessoa={pessoa} secao={secao} aoEscolher={escolher} aoSair={aoSair} aoTrocarSenha={() => setTrocandoSenha(true)} />
+        <BarraLateral loja={lojaDaBarra} pessoa={{ ...pessoa, foto }} secao={secao} aoEscolher={escolher} aoSair={aoSair} />
         <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
-          {aviso && (
-            <p className="alerta painel-aviso" role="status">
-              {aviso}
-            </p>
-          )}
           {avisoDaVirada && (
             <AvisoComIcone
               tipo="atencao"
@@ -225,22 +227,17 @@ export function TelaPainel({
             <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />
           )}
           {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} aoMudarRegras={carregarConfig} />}
+          {ver('meu-usuario') && (
+            <TelaMeuUsuario
+              api={api}
+              pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '', papel: pessoa.papel }}
+              fuso={fuso}
+              agora={agora}
+              aoMudarFoto={setFoto}
+              aoBloquear={sessaoEncerrada}
+            />
+          )}
         </main>
-        {trocandoSenha && (
-          <ModalTrocarSenha
-            api={api}
-            pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '' }}
-            aoFechar={() => setTrocandoSenha(false)}
-            aoTrocar={() => {
-              setTrocandoSenha(false);
-              setAviso('Senha trocada. Use a senha nova no próximo acesso e nas autorizações do caixa.');
-            }}
-            aoBloquear={(mensagem) => {
-              setTrocandoSenha(false);
-              (aoSessaoEncerrada ?? (() => aoSair()))(mensagem);
-            }}
-          />
-        )}
       </div>
     </ContextoNomesDasContas.Provider>
   );

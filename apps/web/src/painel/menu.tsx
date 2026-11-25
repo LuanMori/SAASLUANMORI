@@ -15,7 +15,8 @@ export type IdSecao =
   | 'relatorios'
   | 'dados-e-backup'
   | 'usuarios'
-  | 'suporte';
+  | 'suporte'
+  | 'meu-usuario';
 
 export interface ItemMenu {
   id: IdSecao;
@@ -161,6 +162,18 @@ const ITENS: readonly ItemMenu[] = [
       </Icone>
     ),
   },
+  {
+    // pedido do Luan, 25/11/2026: para todos (sem permissão); abre também pelo nome, no canto de baixo da barra
+    id: 'meu-usuario',
+    rotulo: 'Meu usuário',
+    icone: (
+      <Icone>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="10" r="3" />
+        <path d="M6.7 18.3c1.2-2 3.1-3.1 5.3-3.1s4.1 1.1 5.3 3.1" />
+      </Icone>
+    ),
+  },
 ];
 
 const item = (id: IdSecao): ItemMenu => {
@@ -176,7 +189,7 @@ export const GRUPOS_MENU: readonly GrupoMenu[] = [
   { titulo: 'Operação', itens: [item('visao-geral'), item('caixa-do-dia')] },
   { titulo: 'Cadastros', itens: [item('produtos-e-estoque'), item('compras'), item('clientes')] },
   { titulo: 'Gestão', itens: [item('financeiro'), item('relatorios')] },
-  { titulo: 'Sistema', itens: [item('usuarios'), item('dados-e-backup'), item('suporte')] },
+  { titulo: 'Sistema', itens: [item('usuarios'), item('dados-e-backup'), item('suporte'), item('meu-usuario')] },
 ];
 
 /** Todos os itens, na ordem em que aparecem na barra. */

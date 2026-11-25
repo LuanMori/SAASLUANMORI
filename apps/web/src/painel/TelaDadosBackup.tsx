@@ -12,6 +12,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'r
 import { type ApiLoja, type ApiPainel, ErroApi } from '../api';
 import type { Baixar } from '../relatorios/baixar';
 import { iniciais } from './BarraLateral';
+import { prepararImagem, TIPOS_DE_IMAGEM } from './imagem';
 import { ParteImportarExportar } from './dados/ParteImportarExportar';
 import { usarCarga } from './usarCarga';
 
@@ -28,38 +29,8 @@ interface Props {
 
 const mensagemDe = (e: unknown) => (e instanceof ErroApi || e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.');
 
-const TIPOS_LOGO = ['image/png', 'image/jpeg', 'image/webp'];
-/** Tamanho do arquivo escolhido (antes de reduzir). */
-const ARQUIVO_MAX_BYTES = 5 * 1024 * 1024;
 /** O logo é reduzido para caber num quadrado deste tamanho (aparece pequeno na barra lateral). */
 const LADO_DO_LOGO = 256;
-
-function lerComoDataUrl(arquivo: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const leitor = new FileReader();
-    leitor.onload = () => resolve(String(leitor.result));
-    leitor.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
-    leitor.readAsDataURL(arquivo);
-  });
-}
-
-/** Reduz a imagem no próprio navegador (nada é enviado para fora). null = este navegador não reduz. */
-async function reduzir(arquivo: Blob): Promise<string | null> {
-  if (typeof createImageBitmap !== 'function') return null;
-  const imagem = await createImageBitmap(arquivo);
-  const escala = Math.min(1, LADO_DO_LOGO / Math.max(imagem.width, imagem.height));
-  const largura = Math.max(1, Math.round(imagem.width * escala));
-  const altura = Math.max(1, Math.round(imagem.height * escala));
-  const tela = document.createElement('canvas');
-  tela.width = largura;
-  tela.height = altura;
-  const ctx = tela.getContext('2d');
-  if (!ctx) return null;
-  ctx.drawImage(imagem, 0, 0, largura, altura);
-  imagem.close();
-  const png = tela.toDataURL('image/png');
-  return png.length <= LIMITES_LOJA.logoMaxCaracteres ? png : tela.toDataURL('image/jpeg', 0.85);
-}
 
 /**
  * Roda `aoMudar` só quando o valor gravado MUDA (salvo aqui ou em outra aba) — nunca ao abrir, para não
@@ -77,13 +48,8 @@ function usarQuandoMudar(valor: unknown, aoMudar: () => void) {
 }
 
 /** Arquivo escolhido → data URL do logo (PNG, JPEG ou WebP, reduzido). */
-export async function prepararLogo(arquivo: File): Promise<string> {
-  if (!TIPOS_LOGO.includes(arquivo.type)) throw new Error('Escolha uma imagem PNG, JPEG ou WebP.');
-  if (arquivo.size > ARQUIVO_MAX_BYTES) throw new Error('A imagem passa de 5 MB. Escolha uma menor.');
-  const reduzida = await reduzir(arquivo).catch(() => null);
-  const logo = reduzida ?? (await lerComoDataUrl(arquivo));
-  if (logo.length > LIMITES_LOJA.logoMaxCaracteres) throw new Error('O logo é grande demais. Use uma imagem menor (até 200 KB).');
-  return logo;
+export function prepararLogo(arquivo: File): Promise<string> {
+  return prepararImagem(arquivo, { lado: LADO_DO_LOGO, maxCaracteres: LIMITES_LOJA.logoMaxCaracteres, grande: 'O logo é grande demais. Use uma imagem menor (até 200 KB).' });
 }
 
 /**
@@ -215,7 +181,7 @@ function CartaoDadosDaLoja({ api, dados, podeAlterar, aoSalvar }: { api: ApiLoja
             <div className="db-logo-acoes">
               <label className="botao db-arquivo">
                 {logo ? 'Trocar o logo' : 'Escolher o logo'}
-                <input type="file" accept={TIPOS_LOGO.join(',')} onChange={(e) => void escolherLogo(e)} aria-label="Escolher a imagem do logo" />
+                <input type="file" accept={TIPOS_DE_IMAGEM.join(',')} onChange={(e) => void escolherLogo(e)} aria-label="Escolher a imagem do logo" />
               </label>
               {logo && (
                 <button type="button" className="link" onClick={() => setLogo(null)}>

@@ -1,8 +1,9 @@
 // apps/web/src/painel/BarraLateral.tsx
 // Barra lateral copiada do DaniPets V9.3.3, nas cores do SaaS:
 //   loja (logo + nome + descrição) · "Frente de caixa" em destaque · grupos
-//   Operação / Cadastros / Gestão / Sistema · pessoa (inicial, nome, papel,
-//   botão de tema, Trocar senha, Sair) · versão no rodapé.
+//   Operação / Cadastros / Gestão / Sistema · pessoa (foto ou inicial, nome, papel,
+//   botão de tema, Sair) · versão no rodapé. Clicar na pessoa abre "Meu usuário", onde ficam a foto, as
+//   entradas e saídas e a troca de senha (pedido do Luan, 25/11/2026).
 // Itens que o papel não pode ver somem; grupo sem item visível some junto.
 import { nomeDoPapel, type PapelNaLoja } from '@saas/core';
 import { BotaoTema } from '../BotaoTema';
@@ -12,15 +13,14 @@ import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from '.
 export interface DadosBarra {
   /** Dados da loja (Dados e backup → Dados da loja): sem logo, aparecem as iniciais do nome. */
   loja: { nome: string; descricao?: string | null; logo?: string | null };
-  pessoa: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null };
+  /** `foto`: a do perfil (Meu usuário); sem, aparece a inicial do nome. */
+  pessoa: { nome: string; papel: PapelNaLoja; permissoes?: readonly string[] | null; foto?: string | null };
 }
 
 interface Props extends DadosBarra {
   secao: IdSecao;
   aoEscolher: (id: IdSecao) => void;
   aoSair: () => void;
-  /** "Trocar senha" da pessoa logada. */
-  aoTrocarSenha?: () => void;
   versao?: string;
 }
 
@@ -34,7 +34,7 @@ export function iniciais(nome: string): string {
   return (letras.join('') || nome.trim().charAt(0)).toUpperCase() || '?';
 }
 
-export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocarSenha, versao = 'V0.1' }: Props) {
+export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao = 'V0.1' }: Props) {
   const botao = (item: ItemMenu, extra = '') => (
     <button
       key={item.id}
@@ -79,19 +79,24 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, aoTrocar
 
       <div className="sideuser">
         <div className="sideuser-id">
-          <span className="sideuser-avatar" aria-hidden="true">
-            {(pessoa.nome.trim().charAt(0) || '?').toUpperCase()}
-          </span>
-          <div className="sideuser-name">
-            <b>{pessoa.nome}</b>
-            <small>{nomeDoPapel(pessoa.papel)}</small>
-          </div>
+          <button
+            type="button"
+            className={`sideuser-perfil${secao === 'meu-usuario' ? ' active' : ''}`}
+            onClick={() => aoEscolher('meu-usuario')}
+            aria-label={`Meu usuário: ${pessoa.nome}, ${nomeDoPapel(pessoa.papel)}`}
+            title="Abrir Meu usuário"
+          >
+            <span className="sideuser-avatar" aria-hidden="true">
+              {pessoa.foto ? <img src={pessoa.foto} alt="" /> : (pessoa.nome.trim().charAt(0) || '?').toUpperCase()}
+            </span>
+            <span className="sideuser-name">
+              <b>{pessoa.nome}</b>
+              <small>{nomeDoPapel(pessoa.papel)}</small>
+            </span>
+          </button>
           <BotaoTema className="sideuser-theme" />
         </div>
         <div className="sideuser-actions">
-          <button type="button" onClick={aoTrocarSenha} disabled={!aoTrocarSenha}>
-            Trocar senha
-          </button>
           <button type="button" onClick={aoSair}>
             Sair
           </button>

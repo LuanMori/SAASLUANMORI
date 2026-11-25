@@ -5,6 +5,7 @@
 | # | Dado | Titular | Finalidade | Base legal | Onde fica | Quem acessa | Prazo | Como apagar |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Nome e usuário (login) | equipe da loja | entrar no sistema; mostrar quem fez cada ação | execução de contrato | tabela `usuarios` (Postgres) | Dono e Administrador da loja | enquanto a pessoa estiver na equipe; depois, até o pedido de exclusão | Usuários → desativar → Excluir dados |
+| 1b | Foto do perfil (opcional) | equipe da loja | mostrar quem está logado (barra lateral) e na lista da equipe | consentimento: a própria pessoa escolhe a foto e pode tirar | cadastro do usuário (hoje só na demonstração; o servidor ainda não guarda) | a própria pessoa (Meu usuário) e o Dono e o Administrador (Usuários) | até a pessoa tirar ou os dados serem excluídos | Meu usuário → Tirar a foto; Usuários → Excluir dados (a foto sai junto) |
 | 2 | Senha (só o hash scrypt) | equipe da loja | autenticação | execução de contrato | `usuarios.senha_hash` | ninguém lê a senha (só o hash) | idem 1 | idem 1 (o hash é apagado) |
 | 3 | Último acesso, tentativas erradas, bloqueio | equipe da loja | segurança (bloqueio por senhas erradas) | legítimo interesse | `usuarios` | Dono e Administrador | idem 1 | idem 1 |
 | 4 | Sessões (hash do segredo, horários) | equipe da loja | manter a pessoa logada; encerrar à distância | execução de contrato | tabela `sessoes` | ninguém pela tela | [a decidir: ex. 90 dias depois de encerrada] | limpeza periódica (a implementar) |

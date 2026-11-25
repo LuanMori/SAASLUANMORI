@@ -26,6 +26,7 @@ export const ACOES_AUDITORIA = {
   'usuario.senha_redefinida': 'Senha redefinida pelo Dono ou Administrador',
   'usuario.senha_trocada': 'Trocou a própria senha',
   'usuario.dados_excluidos': 'Dados do usuário excluídos (LGPD)',
+  'usuario.foto_alterada': 'Foto do perfil alterada',
   // loja
   'loja.dados_alterados': 'Dados da loja alterados',
   'loja.regras_alteradas': 'Regras da loja alteradas',
@@ -245,6 +246,12 @@ export function resumirAuditoria(
       partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, periodo, abas);
       break;
     }
+    case 'sessao.saiu':
+      partes.push(d.motivo === 'inatividade' ? 'por falta de uso' : null);
+      break;
+    case 'usuario.foto_alterada':
+      partes.push(d.tirou === true ? 'tirou a foto' : null);
+      break;
     case 'dados.planilha_exportada': {
       const n = inteiro(d.linhas);
       partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, n === null ? null : `${n} ${n === 1 ? 'linha' : 'linhas'}`);

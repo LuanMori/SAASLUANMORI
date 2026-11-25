@@ -1,5 +1,5 @@
 // apps/web/src/painel/TrocarSenha.tsx
-// "Trocar minha senha" (botão da barra lateral) e "Crie a sua senha" (primeiro acesso, com a senha
+// "Trocar a senha" (aba Meu usuário) e "Crie a sua senha" (primeiro acesso, com a senha
 // provisória que o Dono entregou). Pede a senha atual: quem pega o computador destravado não troca a
 // senha de ninguém. As regras da senha nova são as de @saas/core (as mesmas do servidor).
 import { LIMITES_USUARIO, validarSenhaNova } from '@saas/core';
@@ -7,10 +7,9 @@ import { type FormEvent, useState } from 'react';
 import { type ApiConta, ErroApi } from '../api';
 import { BotaoTema } from '../BotaoTema';
 import { LayoutEntrada } from '../telas/LayoutEntrada';
-import { Modal } from './caixa/Modal';
 
 interface PropsForm {
-  api: ApiConta;
+  api: Pick<ApiConta, 'trocarMinhaSenha'>;
   pessoa: { nome: string; usuario: string };
   /** Senha trocada com sucesso. */
   aoTrocar: () => void;
@@ -96,16 +95,6 @@ export function FormTrocarSenha({ api, pessoa, aoTrocar, aoBloquear, rotuloAtual
         )}
       </div>
     </form>
-  );
-}
-
-/** Janela do botão "Trocar senha" da barra lateral. */
-export function ModalTrocarSenha({ aoFechar, aoTrocar, ...resto }: Omit<PropsForm, 'aoCancelar'> & { aoFechar: () => void }) {
-  return (
-    <Modal titulo="Trocar minha senha" aoFechar={aoFechar}>
-      <p className="modal-sub">Depois da troca, a sua sessão em outros aparelhos termina.</p>
-      <FormTrocarSenha {...resto} aoTrocar={aoTrocar} aoCancelar={aoFechar} />
-    </Modal>
   );
 }
 

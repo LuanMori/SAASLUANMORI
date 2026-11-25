@@ -395,6 +395,14 @@ h2 { font-size: 1.05rem; }
 .sidebar .sideuser-actions button:hover, .sidebar .sideuser-theme:hover { background: var(--side-hover); border-color: #4a4f4b; color: #fff; }
 .sidebar .sideuser-theme { flex: 0 0 36px; width: 36px; height: 36px; min-height: 0; padding: 0; display: grid; place-items: center; }
 .sidebar .sideuser-actions button { flex: 1 1 auto; padding: 6px; white-space: nowrap; }
+/* a pessoa na barra: clicar abre "Meu usuário" (pedido do Luan, 25/11/2026) */
+.sidebar .sideuser-perfil {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; margin: -4px; padding: 4px; border: 0; border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.sidebar .sideuser-perfil:hover, .sidebar .sideuser-perfil.active { background: var(--side-hover); }
+.sideuser-avatar { overflow: hidden; }
+.sideuser-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .sidefoot { padding: 10px 4px 0; font-size: 12px; color: var(--side-group); }
 
 .painel-conteudo { min-width: 0; padding: 28px 32px; }
@@ -1015,6 +1023,38 @@ h2 { font-size: 1.05rem; }
 .db-arquivo:focus-within { outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 1px; }
 .db-campo-curto input { max-width: 160px; }
 .db-rodape { margin: 18px -20px -20px; }
+/* Meu usuário (pedido do Luan, 25/11/2026): perfil e foto, entradas e saídas, trocar a senha */
+.mu-perfil { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.mu-foto {
+  width: 96px; height: 96px; flex: none; border-radius: 50%; overflow: hidden; background: #0b0e12; color: #fff;
+  display: grid; place-items: center; font-size: 2.2rem; font-weight: 700;
+}
+.mu-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mu-dados { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, auto)); gap: 8px 28px; }
+.mu-dados dt { font-size: 0.8rem; color: var(--suave); }
+.mu-dados dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.mu-foto-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; }
+.mu-foto-acoes .modal-dica { flex-basis: 100%; }
+.mu-indisponivel { margin-top: 14px; }
+.mu-acessos { max-width: 760px; }
+.mu-tabela th:first-child, .mu-tabela td:first-child { padding-left: 20px; }
+.mu-tabela th:last-child, .mu-tabela td:last-child { padding-right: 20px; }
+.mu-tabela td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mu-atual td { background: var(--primaria-clara); }
+.mu-agora { color: var(--primaria-texto); }
+.mu-como { color: var(--suave); }
+.mu-senha-aviso { margin: 0 0 12px; }
+@media (max-width: 600px) {
+  .mu-dados { grid-template-columns: minmax(0, 1fr); }
+}
+/* celular: cada entrada vira um bloco, com o nome de cada informação (a tabela perde os títulos das colunas) */
+@media (max-width: 640px) {
+  .mu-tabela tr { grid-template-columns: 1fr 1fr; gap: 2px 12px; padding: 10px 20px; }
+  .mu-tabela td, .mu-tabela td:first-child, .mu-tabela td:last-child { padding: 2px 0; white-space: normal; background: none; }
+  .mu-tabela td[data-rotulo]::before { content: attr(data-rotulo) ": "; color: var(--suave); font-size: 0.82rem; }
+  .mu-tabela .mu-dia { font-weight: 600; }
+  .mu-tabela tr.mu-atual { background: var(--primaria-clara); }
+}
 .db-exportar { display: flex; flex-wrap: wrap; gap: 10px; }
 .db-exportar .botao { min-height: 42px; }
 .db-dica { display: block; margin-top: 10px; }

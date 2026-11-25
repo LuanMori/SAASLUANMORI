@@ -4,6 +4,7 @@
 // JavaScript nem consegue ler). A demonstração implementa os mesmos contratos no navegador
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
+  AcessoDoUsuario,
   AssuntoDaCopia,
   CopiaDaLoja,
   CotacaoRecebimento,
@@ -737,6 +738,8 @@ export interface UsuarioDaLoja {
   bloqueadoAte: string | null;
   ultimoAcessoEm: string | null;
   criadoEm: string;
+  /** Foto do perfil (data URL PNG, JPEG ou WebP). Sem: a barra mostra a inicial do nome. */
+  foto?: string | null;
 }
 
 /** Uma linha do histórico (quem fez o quê). */
@@ -770,6 +773,12 @@ export interface ApiUsuarios {
 export interface ApiConta {
   /** "Trocar minha senha" (e criar a própria no primeiro acesso). Pede a senha atual. */
   trocarMinhaSenha(senhaAtual: string, senhaNova: string): Promise<void>;
+  /** Aba "Meu usuário" (pedido do Luan, 25/11/2026): eu, como estou no cadastro (nome, login, papel e foto). */
+  meuPerfil(): Promise<UsuarioDaLoja>;
+  /** A minha foto (data URL PNG, JPEG ou WebP, já reduzida; null tira). Cada pessoa troca só a própria. */
+  salvarMinhaFoto(foto: string | null): Promise<UsuarioDaLoja>;
+  /** As minhas entradas e saídas do sistema, da mais recente para a mais antiga (@saas/core acessosDaPessoa). */
+  meusAcessos(): Promise<AcessoDoUsuario[]>;
 }
 
 /** Tudo o que a área logada usa. */

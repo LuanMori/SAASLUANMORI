@@ -7,7 +7,9 @@
 // Cada operação que grava pega a trava entre abas e grava tudo ou nada (armazenamento.ts).
 import {
   type AcaoAuditoria,
+  acessosDaPessoa,
   ACOES_AUDITORIA,
+  lerFotoDoPerfil,
   aposSenhaErrada,
   conferirGestaoDeUsuario,
   type EstadoTentativas,
@@ -194,6 +196,12 @@ function salvarUsuario(lojaId: string, u: UsuarioGuardado): void {
   gravarDaLoja(CHAVES.usuarios, lojaId, i < 0 ? [...lista, u] : lista.map((x, j) => (j === i ? u : x)));
 }
 
+/** Grava a própria pessoa: o Adm. Sup fica fora das lojas (CHAVES.suporte), os outros na lista da loja. */
+function salvarEu(lojaId: string, u: UsuarioGuardado): void {
+  if (ehSuporte(u.id)) gravar(CHAVES.suporte, u);
+  else salvarUsuario(lojaId, u);
+}
+
 const publico = ({ senhaHash: _h, tentativasErradas: _t, ...u }: UsuarioGuardado): UsuarioDaLoja => u;
 const estadoDe = (u: UsuarioGuardado): EstadoTentativas => ({ tentativasErradas: u.tentativasErradas, bloqueadoAte: u.bloqueadoAte });
 const comEstado = (u: UsuarioGuardado, e: EstadoTentativas): UsuarioGuardado => ({ ...u, tentativasErradas: e.tentativasErradas, bloqueadoAte: e.bloqueadoAte });
@@ -295,9 +303,12 @@ async function entrarComoSuporte(lojaId: string, senha: string, agora: () => Dat
   return { ok: true, lojaId, usuario: publico(entrou) };
 }
 
-/** Registra a saída no histórico (não espera: sair nunca fica preso numa gravação). */
-export function registrarSaidaDemo(lojaId: string, usuarioId: string): Promise<void> {
-  return comTrava(() => registrarAuditoriaDemo(lojaId, usuarioId, 'sessao.saiu')).catch(() => undefined);
+/**
+ * Registra a saída no histórico (não espera: sair nunca fica preso numa gravação). `motivo` 'inatividade': saiu
+ * sozinho por falta de uso (a aba "Meu usuário" mostra como cada sessão terminou).
+ */
+export function registrarSaidaDemo(lojaId: string, usuarioId: string, motivo: 'inatividade' | null = null, agora = new Date()): Promise<void> {
+  return comTrava(() => registrarAuditoriaDemo(lojaId, usuarioId, 'sessao.saiu', null, motivo ? { motivo } : {}, agora)).catch(() => undefined);
 }
 
 /**
@@ -498,6 +509,7 @@ export function criarApiUsuariosDemo({
           tentativasErradas: 0,
           bloqueadoAte: null,
           ultimoAcessoEm: null,
+          foto: null,
         };
         transacao(() => {
           salvarUsuario(lojaId, salvo);
@@ -538,7 +550,7 @@ export function criarApiUsuariosDemo({
         if (!(await conferirHashDemo(senhaAtual, eu.senhaHash))) {
           const r = aposSenhaErrada(estadoDe(eu), agora());
           transacao(() => {
-            salvarUsuario(lojaId, comEstado(eu, r.estado));
+            salvarEu(lojaId, comEstado(eu, r.estado));
             if (r.bloqueou) registrarAuditoriaDemo(lojaId, null, 'sessao.bloqueado', { tipo: 'usuario', id: eu.id }, {}, agora());
           });
           if (r.bloqueou) throw new ErroApi(429, MENSAGEM_ACABOU_DE_BLOQUEAR, [], 'sessao_encerrada');
@@ -549,10 +561,36 @@ export function criarApiUsuariosDemo({
         if (senhaNova === senhaAtual) throw new ErroApi(400, 'A senha nova precisa ser diferente da atual.', [{ campo: 'senhaNova', mensagem: 'Igual à atual.' }]);
         const senhaHash = await gerarHashDemo(senhaNova);
         transacao(() => {
-          salvarUsuario(lojaId, { ...eu, senhaHash, senhaProvisoria: false, tentativasErradas: 0, bloqueadoAte: null });
+          salvarEu(lojaId, { ...eu, senhaHash, senhaProvisoria: false, tentativasErradas: 0, bloqueadoAte: null });
           auditar('usuario.senha_trocada', eu.id);
         });
       });
+    },
+
+    // aba "Meu usuário" (pedido do Luan, 25/11/2026): cada pessoa vê e muda só o que é dela
+    async meuPerfil() {
+      const { eu } = await ator();
+      return publico(eu);
+    },
+
+    salvarMinhaFoto(foto) {
+      return comTrava(async () => {
+        const { eu } = await ator();
+        const r = lerFotoDoPerfil(foto);
+        if (!r.ok) throw new ErroApi(400, r.erros[0]!.mensagem, r.erros);
+        if ((eu.foto ?? null) === r.valor) return publico(eu);
+        const salvo: UsuarioGuardado = { ...eu, foto: r.valor };
+        transacao(() => {
+          salvarEu(lojaId, salvo);
+          auditar('usuario.foto_alterada', eu.id, r.valor ? {} : { tirou: true });
+        });
+        return publico(salvo);
+      });
+    },
+
+    async meusAcessos() {
+      const { eu } = await ator();
+      return acessosDaPessoa(lerDaLoja<RegistroAuditoria>(CHAVES.auditoria, lojaId).filter((r) => r.usuarioId === eu.id));
     },
   };
 }

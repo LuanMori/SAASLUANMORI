@@ -14,12 +14,12 @@ const txt = (t: string | null | undefined) => (t ?? '').replace(/\u00a0/g, ' ');
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
-// Igual ao DaniPets V9.3.3.
+// Igual ao DaniPets V9.3.3, mais "Meu usuário" no fim de Sistema (pedido do Luan, 25/11/2026: para todos).
 const GRUPOS_V933 = {
   Operação: ['Visão geral', 'Caixa do dia'],
   Cadastros: ['Produtos e estoque', 'Compras', 'Clientes'],
   Gestão: ['Financeiro', 'Relatórios'],
-  Sistema: ['Usuários', 'Dados e backup', 'Suporte'],
+  Sistema: ['Usuários', 'Dados e backup', 'Suporte', 'Meu usuário'],
 };
 
 function montar(papel: PapelDeLoja = 'dono', aoSair = vi.fn(), permissoes: string[] | null = null) {
@@ -64,7 +64,7 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
     expect(montar('vendedor').grupos()).toEqual({
       Operação: ['Visão geral', 'Caixa do dia'],
       Cadastros: ['Produtos e estoque', 'Clientes'],
-      Sistema: ['Suporte'],
+      Sistema: ['Suporte', 'Meu usuário'],
     });
     expect(screen.getByRole('button', { name: 'Frente de caixa' })).toBeTruthy();
   });
@@ -74,14 +74,14 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
       Operação: ['Visão geral'],
       Cadastros: ['Produtos e estoque'],
       Gestão: ['Relatórios'],
-      Sistema: ['Suporte'],
+      Sistema: ['Suporte', 'Meu usuário'],
     });
     expect(screen.queryByRole('button', { name: 'Frente de caixa' })).toBeNull();
     cleanup();
     expect(montar('personalizado', vi.fn(), ['vender', 'clientes', 'caixa']).grupos()).toEqual({
       Operação: ['Visão geral', 'Caixa do dia'],
       Cadastros: ['Produtos e estoque', 'Clientes'],
-      Sistema: ['Suporte'],
+      Sistema: ['Suporte', 'Meu usuário'],
     });
     expect(screen.getByRole('button', { name: 'Frente de caixa' })).toBeTruthy();
   });
@@ -98,8 +98,8 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
     const itens = within(barra)
       .getAllByRole('button')
       .filter((b) => b.classList.contains('nav'));
-    expect(itens).toHaveLength(11);
-    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Clientes', 'Financeiro', 'Relatórios', 'Usuários', 'Dados e backup'];
+    expect(itens).toHaveLength(12);
+    const comTela = ['Visão geral', 'Frente de caixa', 'Caixa do dia', 'Produtos e estoque', 'Compras', 'Clientes', 'Financeiro', 'Relatórios', 'Usuários', 'Dados e backup', 'Meu usuário'];
     for (const item of itens.filter((b) => !comTela.includes(b.textContent ?? ''))) {
       await userEvent.click(item);
       expect(item.getAttribute('aria-current')).toBe('page');
@@ -110,14 +110,23 @@ describe('TelaPainel · barra lateral do DaniPets V9.3.3', () => {
     expect(screen.getByRole('heading', { name: 'Visão geral' })).toBeTruthy();
   });
 
-  it('bloco da pessoa: inicial, nome, papel, tema, Trocar senha e Sair', async () => {
+  it('bloco da pessoa: inicial, nome, papel, tema e Sair; "Trocar senha" foi para a aba Meu usuário', async () => {
     const { barra, aoSair } = montar('administrador');
     expect(within(barra).getByText('Ana')).toBeTruthy();
     expect(within(barra).getByText('Administrador')).toBeTruthy();
+    expect(within(barra).getByText('A').closest('.sideuser-avatar')).toBeTruthy();
     expect(within(barra).getByRole('button', { name: /^Usar o tema (claro|escuro)$/ })).toBeTruthy();
-    expect(within(barra).getByRole('button', { name: 'Trocar senha' })).toBeTruthy();
+    expect(within(barra).queryByRole('button', { name: 'Trocar senha' })).toBeNull();
     await userEvent.click(within(barra).getByRole('button', { name: 'Sair' }));
     expect(aoSair).toHaveBeenCalledOnce();
+  });
+
+  it('clicar no nome, no canto de baixo, abre a aba Meu usuário (pedido do Luan, 25/11/2026)', async () => {
+    const { barra } = montar('vendedor');
+    await userEvent.click(within(barra).getByRole('button', { name: 'Meu usuário: Ana, Vendedor' }));
+    expect(await screen.findByRole('heading', { name: 'Meu usuário', level: 1 })).toBeTruthy();
+    expect(within(barra).getByRole('button', { name: 'Meu usuário', current: 'page' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Trocar a senha' })).toBeTruthy();
   });
 
   it('loja no topo e versão no rodapé', () => {

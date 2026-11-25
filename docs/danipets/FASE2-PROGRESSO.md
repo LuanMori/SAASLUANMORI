@@ -855,6 +855,49 @@ ajuste de 23/11; o ajuste já tirava Dono e Administrador da lista. Agora a esco
   Administrador em "Só o suporte, na implantação"; claro e escuro, PC e celular, sem rolagem para o lado; console sem
   erros.
 
+### 25/11/2026: aba "Meu usuário" (o nome lá embaixo abre a aba)
+
+O pedido do Luan (imagem do perfil Vendedor): *"no perfil de vendedor não possui a aba usuario, e tem trocar senha lá
+em baixo, certo? Então quero a criação da aba usuario, lá dentro é possivel ver o horario de entrada e saída, alterar a
+foto de perfil, e alterar a senha. e ao clicar no nome lá em baixo no quanto inferior esquerdo, direcionar para a aba
+usuario"*.
+
+- **Aba "Meu usuário"**, para todos (inclusive o Vendedor e o Adm. Sup), no fim do grupo Sistema. Clicar no nome, no
+  canto de baixo da barra lateral, também abre a aba. Ela tem três cartões:
+  - **Perfil:** a foto, o nome, o login e o papel.
+    - A foto pode ser escolhida, trocada ou tirada. Ela é cortada em quadrado, reduzida a 256 px e salva em JPEG, no
+      próprio navegador.
+    - Antes de salvar, a tela mostra a prévia.
+    - A foto aparece também no canto da barra lateral, no lugar da inicial, e entra no histórico.
+  - **Entradas e saídas** (DaniPets USR-07, "Meus acessos"): as 30 mais recentes, com o dia, a entrada, a saída e o
+    tempo.
+    - A saída pode ser pelo botão Sair ou "por falta de uso".
+    - A sessão de agora aparece como "em uso agora".
+    - Entrada sem saída aparece como "não registrada" (o sistema foi fechado sem clicar em Sair).
+    - No celular, cada entrada vira um bloco com o nome de cada informação.
+  - **Trocar a senha:** o formulário que antes abria pelo botão da barra lateral. Depois da troca, ele volta vazio.
+- **O botão "Trocar senha" saiu da barra lateral.** A troca de senha agora fica em Meu usuário. Lá embaixo ficaram o
+  nome (que abre a aba), o tema e Sair.
+- **Saída por falta de uso no histórico:** "Saiu do sistema • por falta de uso". Antes, ela não se distinguia do botão
+  Sair.
+- **Correção:** na demonstração, quando o Adm. Sup trocava a própria senha, ele era gravado na equipe da loja e a senha
+  dele não mudava. Agora a senha e a foto dele ficam no lugar dele, fora das lojas.
+- **LGPD:** a foto é dado pessoal. "Excluir dados" do usuário tira a foto também. Ela entrou no registro de tratamento
+  (`docs/lgpd/registro-de-tratamento.md`, linha 1b).
+- **Sistema real:** a aba já funciona lá para trocar a senha. A foto e as entradas e saídas avisam que ainda não estão
+  ligadas ao servidor (a API responde 501).
+- **Testes:**
+  - núcleo 432 (+7): a foto (formato e tamanho), cada entrada com a sua saída (fora de ordem, duas entradas seguidas,
+    saída sem entrada, a de agora), o tempo e o resumo no histórico;
+  - tela 448 (+13): a API da demonstração (perfil sem senha, foto e histórico, recusas, LGPD, o Adm. Sup fora da
+    equipe com a senha nova valendo, só as próprias entradas e saídas), a aba (perfil, tabela, foto com prévia e
+    cancelar, trocar a senha, sistema real sem a parte) e a barra (o nome abre a aba, a foto aparece no canto, sem o
+    botão antigo).
+- **Navegador:**
+  - o Vendedor abriu a aba pelo nome e salvou uma foto de verdade (JPEG quadrado de 256 px, 6 KB);
+  - trocou a senha, saiu e entrou com a senha nova, e a tabela mostrou as duas sessões;
+  - tema escuro e celular sem rolagem para o lado, console sem erros.
+
 ---
 
 ## Tela de entrada — ajustes pedidos pelo Luan

@@ -23,3 +23,4 @@ export * from './fidelidade';
 export * from './vale';
 export * from './copiaDaLoja';
 export * from './modelosDePlanilha';
+export * from './perfil';

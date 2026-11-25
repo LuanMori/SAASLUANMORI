@@ -41,11 +41,11 @@ export function DemoApp() {
   // a sessão de agora (a tela pode pedir para sair várias vezes ao mesmo tempo: só a primeira vale)
   const sessaoAtual = useRef<Sessao | null>(sessao);
   sessaoAtual.current = sessao;
-  const sair = (mensagem: string | null = null) => {
+  const sair = (mensagem: string | null = null, motivo: 'inatividade' | null = null) => {
     const s = sessaoAtual.current;
     if (!s) return;
     sessaoAtual.current = null;
-    void registrarSaidaDemo(s.lojaId, s.usuario.id);
+    void registrarSaidaDemo(s.lojaId, s.usuario.id, motivo);
     setSessao(null);
     setAviso(mensagem);
   };
@@ -122,7 +122,7 @@ function AreaLogada({
   loja: { id: string; nome: string; descricao: string | null };
   usuario: UsuarioDaLoja;
   exemplos: boolean;
-  aoSair: (mensagem?: string | null) => void;
+  aoSair: (mensagem?: string | null, motivo?: 'inatividade' | null) => void;
   aoCriarSenha: () => void;
 }) {
   // O operador da API é quem entrou: é ele que fica registrado em cada venda.
@@ -158,7 +158,7 @@ function AreaLogada({
       chaveCarrinho={`saas-demo:pdv:${loja.id}:${usuario.id}`}
       aoSair={() => aoSair()}
       inatividadeMin={INATIVIDADE_MIN}
-      aoInatividade={() => aoSair(`Sua sessão terminou depois de ${INATIVIDADE_MIN} minutos sem uso. Entre de novo.`)}
+      aoInatividade={() => aoSair(`Sua sessão terminou depois de ${INATIVIDADE_MIN} minutos sem uso. Entre de novo.`, 'inatividade')}
       aoSessaoEncerrada={(mensagem) => aoSair(mensagem)}
     />
   );
