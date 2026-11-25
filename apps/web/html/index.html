@@ -20,62 +20,6 @@
       </div>
     </main>
   </template>
-  <template id="t-produtos">
-    <div class="app">
-      <header class="topo">
-        <div class="topo-marca">
-          <span class="marca marca-pequena" aria-hidden="true">SP</span>
-          <div><strong id="loja"></strong><span class="suave topo-usuario" id="usuario"></span></div>
-        </div>
-        <button type="button" class="botao" id="sair">Sair</button>
-      </header>
-      <main class="conteudo" id="conteudo">
-        <section class="painel" id="novo">
-          <h2>Novo produto</h2>
-          <form class="form" novalidate>
-            <div class="campo campo-largo">
-              <label for="nome">Nome</label>
-              <input id="nome" maxlength="120" autocomplete="off">
-            </div>
-            <div class="campo">
-              <label for="codigoBarras">Código de barras (opcional)</label>
-              <input id="codigoBarras" maxlength="64" autocomplete="off" inputmode="numeric" placeholder="Leia ou digite">
-            </div>
-            <div class="campo">
-              <label for="preco">Preço (R$)</label>
-              <input id="preco" inputmode="decimal" placeholder="0,00" autocomplete="off">
-            </div>
-            <div class="form-acoes">
-              <button type="submit" class="botao botao-primario">Cadastrar</button>
-            </div>
-          </form>
-        </section>
-        <section class="painel" id="lista">
-          <div class="painel-cabecalho"><h2>Produtos</h2></div>
-          <div id="lista-corpo"><p class="suave">Carregando…</p></div>
-        </section>
-      </main>
-    </div>
-  </template>
-  <template id="t-bloqueado">
-    <section class="painel">
-      <p class="alerta alerta-erro" role="alert"></p>
-      <button type="button" class="botao botao-primario">Entrar com outra conta</button>
-    </section>
-  </template>
-  <template id="t-tabela">
-    <table class="tabela">
-      <thead><tr><th>Código</th><th>Produto</th><th class="numero">Preço</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </template>
-  <template id="t-linha">
-    <tr>
-      <td data-rotulo="Código" class="codigos"><span class="mono"></span><small></small></td>
-      <td data-rotulo="Produto"></td>
-      <td data-rotulo="Preço" class="numero"></td>
-    </tr>
-  </template>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
