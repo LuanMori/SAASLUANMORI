@@ -74,6 +74,9 @@ Buscar um erro que a pessoa viu na tela: pegue o `X-Request-Id` da resposta (Dev
   tokens do GitHub/Slack/Google/Stripe/IA, senha dentro de endereço de banco e atribuições do tipo
   `SENHA=...`/`API_KEY=...` nos arquivos **e em todos os commits de todos os branches**. Roda no CI.
 - **Resultado em 18/11/2026**: nada encontrado (39 commits, branches `main` e `teste-local-windows`).
+- **25/11/2026**: o workflow `validar-migracao.yml` (PR #2, no `main`) trouxe as senhas do banco descartável da CI
+  (`postgres-ci` e `senha-local-do-teste`). Não são segredos: entraram na lista de valores de teste permitidos do
+  script, com o aval do Luan. Depois disso, nada encontrado (94 commits).
 - Nenhum segredo em código: tudo vem do ambiente (`.env`, `.env.producao`, ambos fora do git). O
   `.dockerignore` deixa `.env` e builds locais fora das imagens.
 

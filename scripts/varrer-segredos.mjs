@@ -17,6 +17,9 @@ const PERMITIDOS = new Set([
   'troque-por-uma-senha-longa',
   'senha-de-teste-vigilancia-123',
   'senha-do-backup-de-teste-123',
+  // banco descartável da CI no workflow validar-migracao.yml (PR #2 no main, 25/11/2026); liberado pelo Luan
+  'postgres-ci',
+  'senha-local-do-teste',
 ]);
 
 const ehExemplo = (v) =>
