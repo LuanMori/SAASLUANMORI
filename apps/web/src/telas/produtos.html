@@ -1,0 +1,54 @@
+<header class="topo">
+  <div class="topo-marca">
+    <span class="marca marca-pequena" aria-hidden="true">SP</span>
+    <div><strong data-loja></strong><span class="suave topo-usuario" data-usuario></span></div>
+  </div>
+  <button type="button" class="botao" data-sair>Sair</button>
+</header>
+<main class="conteudo">
+  <section class="painel" data-novo>
+    <h2>Novo produto</h2>
+    <form class="form" novalidate>
+      <div class="campo campo-largo">
+        <label for="nome">Nome</label>
+        <input id="nome" maxlength="120" autocomplete="off">
+        <span class="campo-erro" hidden></span>
+      </div>
+      <div class="campo">
+        <label for="codigoBarras">Código de barras (opcional)</label>
+        <input id="codigoBarras" maxlength="64" autocomplete="off" inputmode="numeric" placeholder="Leia ou digite">
+        <span class="campo-erro" hidden></span>
+      </div>
+      <div class="campo">
+        <label for="preco">Preço (R$)</label>
+        <input id="preco" inputmode="decimal" placeholder="0,00" autocomplete="off">
+        <span class="campo-erro" hidden></span>
+      </div>
+      <div class="form-acoes"><button type="submit" class="botao botao-primario">Cadastrar</button></div>
+    </form>
+    <p class="alerta" role="status" hidden></p>
+  </section>
+  <section class="painel" data-lista>
+    <div class="painel-cabecalho"><h2>Produtos</h2><span class="suave" data-contagem hidden></span></div>
+    <p class="alerta alerta-aviso" role="status" hidden>Sem conexão com o servidor. Tentando de novo…</p>
+    <p class="suave" data-carregando>Carregando…</p>
+    <p class="vazio" hidden>Nenhum produto cadastrado ainda.</p>
+    <table class="tabela" hidden>
+      <thead><tr><th>Código</th><th>Produto</th><th class="numero">Preço</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+<template data-bloqueio>
+  <section class="painel">
+    <p class="alerta alerta-erro" role="alert"></p>
+    <button type="button" class="botao botao-primario">Entrar com outra conta</button>
+  </section>
+</template>
+<template data-linha>
+  <tr>
+    <td data-rotulo="Código" class="codigos"><span class="mono"></span><small></small></td>
+    <td data-rotulo="Produto"></td>
+    <td data-rotulo="Preço" class="numero"></td>
+  </tr>
+</template>
