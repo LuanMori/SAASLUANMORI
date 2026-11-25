@@ -7,3 +7,7 @@ coverage/
 !.env.example
 apps/api/src/generated/
 .DS_Store
+
+# Builds da migração
+apps/java/target/
+apps/web/dist-html/
