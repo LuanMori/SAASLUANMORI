@@ -973,3 +973,21 @@ O Luan mandou um modelo novo da tela de entrada (a imagem "LojaGestor"). A tela 
   o selo da loja; o título "Bem-vindo de volta!".
 - **Navegador:** PC (1366 e 1920 px), tablet e celular, no claro e no escuro, mais o primeiro acesso: sem rolagem
   nenhuma; o tema continua trocando e sendo guardado; console sem erros.
+
+### 25/11/2026: o cartão de entrada mais ao centro
+
+O Luan pediu o quadro da direita mais centralizado. Vimos duas opções em prévia: o cartão no meio da metade direita
+da tela, ou a tela toda numa faixa central de 1600 px. Entrou a primeira (opção A).
+
+- **Tela larga (acima de 1200 px):** o cartão fica no meio da metade direita da tela. Em 1920 px ele anda 172 px
+  para o centro (a margem da direita passa de 88 para 260 px) e a ilustração da loja fica um pouco menor (de 932 para
+  760 px de largura). Em 1366 px o cartão anda 53 px.
+- **Continua igual:** o tema claro / escuro e o Suporte no canto, "Esqueceu a senha?" com a orientação, o olho para
+  mostrar a senha e o aviso de Caps Lock. O primeiro acesso ("Crie a sua senha") usa o mesmo molde e também fica com
+  o cartão mais ao centro.
+- **Tela média, tablet e celular:** sem mudança.
+- Só CSS: a regra `@media (min-width: 1201px)` de `.entrada` em `apps/web/src/estilos.css`.
+- **Navegador:** 1920, 1366, 1280 e 1200 px, tablet e celular, no claro e no escuro: sem rolagem, o cartão no meio da
+  metade direita (acima de 1200 px), a ilustração sem entrar no cartão, o tema e o Suporte sem cobrir o cartão. As
+  funções: o tema troca e fica guardado; o Suporte abre e fecha; "Esqueceu a senha?" mostra a orientação; a senha
+  errada avisa; a Ana entra; um usuário novo cai no primeiro acesso, com o cartão no mesmo lugar; console sem erros.
