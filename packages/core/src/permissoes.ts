@@ -47,6 +47,7 @@ export const PERMISSOES = {
   'financeiro.baixa_cartao': 'Escolher se o cartão entra no banco na hora ou fica a receber',
   'dia_fechado.liberar': 'Liberar lançamento em dia com o caixa já fechado',
   'fiado.liberar': 'Liberar venda no fiado acima do limite ou com fiado vencido',
+  'suporte.ferramentas': 'Ferramentas do Adm. Sup (atualizações, ajustes, visões e manutenção)',
 } as const;
 
 export type Permissao = keyof typeof PERMISSOES;
@@ -67,8 +68,14 @@ const SO_DONO = new Set<Permissao>([
   'fiado.liberar',
 ]);
 
-/** O que se pode dar a um Personalizado: tudo, menos o que é só do Dono e a gestão de usuários. */
-export const PERMISSOES_CONCEDIVEIS: readonly Permissao[] = LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p) && p !== 'usuarios');
+/**
+ * Só o Adm. Sup (o usuário mestre, da nossa empresa; pedido do Luan, 25/11/2026: a aba dele em Dados e backup, para
+ * termos acesso mesmo depois de vender): fica fora do Dono, do Administrador e do Personalizado.
+ */
+const SO_ADM_SUP = new Set<Permissao>(['suporte.ferramentas']);
+
+/** O que se pode dar a um Personalizado: tudo, menos o que é só do Dono ou do Adm. Sup e a gestão de usuários. */
+export const PERMISSOES_CONCEDIVEIS: readonly Permissao[] = LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p) && !SO_ADM_SUP.has(p) && p !== 'usuarios');
 const CONCEDIVEIS = new Set<Permissao>(PERMISSOES_CONCEDIVEIS);
 export const ehPermissaoConcedivel = (p: unknown): p is Permissao => typeof p === 'string' && CONCEDIVEIS.has(p as Permissao);
 
@@ -113,11 +120,14 @@ export function funcoesCoerentes(lista: readonly Permissao[]): Permissao[] {
 
 type PapelDaMatriz = 'super_admin' | 'dono' | 'administrador' | 'vendedor';
 
-/** A matriz. Adm. Sup e Dono: tudo. Administrador: tudo, menos o que é só do Dono. Vendedor: o do DaniPets. */
+/**
+ * A matriz. Adm. Sup: tudo. Dono: tudo, menos as ferramentas do Adm. Sup. Administrador: tudo, menos o que é só do
+ * Dono ou do Adm. Sup. Vendedor: o do DaniPets.
+ */
 const PODE: Record<PapelDaMatriz, ReadonlySet<Permissao>> = {
   super_admin: TODAS,
-  dono: TODAS,
-  administrador: new Set(LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p))),
+  dono: new Set(LISTA_PERMISSOES.filter((p) => !SO_ADM_SUP.has(p))),
+  administrador: new Set(LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p) && !SO_ADM_SUP.has(p))),
   vendedor: new Set<Permissao>(['vender', 'caixa', 'clientes', 'produtos.cadastrar']),
 };
 const NADA: ReadonlySet<Permissao> = new Set();
@@ -154,6 +164,7 @@ const NOME: Record<'dono' | 'administrador' | 'vendedor', string> = { dono: 'o D
 /** "Financeiro: só o Dono ou o Administrador." */
 export function mensagemSemPermissao(permissao: Permissao): string {
   const papeis = quemPode(permissao).map((p) => NOME[p as keyof typeof NOME]);
-  const lista = papeis.length <= 1 ? (papeis[0] ?? 'ninguém') : `${papeis.slice(0, -1).join(', ')} ou ${papeis.at(-1)}`;
+  // nenhum papel de loja: é das ferramentas do Adm. Sup
+  const lista = papeis.length <= 1 ? (papeis[0] ?? 'o Adm. Sup') : `${papeis.slice(0, -1).join(', ')} ou ${papeis.at(-1)}`;
   return `${PERMISSOES[permissao]}: só ${lista}.`;
 }

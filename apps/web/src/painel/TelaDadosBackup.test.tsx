@@ -1,6 +1,7 @@
 // apps/web/src/painel/TelaDadosBackup.test.tsx
-// Dados e backup → Dados da loja e Regras gerais, ligados à API da demonstração.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+// Dados e backup → as partes da tela (Dados do sistema, Importar e exportar e a do Adm. Sup) e, nos dados do sistema,
+// Dados da loja e Regras gerais, ligados à API da demonstração.
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApiLocal } from '../demo/apiLocal';
@@ -127,5 +128,47 @@ describe('TelaDadosBackup · quem pode', () => {
   it('o Administrador altera', async () => {
     const c = api('administrador');
     await expect(c.salvarDadosDaLoja({ descricao: 'Banho e tosa' })).resolves.toMatchObject({ descricao: 'Banho e tosa' });
+  });
+});
+
+describe('TelaDadosBackup · partes da tela (pedido do Luan, 25/11/2026)', () => {
+  const nav = () => screen.getByRole('navigation', { name: 'Partes de Dados e backup' });
+  const partes = () => within(nav()).getAllByRole('button').map((b) => b.textContent);
+  const parte = (nome: string) => within(nav()).getByRole('button', { name: nome });
+
+  it('o Dono vê "Dados do sistema" e "Importar e exportar"; abre nos dados do sistema, com os dados e as regras', async () => {
+    render(<TelaDadosBackup api={api()} papel="dono" />);
+    expect(partes()).toEqual(['Dados do sistema', 'Importar e exportar']);
+    expect(parte('Dados do sistema').getAttribute('aria-current')).toBe('page');
+    await screen.findByLabelText('Nome da loja');
+    expect(screen.getByRole('button', { name: 'Salvar a regra' })).toBeTruthy();
+  });
+
+  it('a parte do Adm. Sup não aparece para o Administrador nem para o Personalizado', () => {
+    render(<TelaDadosBackup api={api('administrador')} papel="administrador" />);
+    expect(partes()).toEqual(['Dados do sistema', 'Importar e exportar']);
+    cleanup();
+    // nem com a função do Adm. Sup gravada por fora: ela não se dá a ninguém
+    render(<TelaDadosBackup api={api()} papel={{ papel: 'personalizado', permissoes: ['dados', 'loja.configurar', 'suporte.ferramentas'] }} />);
+    expect(partes()).toEqual(['Dados do sistema', 'Importar e exportar']);
+  });
+
+  it('o Adm. Sup vê a parte dele; trocar de parte troca o que aparece', async () => {
+    const a = criarApiLocal({ lojaId: 'loja-a', operador: { id: 'adm-sup', nome: 'Adm. Sup', papel: 'super_admin' }, exemplos: false, atrasoMs: 0 });
+    render(<TelaDadosBackup api={a} papel="super_admin" />);
+    expect(partes()).toEqual(['Dados do sistema', 'Importar e exportar', 'Adm. Sup']);
+    await screen.findByLabelText('Nome da loja');
+
+    await userEvent.click(parte('Importar e exportar'));
+    expect(parte('Importar e exportar').getAttribute('aria-current')).toBe('page');
+    expect(parte('Dados do sistema').getAttribute('aria-current')).toBeNull();
+    expect(screen.queryByLabelText('Nome da loja')).toBeNull();
+
+    await userEvent.click(parte('Adm. Sup'));
+    expect(parte('Adm. Sup').getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByLabelText('Nome da loja')).toBeNull();
+
+    await userEvent.click(parte('Dados do sistema'));
+    expect(((await screen.findByLabelText('Nome da loja')) as HTMLInputElement).value).toBe('Loja A');
   });
 });

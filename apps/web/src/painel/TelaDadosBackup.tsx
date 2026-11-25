@@ -3,7 +3,10 @@
 // "Dados da loja" — nome, descrição e logo, que aparecem na barra lateral, na entrada, nas mensagens de
 // WhatsApp e no regulamento (DaniPets ESP-01 e 05: lá eram fixos no código) — e as regras que não têm aba
 // própria (o desconto que o Vendedor dá sem senha; no DaniPets, fixo em 10%). As outras regras ficam nas
-// abas onde são usadas, como no DaniPets. Exportar e importar os dados da loja entram no módulo 13.
+// abas onde são usadas, como no DaniPets. Módulo 13 (pedido do Luan, 25/11/2026): a tela ganhou partes —
+// "Dados do sistema" (o que está acima), "Importar e exportar" (planilhas e cópia de segurança) e "Adm. Sup"
+// (atualizações, ajustes por loja, visões sob medida e manutenção), esta só para o Adm. Sup
+// (permissão 'suporte.ferramentas'). Parte ainda não trabalhada fica em branco até chegar a vez dela.
 import { type DadosDaLoja, LIMITES_LOJA, LIMITES_REGRAS, pode, type RegrasDaLoja, type QuemAcessa } from '@saas/core';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
 import { type ApiLoja, ErroApi } from '../api';
@@ -77,9 +80,23 @@ export async function prepararLogo(arquivo: File): Promise<string> {
   return logo;
 }
 
+/**
+ * As partes de Dados e backup (pedido do Luan, 25/11/2026): os dados do sistema (o que já havia), importar e exportar
+ * (planilhas e cópia de segurança) e a do Adm. Sup, que só ele vê. Parte ainda não trabalhada fica em branco.
+ */
+type Parte = 'sistema' | 'arquivos' | 'admsup';
+const PARTES: { id: Parte; rotulo: string }[] = [
+  { id: 'sistema', rotulo: 'Dados do sistema' },
+  { id: 'arquivos', rotulo: 'Importar e exportar' },
+  { id: 'admsup', rotulo: 'Adm. Sup' },
+];
+
 export function TelaDadosBackup({ api, papel, aoMudar }: Props) {
   const { estado, recarregar } = usarCarga(() => api.lerConfiguracao(), [api]);
   const podeAlterar = pode(papel, 'loja.configurar');
+  const ehAdmSup = pode(papel, 'suporte.ferramentas');
+  const partes = PARTES.filter((p) => p.id !== 'admsup' || ehAdmSup);
+  const [parte, setParte] = useState<Parte>('sistema');
   const salvou = () => {
     void recarregar();
     aoMudar?.();
@@ -90,22 +107,31 @@ export function TelaDadosBackup({ api, papel, aoMudar }: Props) {
       <header className="vg-topo">
         <div>
           <h1>Dados e backup</h1>
-          <p className="suave">Os dados da loja que aparecem no sistema e as regras gerais.</p>
+          <p className="suave">Os dados e as regras da loja, as planilhas para importar e exportar e a cópia de segurança.</p>
         </div>
       </header>
 
-      {estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? (
-        <p className="alerta alerta-erro" role="alert">
-          {estado.mensagem}
-        </p>
-      ) : estado.tipo === 'carregando' ? (
-        <p className="suave">Carregando…</p>
-      ) : (
-        <>
-          <CartaoDadosDaLoja api={api} dados={estado.dados.dados} podeAlterar={podeAlterar} aoSalvar={salvou} />
-          <CartaoRegrasGerais api={api} regras={estado.dados.regras} podeAlterar={podeAlterar} aoSalvar={salvou} />
-        </>
-      )}
+      <nav className="cli-abas rel-abas" aria-label="Partes de Dados e backup">
+        {partes.map((p) => (
+          <button key={p.id} type="button" className={parte === p.id ? 'cli-aba-on' : ''} aria-current={parte === p.id ? 'page' : undefined} onClick={() => setParte(p.id)}>
+            {p.rotulo}
+          </button>
+        ))}
+      </nav>
+
+      {parte === 'sistema' &&
+        (estado.tipo === 'bloqueado' || estado.tipo === 'falhou' ? (
+          <p className="alerta alerta-erro" role="alert">
+            {estado.mensagem}
+          </p>
+        ) : estado.tipo === 'carregando' ? (
+          <p className="suave">Carregando…</p>
+        ) : (
+          <>
+            <CartaoDadosDaLoja api={api} dados={estado.dados.dados} podeAlterar={podeAlterar} aoSalvar={salvou} />
+            <CartaoRegrasGerais api={api} regras={estado.dados.regras} podeAlterar={podeAlterar} aoSalvar={salvou} />
+          </>
+        ))}
     </div>
   );
 }

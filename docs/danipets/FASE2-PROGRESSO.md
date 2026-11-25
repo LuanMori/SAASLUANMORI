@@ -17,7 +17,7 @@ commit no `teste-local-windows`. **Pendências da Visão geral: continuam A DEFI
 | 8. Vale-troca | **Concluído** (20/11/2026) |
 | 9. Financeiro | **Concluído** (23/11/2026) |
 | 10. Relatórios | **Concluído** (23/11/2026) |
-| 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer (Usuários: suporte e Personalizado adiantados em 23/11/2026, a pedido do Luan) |
+| 11 a 14. Visão geral, Usuários, Dados e backup, Suporte | a fazer (Usuários: suporte e Personalizado adiantados em 23/11/2026, a pedido do Luan; Dados e backup: em andamento desde 25/11/2026, também a pedido dele) |
 | 15. Consolidação (Fase 3) | a fazer |
 
 ---
@@ -1035,3 +1035,51 @@ ficava cortado). Era uma tela mais baixa: notebook, ou o Windows com zoom de 125
   "Ver detalhes" abre a aba certa; parte indisponível avisa; os dois botões têm o ícone; o zero negativo no núcleo.
 - **Navegador:** 1600 px no claro e no escuro, 1366 px e celular: os 8 assuntos, o ícone, sem rolagem para o lado e
   console sem erros.
+
+---
+
+## Módulo 13 — Dados e backup
+
+O pedido do Luan (25/11/2026, 3ª imagem): *"Colocar sub abas bem definidas. a primeira com dados do sistema com oque já
+está presente, como alterar nome da empresa do cliente, logo, regras, etc.. a outra aba importação de dados, importar
+planilhas de dados, caso o cliente possua outro sistema e esteja migrando para o nosso, importar produtos, vendas, etc,
+exportar dados do sistema entre outros. Uma aba somente para o Adm. Sup. como: lançar atualizações, ajustes, criar
+visões, para conseguirmos ter acesso mesmo quando vender."*
+
+O Luan marcou todas as opções das três perguntas:
+
+- **Importar** de .xlsx ou .csv, com modelo para baixar e prévia antes de gravar:
+  - produtos, clientes e fornecedores;
+  - vendas antigas, só como histórico: não mexem em estoque, caixa e financeiro.
+- **Exportar**:
+  - planilhas do Excel, no mesmo formato da importação;
+  - cópia de segurança completa;
+  - restaurar uma cópia: só o Adm. Sup, porque apaga os dados atuais.
+- **Parte do Adm. Sup**:
+  - atualizações e avisos;
+  - ajustes por loja;
+  - visões sob medida;
+  - manutenção.
+
+O módulo vai em partes, um commit por parte (13a a 13h).
+
+### 13a (25/11/2026): as partes da tela
+
+- **Três partes**, no mesmo formato das abas dos Relatórios:
+  - **Dados do sistema**, que abre primeiro: o que já havia, ou seja, Dados da loja (nome, descrição e logo) e Regras
+    gerais;
+  - **Importar e exportar**: em branco até a vez dela (13b a 13d);
+  - **Adm. Sup**: só o Adm. Sup vê; fica em branco até a vez dela (13e a 13h).
+- **Permissão nova `suporte.ferramentas`** (núcleo), só do Adm. Sup:
+  - fica fora do Dono, do Administrador e do Personalizado;
+  - não se dá a ninguém, e gravada por fora não vale;
+  - a mensagem de recusa diz "só o Adm. Sup.".
+- **Servidor:** nada muda. A permissão não vai para o banco, então a regra do banco sobre as funções do Personalizado
+  continua a mesma.
+- **Testes:**
+  - núcleo 412 (+1): o Adm. Sup tem tudo; o Dono tem tudo menos `suporte.ferramentas`; ninguém mais a tem, nem o
+    Personalizado;
+  - tela 416 (+3): o Dono e o Administrador veem duas partes; o Personalizado não vê a do Adm. Sup, nem com a
+    função gravada por fora; o Adm. Sup vê as três, e trocar de parte troca o que aparece.
+- **Navegador:** o Dono vê duas partes e o Adm. Sup vê três, a 1600 px no claro e no escuro e no celular. Cada parte
+  abre, sem rolagem para o lado e sem erros no console.
