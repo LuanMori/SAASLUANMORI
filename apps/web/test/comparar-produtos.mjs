@@ -5,7 +5,38 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
 const [referencia, artefatos] = process.argv.slice(2);
-const { chromium } = createRequire(resolve(process.env.COMPARADOR, 'package.json'))('playwright-core');
+const carregar = createRequire(resolve(process.env.COMPARADOR, 'package.json'));
+const { chromium } = carregar('playwright-core');
+const { PNG } = carregar('pngjs');
+
+function compararPixels(original, atual, contexto) {
+  const a = PNG.sync.read(original);
+  const b = PNG.sync.read(atual);
+  assert.deepEqual([a.width, a.height], [b.width, b.height], contexto);
+  let alterados = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    let maiorDiferenca = 0;
+    for (let canal = 0; canal < 4; canal++) {
+      maiorDiferenca = Math.max(maiorDiferenca, Math.abs(a.data[i + canal] - b.data[i + canal]));
+    }
+    if (maiorDiferenca === 0) continue;
+    const pixel = i / 4;
+    assert.ok(maiorDiferenca <= 1, contexto + ': cor diferente em ' + (pixel % a.width) + ',' + Math.floor(pixel / a.width));
+    alterados++;
+  }
+  // O Chrome pode arredondar a cobertura de bordas curvas em 1 nível de 255.
+  assert.ok(alterados <= a.width * a.height * 0.0003, contexto + ': ' + alterados + ' pixels diferentes');
+  console.log(contexto + ': geometria idêntica, ' + alterados + ' pixels com arredondamento');
+}
+
+async function geometria(page) {
+  return page.locator('.app *').evaluateAll(elementos => elementos
+    .filter(el => el.getClientRects().length > 0)
+    .map(el => {
+      const { x, y, width, height } = el.getBoundingClientRect();
+      return [el.tagName, x, y, width, height];
+    }));
+}
 const entrada = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -57,7 +88,9 @@ try {
         await writeFile(join(artefatos,largura+'-'+estado+'-'+['original','html'][i]+'.png'),foto);
         fotos.push(foto);
       }
-      assert.ok(fotos[0].equals(fotos[1]),'Diferença visual em '+largura+'px, estado '+estado);
+      const contexto = largura + 'px, estado ' + estado;
+      assert.deepEqual(await geometria(paginas[0]), await geometria(paginas[1]), contexto);
+      compararPixels(fotos[0], fotos[1], contexto);
     }
     await comparar('lista');
     for(const page of paginas){

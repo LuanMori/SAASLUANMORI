@@ -71,7 +71,7 @@ jobs:
         run: |
           ln -s "$GITHUB_WORKSPACE/node_modules" referencia-visual/node_modules
           export COMPARADOR="$RUNNER_TEMP/comparador"
-          npm install --prefix "$COMPARADOR" playwright-core@1.56.1 --ignore-scripts
+          npm install --prefix "$COMPARADOR" playwright-core@1.56.1 pngjs@7.0.0 --ignore-scripts
           node apps/web/test/comparar-produtos.mjs referencia-visual "$RUNNER_TEMP/fotos"
       - uses: actions/upload-artifact@v4
         if: failure() && github.event_name == 'pull_request'
