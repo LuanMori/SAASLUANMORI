@@ -223,17 +223,29 @@ import {
   validarTaxasCartao,
   type Venda,
   vendasNoPeriodo,
+  ASSUNTOS_DA_COPIA,
+  type AssuntoDaCopia,
+  type CopiaDaLoja,
+  LISTA_ASSUNTOS_DA_COPIA,
+  MENSAGENS_DA_COPIA,
+  montarCopiaDaLoja,
+  podeBaixarCopia,
+  resumoDaCopia,
+  totalDeRegistros,
 } from '@saas/core';
-import { type ApiSistema, ErroApi, type FiltroVendas, type Produto, type SaldoEstoque } from '../api';
+import { type ApiSistema, ErroApi, type FiltroVendas, type PreviaDaCopia, type Produto, type SaldoEstoque } from '../api';
 import { comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
 import {
   autorizadoresDemo,
   conferirAutorizadorDemo,
   criarApiUsuariosDemo,
+  equipeParaCopiaDemo,
+  historicoParaCopiaDemo,
   LOJAS_DEMO,
   registrarAuditoriaDemo,
   usuarioGuardadoDemo,
 } from './usuariosDemo';
+import { conferenciaDaCopia, lerArquivoDaCopia } from './copiaDaLojaDemo';
 
 const CHAVES = {
   produtos: 'saas-demo:produtos:v1',
@@ -269,6 +281,66 @@ const CHAVES = {
   /** Vales-troca de cada loja (módulo 8). */
   vales: 'saas-demo:vales-troca:v1',
 } as const;
+
+/**
+ * Onde cada assunto da cópia de segurança (@saas/core copiaDaLoja) fica guardado. Toda chave da demonstração com
+ * dados da loja entra aqui (o teste confere); ficam de fora só as marcas de "loja já preparada".
+ */
+const CHAVE_DO_ASSUNTO: Record<AssuntoDaCopia, string> = {
+  configuracao: CHAVES.configuracao,
+  produtos: CHAVES.produtos,
+  estoque: CHAVES.estoque,
+  minimos: CHAVES.minimos,
+  fornecedores: CHAVES.fornecedores,
+  compras: CHAVES.compras,
+  contasPagar: CHAVES.contasPagar,
+  clientes: CHAVES.clientes,
+  vendas: CHAVES.vendas,
+  lancamentos: CHAVES.lancamentos,
+  recebiveis: CHAVES.recebiveis,
+  taxas: CHAVES.taxas,
+  caixas: CHAVES.caixas,
+  avisosClientes: CHAVES.avisosClientes,
+  cashback: CHAVES.cashback,
+  usosCashback: CHAVES.usosCashback,
+  cupons: CHAVES.cupons,
+  contatos: CHAVES.contatos,
+  vales: CHAVES.vales,
+};
+
+/** SÓ PARA TESTES: chaves da demonstração que a cópia de segurança não leva (devem ser só as marcas de preparo). */
+export const chavesForaDaCopia = (): string[] => Object.values(CHAVES).filter((c) => !Object.values(CHAVE_DO_ASSUNTO).includes(c));
+
+/** Tudo o que a loja tem guardado, por assunto, como está gravado (o que não existe vai vazio). */
+function lerAssuntosDaLoja(lojaId: string): Record<AssuntoDaCopia, unknown> {
+  return Object.fromEntries(
+    LISTA_ASSUNTOS_DA_COPIA.map((a) => [a, ler<Record<string, unknown>>(CHAVE_DO_ASSUNTO[a], {})[lojaId] ?? (ASSUNTOS_DA_COPIA[a].tipo === 'lista' ? [] : null)]),
+  ) as Record<AssuntoDaCopia, unknown>;
+}
+
+/** Troca tudo o que a loja tem pelos assuntos da cópia (null = volta ao padrão). As outras lojas não mudam. */
+function gravarAssuntosDaLoja(lojaId: string, dados: Record<AssuntoDaCopia, unknown>): void {
+  for (const a of LISTA_ASSUNTOS_DA_COPIA) {
+    const todas = { ...ler<Record<string, unknown>>(CHAVE_DO_ASSUNTO[a], {}) };
+    const valor = dados[a];
+    if (valor === null || valor === undefined) delete todas[lojaId];
+    else todas[lojaId] = valor;
+    gravar(CHAVE_DO_ASSUNTO[a], todas);
+  }
+  // a loja restaurada não ganha os exemplos nem a montagem do estoque e do financeiro de novo
+  for (const marca of [CHAVES.exemplos, CHAVES.ecossistema]) {
+    const lojas = ler<string[]>(marca, []);
+    if (!lojas.includes(lojaId)) gravar(marca, [...lojas, lojaId]);
+  }
+}
+
+const previaDaCopia = (c: CopiaDaLoja): PreviaDaCopia => ({
+  loja: c.loja,
+  geradaEm: c.geradaEm,
+  geradaPor: c.geradaPor?.nome ?? null,
+  registros: totalDeRegistros(c.contagem),
+  assuntos: resumoDaCopia(c),
+});
 
 /** Nome e descrição de cada loja antes de alguém mudar (os da faixa da demonstração). */
 function dadosPadrao(lojaId: string): DadosDaLoja {
@@ -2885,6 +2957,61 @@ export function criarApiLocal({
         gravarDaLoja(CHAVES.fornecedores, lojaId, daLoja);
         auditar(salvo.ativo ? 'fornecedor.reativado' : 'fornecedor.desativado', { tipo: 'fornecedor', id });
         return salvo;
+      });
+    },
+
+    // ---------------------------------------------------------------- dados e backup (módulo 13)
+    async gerarCopiaDaLoja() {
+      await preparar();
+      return comTrava(async () => {
+        const quem = exigir('dados');
+        if (!podeBaixarCopia(quem)) throw new ErroApi(403, MENSAGENS_DA_COPIA.precisaCpf);
+        const corpo = montarCopiaDaLoja({
+          loja: { id: lojaId, nome: config().dados.nome },
+          geradaEm: agora().toISOString(),
+          geradaPor: pessoa(quem),
+          dados: lerAssuntosDaLoja(lojaId),
+          equipe: equipeParaCopiaDemo(lojaId),
+          historico: historicoParaCopiaDemo(lojaId),
+        });
+        const copia: CopiaDaLoja = { ...corpo, conferencia: await conferenciaDaCopia(corpo) };
+        transacao(() => auditar('dados.copia_gerada', null, { registros: totalDeRegistros(copia.contagem) }));
+        return copia;
+      });
+    },
+
+    async conferirCopiaDaLoja(texto) {
+      await preparar();
+      exigir('dados.restaurar');
+      const r = await lerArquivoDaCopia(texto, lojaId);
+      if (!r.ok) throw new ErroApi(400, r.erros[0]!.mensagem, r.erros);
+      return previaDaCopia(r.valor);
+    },
+
+    async restaurarCopiaDaLoja(texto) {
+      await preparar(atrasoMs * 2);
+      exigir('dados.restaurar');
+      const r = await lerArquivoDaCopia(texto, lojaId);
+      if (!r.ok) throw new ErroApi(400, r.erros[0]!.mensagem, r.erros);
+      const copia = r.valor;
+      // sem fechar os caixas de dias passados antes: tudo vai ser trocado pelo que a cópia tem
+      return gravando(() => {
+        exigir('dados.restaurar');
+        gravarAssuntosDaLoja(lojaId, copia.dados);
+        auditar('dados.copia_restaurada', null, { dia: diaNoFuso(copia.geradaEm, fuso), registros: totalDeRegistros(copia.contagem) });
+        return previaDaCopia(copia);
+      });
+    },
+
+    async registrarPlanilhaExportada(dados) {
+      await preparar();
+      return gravarOperacao(() => {
+        exigir('dados');
+        const d = (dados ?? {}) as { assunto?: unknown; linhas?: unknown };
+        const assunto = typeof d.assunto === 'string' ? d.assunto.trim().slice(0, 40) : '';
+        if (!assunto) throw new ErroApi(400, 'Diga qual planilha foi exportada.');
+        const linhas = typeof d.linhas === 'number' && Number.isSafeInteger(d.linhas) && d.linhas >= 0 ? d.linhas : null;
+        auditar('dados.planilha_exportada', null, { assunto, linhas });
       });
     },
 

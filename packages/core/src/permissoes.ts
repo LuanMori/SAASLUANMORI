@@ -12,7 +12,8 @@
 //     baixa do cartão automática ou manual (23/11/2026): só o Dono. As taxas da maquininha: Dono e Administrador.
 //   - Personalizado (pedido do Luan, 23/11/2026): só as funções escolhidas para ele, dentre as que se podem dar
 //     (PERMISSOES_CONCEDIVEIS: tudo, menos o que é só do Dono e a gestão de usuários);
-//   - Adm. Sup (super_admin, o usuário mestre): tudo, em qualquer loja.
+//   - Adm. Sup (super_admin, o usuário mestre): tudo, em qualquer loja. As ferramentas dele em Dados e backup e restaurar
+//     uma cópia de segurança (troca os dados atuais) são só dele (SO_ADM_SUP, pedido do Luan em 25/11/2026).
 // Para mudar a regra de um papel, mude só a tabela PODE abaixo (e os testes).
 import type { PapelDeLoja } from './papeis';
 
@@ -32,6 +33,7 @@ export const PERMISSOES = {
   financeiro: 'Financeiro',
   relatorios: 'Relatórios e vendas de outros dias',
   dados: 'Dados e backup',
+  'dados.restaurar': 'Restaurar uma cópia de segurança (troca os dados atuais da loja)',
   'loja.configurar': 'Alterar os dados e as regras da loja',
   usuarios: 'Cadastrar, alterar e desativar usuários',
   'usuarios.donos': 'Cadastrar e alterar outro Dono, ou dar o papel de Dono',
@@ -70,9 +72,10 @@ const SO_DONO = new Set<Permissao>([
 
 /**
  * Só o Adm. Sup (o usuário mestre, da nossa empresa; pedido do Luan, 25/11/2026: a aba dele em Dados e backup, para
- * termos acesso mesmo depois de vender): fica fora do Dono, do Administrador e do Personalizado.
+ * termos acesso mesmo depois de vender, e restaurar uma cópia de segurança, que troca os dados atuais): fica fora do
+ * Dono, do Administrador e do Personalizado.
  */
-const SO_ADM_SUP = new Set<Permissao>(['suporte.ferramentas']);
+const SO_ADM_SUP = new Set<Permissao>(['dados.restaurar', 'suporte.ferramentas']);
 
 /** O que se pode dar a um Personalizado: tudo, menos o que é só do Dono ou do Adm. Sup e a gestão de usuários. */
 export const PERMISSOES_CONCEDIVEIS: readonly Permissao[] = LISTA_PERMISSOES.filter((p) => !SO_DONO.has(p) && !SO_ADM_SUP.has(p) && p !== 'usuarios');

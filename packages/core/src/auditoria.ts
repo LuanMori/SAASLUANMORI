@@ -51,6 +51,10 @@ export const ACOES_AUDITORIA = {
   'conta_pagar.criada': 'Conta a pagar lançada',
   // relatórios
   'relatorios.exportado': 'Relatório exportado para Excel',
+  // dados e backup (módulo 13)
+  'dados.planilha_exportada': 'Planilha exportada (Dados e backup)',
+  'dados.copia_gerada': 'Cópia de segurança baixada',
+  'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
   'caixa.aberto': 'Abertura de caixa',
   'caixa.sangria': 'Sangria',
@@ -152,6 +156,7 @@ const NOME_LANCAMENTO_RETROATIVO: Record<string, string> = { compra: 'compra', a
 const diaBr = (dia: unknown) => (typeof dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dia) ? dia.split('-').reverse().join('/') : null);
 
 const numeroVenda = (n: unknown) => (typeof n === 'number' && Number.isInteger(n) && n > 0 ? `venda nº ${String(n).padStart(5, '0')}` : null);
+const inteiro = (n: unknown) => (typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 ? n : null);
 const dinheiro = (c: unknown) => (typeof c === 'number' && Number.isSafeInteger(c) ? formatarCentavos(c) : null);
 const papel = (p: unknown) => (ehPapelDeLoja(p) ? NOME_PAPEL[p] : null);
 const lista = (v: unknown, nomes: Record<string, string>) =>
@@ -238,6 +243,17 @@ export function resumirAuditoria(
       const periodo = diaBr(d.de) || diaBr(d.ate) ? `${diaBr(d.de) ?? 'início'} a ${diaBr(d.ate) ?? 'hoje'}` : 'todo o período';
       const abas = typeof d.abas === 'number' && Number.isInteger(d.abas) && d.abas > 0 ? `${d.abas} ${d.abas === 1 ? 'aba' : 'abas'}` : null;
       partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, periodo, abas);
+      break;
+    }
+    case 'dados.planilha_exportada': {
+      const n = inteiro(d.linhas);
+      partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, n === null ? null : `${n} ${n === 1 ? 'linha' : 'linhas'}`);
+      break;
+    }
+    case 'dados.copia_gerada':
+    case 'dados.copia_restaurada': {
+      const n = inteiro(d.registros);
+      partes.push(acao === 'dados.copia_restaurada' && diaBr(d.dia) ? `cópia de ${diaBr(d.dia)}` : null, n === null ? null : `${n} ${n === 1 ? 'registro' : 'registros'}`);
       break;
     }
     case 'conta_pagar.criada':

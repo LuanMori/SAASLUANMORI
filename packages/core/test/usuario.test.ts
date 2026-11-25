@@ -37,9 +37,10 @@ const campos = (r: { ok: boolean; erros?: { campo: string }[] }) => (!r.ok && r.
 const mensagem = (r: { ok: boolean; erros?: { mensagem: string }[] }) => (!r.ok && r.erros ? r.erros[0]!.mensagem : '');
 
 describe('permissões (matriz única, do DaniPets)', () => {
-  it('Dono pode tudo menos as ferramentas do Adm. Sup; Administrador tudo menos o que é só do Dono; Vendedor o do DaniPets', () => {
-    expect(LISTA_PERMISSOES.filter((p) => !pode('dono', p))).toEqual(['suporte.ferramentas']);
+  it('Dono pode tudo menos o que é só do Adm. Sup; Administrador tudo menos o que é só do Dono; Vendedor o do DaniPets', () => {
+    expect(LISTA_PERMISSOES.filter((p) => !pode('dono', p))).toEqual(['dados.restaurar', 'suporte.ferramentas']);
     expect(LISTA_PERMISSOES.filter((p) => !pode('administrador', p))).toEqual([
+      'dados.restaurar',
       'usuarios.donos',
       'usuarios.excluir_dados',
       'clientes.excluir_dados',
@@ -60,6 +61,14 @@ describe('permissões (matriz única, do DaniPets)', () => {
     expect(PERMISSOES_CONCEDIVEIS).not.toContain('suporte.ferramentas');
     expect(quemPode('suporte.ferramentas')).toEqual([]);
     expect(mensagemSemPermissao('suporte.ferramentas')).toBe('Ferramentas do Adm. Sup (atualizações, ajustes, visões e manutenção): só o Adm. Sup.');
+  });
+
+  it('restaurar uma cópia de segurança (troca os dados atuais) é só do Adm. Sup', () => {
+    expect(pode('super_admin', 'dados.restaurar')).toBe(true);
+    for (const papel of ['dono', 'administrador', 'vendedor'] as const) expect(pode(papel, 'dados.restaurar')).toBe(false);
+    expect(pode({ papel: 'personalizado', permissoes: ['dados', 'dados.restaurar'] }, 'dados.restaurar')).toBe(false);
+    expect(PERMISSOES_CONCEDIVEIS).not.toContain('dados.restaurar');
+    expect(mensagemSemPermissao('dados.restaurar')).toBe('Restaurar uma cópia de segurança (troca os dados atuais da loja): só o Adm. Sup.');
   });
 
   it('papel desconhecido ou vazio não pode nada (dado alterado por fora)', () => {

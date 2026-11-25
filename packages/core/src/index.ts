@@ -21,3 +21,5 @@ export * from './caixa';
 export * from './fiado';
 export * from './fidelidade';
 export * from './vale';
+export * from './copiaDaLoja';
+export * from './modelosDePlanilha';

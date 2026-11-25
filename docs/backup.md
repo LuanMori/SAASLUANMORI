@@ -36,6 +36,26 @@ O script recria as roles se o servidor for novo, restaura como superusuário, ap
 `.env.producao` e mostra quantas linhas cada tabela tem. Servidor novo do zero: instale como em
 `deploy.md`, copie o `.dump` para `backups/` e rode o `restaurar.sh ... --substituir-producao`.
 
+## Cópia de segurança de UMA loja (tela Dados e backup)
+
+Diferente do backup acima (o banco inteiro, de todas as lojas, feito pelo servidor), a loja também baixa a
+**própria cópia** pela tela **Dados e backup → Importar e exportar** (Fase 2, módulo 13; DaniPets DAT-01 e DAT-05):
+
+- **O arquivo** (`copia-de-seguranca-<loja>-<AAAA-MM-DD-HHMM>.json`) leva todos os dados da loja: cadastros, vendas,
+  estoque, caixa, financeiro, fidelidade e vales-troca. Leva também a equipe (sem senha) e o histórico, que vão só
+  para consulta. O formato fica em `packages/core/src/copiaDaLoja.ts`.
+- **Quem baixa:** quem tem Dados e backup e pode ver o CPF completo, porque a cópia leva o CPF dos clientes. Cada
+  download fica no histórico.
+- **Restaurar:** só o Adm. Sup.
+  - A cópia só volta na mesma loja.
+  - É recusado o arquivo de outra loja, de versão mais nova do sistema ou alterado depois de gerado.
+  - Antes de trocar, a tela baixa uma cópia dos dados de agora (`copia-antes-de-restaurar-...json`).
+  - A equipe (com as senhas de hoje) e o histórico não mudam, e a restauração entra no histórico.
+- **Conferência:** o arquivo leva o SHA-256 do conteúdo (em JSON canônico). Ela pega arquivo corrompido ou mexido à
+  mão, mas não é assinatura: quem souber recalcular passa.
+- **No servidor**, essa parte responde 501 por enquanto. Ao entrar, a conferência passa a ser assinada com uma chave
+  que só o servidor tem (HMAC), e a restauração confere cada registro antes de gravar.
+
 ## Testes automáticos
 
 - `apps/api/test/backup.spec.ts`: backup **de verdade** (pg_dump com a role de backup), restauração num

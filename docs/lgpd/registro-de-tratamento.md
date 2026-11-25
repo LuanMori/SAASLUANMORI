@@ -14,6 +14,7 @@
 | 8 | Compras, pagamentos, fiado | clientes da loja | gestão da loja | definida pela loja; obrigação fiscal | `vendas`, recebíveis, lançamentos (hoje só na demonstração) | equipe (Vendedor: só o dia) | fiscal: 5 anos | a exclusão do cliente tira o nome; os valores ficam (obrigação fiscal) |
 | 9 | Backups (cópia de tudo acima) | todos | recuperar de desastre | legítimo interesse | `backups/` no servidor + [cópia externa] | equipe técnica | [14] dias no servidor; [X] fora | expiram sozinhos (`BACKUP_DIAS`) |
 | 10 | Dados de quem contrata (nome, contato, cobrança) | responsável pela loja | contrato e cobrança | execução de contrato | [sistema de cobrança — a definir] | sócios | 5 anos após o fim (fiscal) | [a definir] |
+| 11 | Arquivos baixados em Dados e backup: a cópia de segurança da loja (tudo de 1 a 8 da loja, com o CPF completo dos clientes; a equipe vai sem senha) e as planilhas de cadastro (CPF completo só para quem pode vê-lo) | clientes e equipe da loja | a loja guardar e levar os próprios dados (portabilidade); voltar a loja a uma cópia (só o Adm. Sup) | definida pela loja (controladora) | no computador de quem baixou (fora do sistema) | quem baixou: Dono, Administrador ou Personalizado com Dados e backup (a cópia pede também "Ver o CPF completo") | decidido pela loja | a loja apaga o arquivo; cada download fica no histórico (quem e quando) |
 
 **Não guardamos**: e-mail da equipe (removido em 18/11/2026: nunca foi usado), dados sensíveis,
 localização, cookies de rastreamento.

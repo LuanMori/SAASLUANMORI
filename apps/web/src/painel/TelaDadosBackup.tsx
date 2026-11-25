@@ -7,17 +7,23 @@
 // "Dados do sistema" (o que está acima), "Importar e exportar" (planilhas e cópia de segurança) e "Adm. Sup"
 // (atualizações, ajustes por loja, visões sob medida e manutenção), esta só para o Adm. Sup
 // (permissão 'suporte.ferramentas'). Parte ainda não trabalhada fica em branco até chegar a vez dela.
-import { type DadosDaLoja, LIMITES_LOJA, LIMITES_REGRAS, pode, type RegrasDaLoja, type QuemAcessa } from '@saas/core';
+import { type DadosDaLoja, FUSO_PADRAO, LIMITES_LOJA, LIMITES_REGRAS, pode, type RegrasDaLoja, type QuemAcessa } from '@saas/core';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
-import { type ApiLoja, ErroApi } from '../api';
+import { type ApiLoja, type ApiPainel, ErroApi } from '../api';
+import type { Baixar } from '../relatorios/baixar';
 import { iniciais } from './BarraLateral';
+import { ParteImportarExportar } from './dados/ParteImportarExportar';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  api: ApiLoja;
+  api: ApiPainel;
   papel: QuemAcessa;
-  /** Os dados ou as regras mudaram: a área logada recarrega (barra lateral, Frente de caixa). */
+  /** Os dados ou as regras mudaram (ou uma cópia foi restaurada): a área logada recarrega (barra lateral, Frente de caixa). */
   aoMudar?: () => void;
+  fuso?: string;
+  agora?: () => Date;
+  /** SÓ PARA TESTES: no lugar de baixar o arquivo. */
+  baixar?: Baixar;
 }
 
 const mensagemDe = (e: unknown) => (e instanceof ErroApi || e instanceof Error ? e.message : 'Não foi possível salvar. Tente de novo.');
@@ -91,7 +97,7 @@ const PARTES: { id: Parte; rotulo: string }[] = [
   { id: 'admsup', rotulo: 'Adm. Sup' },
 ];
 
-export function TelaDadosBackup({ api, papel, aoMudar }: Props) {
+export function TelaDadosBackup({ api, papel, aoMudar, fuso = FUSO_PADRAO, agora, baixar }: Props) {
   const { estado, recarregar } = usarCarga(() => api.lerConfiguracao(), [api]);
   const podeAlterar = pode(papel, 'loja.configurar');
   const ehAdmSup = pode(papel, 'suporte.ferramentas');
@@ -132,6 +138,17 @@ export function TelaDadosBackup({ api, papel, aoMudar }: Props) {
             <CartaoRegrasGerais api={api} regras={estado.dados.regras} podeAlterar={podeAlterar} aoSalvar={salvou} />
           </>
         ))}
+      {parte === 'arquivos' && (
+        <ParteImportarExportar
+          api={api}
+          papel={papel}
+          nomeDaLoja={estado.tipo === 'pronto' ? estado.dados.dados.nome : 'loja'}
+          fuso={fuso}
+          agora={agora}
+          baixar={baixar}
+          aoMudar={salvou}
+        />
+      )}
     </div>
   );
 }

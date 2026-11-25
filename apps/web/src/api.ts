@@ -4,6 +4,8 @@
 // JavaScript nem consegue ler). A demonstração implementa os mesmos contratos no navegador
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
+  AssuntoDaCopia,
+  CopiaDaLoja,
   CotacaoRecebimento,
   FiadoAVencer,
   AcaoAutorizada,
@@ -672,6 +674,36 @@ export interface ApiRelatorios {
   registrarExportacao(dados: { assunto: string; de: string | null; ate: string | null; abas: number }): Promise<void>;
 }
 
+// ---- Dados e backup (Fase 2, módulo 13): cópia de segurança e o registro das planilhas exportadas.
+
+/** O que a cópia leva (a prévia antes de restaurar e o resumo depois). */
+export interface PreviaDaCopia {
+  loja: { id: string; nome: string };
+  /** ISO. */
+  geradaEm: string;
+  /** Nome de quem baixou a cópia (null = não se sabe). */
+  geradaPor: string | null;
+  registros: number;
+  assuntos: { assunto: AssuntoDaCopia; nome: string; quantidade: number }[];
+}
+
+export interface ApiDados {
+  /**
+   * A cópia de segurança completa da loja (@saas/core copiaDaLoja). Precisa de Dados e backup e de ver o CPF completo
+   * (a cópia leva o CPF dos clientes). Fica no histórico.
+   */
+  gerarCopiaDaLoja(): Promise<CopiaDaLoja>;
+  /** Confere o arquivo (formato, loja, conferência) e mostra o que ele leva, sem gravar nada. Só o Adm. Sup. */
+  conferirCopiaDaLoja(texto: string): Promise<PreviaDaCopia>;
+  /**
+   * Troca os dados da loja pelos da cópia. Só o Adm. Sup. A equipe (com as senhas de hoje) e o histórico continuam;
+   * a restauração entra no histórico. A tela baixa antes uma cópia dos dados de agora.
+   */
+  restaurarCopiaDaLoja(texto: string): Promise<PreviaDaCopia>;
+  /** Registra no histórico a planilha de cadastro exportada em Dados e backup (o cadastro e quantas linhas). */
+  registrarPlanilhaExportada(dados: { assunto: string; linhas: number }): Promise<void>;
+}
+
 export type ApiPainel = ApiProdutos &
   ApiVendas &
   ApiEstoque &
@@ -683,7 +715,8 @@ export type ApiPainel = ApiProdutos &
   ApiCaixa &
   ApiFidelidade &
   ApiVales &
-  ApiRelatorios;
+  ApiRelatorios &
+  ApiDados;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

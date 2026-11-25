@@ -198,6 +198,16 @@ const publico = ({ senhaHash: _h, tentativasErradas: _t, ...u }: UsuarioGuardado
 const estadoDe = (u: UsuarioGuardado): EstadoTentativas => ({ tentativasErradas: u.tentativasErradas, bloqueadoAte: u.bloqueadoAte });
 const comEstado = (u: UsuarioGuardado, e: EstadoTentativas): UsuarioGuardado => ({ ...u, tentativasErradas: e.tentativasErradas, bloqueadoAte: e.bloqueadoAte });
 
+/** A equipe da loja para a cópia de segurança (Dados e backup): sem senha, sem tentativas erradas. Só para consulta. */
+export function equipeParaCopiaDemo(lojaId: string): UsuarioDaLoja[] {
+  return lerDaLoja<UsuarioGuardado>(CHAVES.usuarios, lojaId).map(publico);
+}
+
+/** O histórico da loja como está guardado, para a cópia de segurança. Só para consulta: a restauração não o troca. */
+export function historicoParaCopiaDemo(lojaId: string): unknown[] {
+  return lerDaLoja<RegistroAuditoria>(CHAVES.auditoria, lojaId);
+}
+
 /** Histórico (auditoria) da loja: só acrescenta. Sem dado pessoal nos detalhes. */
 export function registrarAuditoriaDemo(
   lojaId: string,

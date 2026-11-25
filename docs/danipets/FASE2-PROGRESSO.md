@@ -1083,3 +1083,67 @@ O módulo vai em partes, um commit por parte (13a a 13h).
     função gravada por fora; o Adm. Sup vê as três, e trocar de parte troca o que aparece.
 - **Navegador:** o Dono vê duas partes e o Adm. Sup vê três, a 1600 px no claro e no escuro e no celular. Cada parte
   abre, sem rolagem para o lado e sem erros no console.
+
+### 13b (25/11/2026): exportar, cópia de segurança e restaurar
+
+A parte **Importar e exportar** ganhou três cartões.
+
+**Exportar para o Excel** (DaniPets DAT-06): os cadastros de produtos, clientes e fornecedores, cada um num .xlsx com
+as mesmas colunas do modelo de importação (`packages/core/src/modelosDePlanilha.ts`). Assim, a 13c lê o mesmo formato.
+
+| Planilha | Colunas | Observações |
+|---|---|---|
+| Produtos | código interno, nome, código de barras, marca, unidade, peso (kg), preço, estoque, custo, estoque mínimo, fornecedor e situação | no produto por kg, estoque e mínimo em quilos; o custo é o custo médio |
+| Clientes | nome, telefone, CPF, WhatsApp, nascimento, endereço, o campo extra da loja (quando ligado), limite de fiado, "aceita mensagens" e observações | só os clientes ativos; quem teve os dados excluídos (LGPD) fica de fora; o CPF vai completo só para quem pode vê-lo, senão a coluna vai em branco (nunca mascarada, para o arquivo servir para importar) |
+| Fornecedores | nome, CNPJ ou CPF, telefone, contato, observação e situação | |
+
+- Cada cadastro aparece para quem tem o acesso da aba dele: clientes com Clientes, fornecedores com Compras.
+- Cada planilha baixada fica no histórico, com o cadastro e o número de linhas.
+- O arquivo se chama, por exemplo, `produtos-loja-a-2026-11-25.xlsx`.
+
+**Cópia de segurança** (DaniPets DAT-01):
+- um arquivo .json com todos os dados da loja: cadastros, vendas, estoque, caixa, financeiro, fidelidade e
+  vales-troca. Leva também a equipe (sem senha) e o histórico, só para consulta;
+- **quem baixa:** quem tem Dados e backup **e** pode ver o CPF completo, porque a cópia leva o CPF dos clientes. O Dono
+  e o Administrador podem; o Personalizado, só com as duas funções. Fica no histórico;
+- o arquivo leva a **conferência** (SHA-256 do conteúdo): arquivo corrompido ou mexido à mão é recusado na restauração.
+
+**Restaurar uma cópia** (DaniPets DAT-05), só o **Adm. Sup**:
+- **permissão nova `dados.restaurar`**, só dele, como a `suporte.ferramentas`. O Dono vê o aviso de que a
+  restauração é com o Adm. Sup;
+- **escolher o arquivo:** o sistema confere o formato, a loja e a conferência. Cópia de outra loja, de versão mais
+  nova do sistema ou alterada é recusada, com o motivo;
+- **prévia:** a data e a hora da cópia, quem a baixou, o total de registros e quantos há de cada assunto;
+- **confirmação:** a pessoa marca "Entendi: os dados atuais da loja serão trocados pelos desta cópia";
+- **antes de trocar**, o sistema baixa uma cópia dos dados de agora (`copia-antes-de-restaurar-...json`). Se não der
+  para baixar, nada é trocado;
+- **depois:** a loja volta ao que a cópia tem, tudo ou nada. As outras lojas não mudam. A equipe (com as senhas de
+  hoje) e o histórico continuam, e a restauração entra no histórico ("cópia de dd/mm/aaaa • N registros"). A barra
+  lateral recarrega, porque o nome e o logo da loja podem ter mudado.
+
+**Decisões tomadas (para o Luan conferir):**
+- a equipe e o histórico não voltam na restauração. Assim ninguém perde o acesso nem a senha, e o histórico continua
+  "só acrescenta";
+- a planilha de clientes leva só os clientes ativos, como a lista da aba Clientes;
+- só os cadastros viraram planilha. As vendas antigas entram na 13d, junto com a importação delas, no mesmo formato.
+
+**Servidor:** sem tabela nova. A cópia, a restauração e o registro das planilhas respondem 501 até o servidor ganhar
+essa parte. Lá, a conferência vai ser assinada com uma chave que só o servidor tem (`docs/backup.md`).
+
+**Testes:**
+- núcleo 425 (+13): o JSON canônico, montar a cópia, as recusas (outra loja, versão nova, partes que não batem, a
+  contagem), quem baixa e o resumo das três ações novas no histórico;
+- tela 435 (+19):
+  - a API da demonstração: a cópia leva todas as chaves de dados; o que vai e o que não vai (senha); quem baixa;
+    restaurar volta tudo sem mexer na outra loja, na equipe e no histórico; o Dono e o Administrador não restauram;
+    arquivo alterado, de outra loja ou que não é cópia é recusado; restaurar num navegador apagado traz a loja de
+    volta sem os exemplos por cima;
+  - as planilhas: colunas, quilos, custo, fornecedor, campo extra, CPF em branco, nome do arquivo;
+  - a tela: as três planilhas, a cópia, o Personalizado só com Dados e backup, e o Adm. Sup restaurando com prévia,
+    confirmação e a cópia de antes baixada.
+- **Navegador:**
+  - o Dono baixou as três planilhas, que abriram no openpyxl com as colunas certas, dinheiro em "R$", linha
+    congelada e filtro;
+  - o Dono baixou a cópia; depois, mudou a descrição da loja;
+  - o Adm. Sup restaurou: a cópia de antes saiu com a descrição mudada, e a descrição voltou;
+  - 1600 px claro e escuro e celular sem rolagem para o lado, console sem erros.

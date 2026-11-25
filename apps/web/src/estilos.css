@@ -766,6 +766,7 @@ h2 { font-size: 1.05rem; }
 .modal-acoes .botao { border-radius: 10px; }
 .botao-perigo { background: var(--erro); border-color: var(--erro); color: #fff; }
 .botao-perigo:hover { background: #a3291a; }
+.botao-perigo:disabled { background: var(--desativado-fundo); border-color: var(--desativado-fundo); color: var(--desativado-texto); cursor: not-allowed; }
 .dev-hoje { display: flex; flex-wrap: wrap; gap: 8px; }
 .dev-acao { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; border: 0; }
 .dev-acao legend { padding: 0; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem; }
@@ -1014,6 +1015,19 @@ h2 { font-size: 1.05rem; }
 .db-arquivo:focus-within { outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 1px; }
 .db-campo-curto input { max-width: 160px; }
 .db-rodape { margin: 18px -20px -20px; }
+.db-exportar { display: flex; flex-wrap: wrap; gap: 10px; }
+.db-exportar .botao { min-height: 42px; }
+.db-dica { display: block; margin-top: 10px; }
+.db-card > .alerta { margin-top: 14px; }
+/* restaurar uma cópia: o que o arquivo leva e a confirmação */
+.db-previa { display: flex; flex-direction: column; gap: 12px; }
+.db-previa-titulo { margin: 0; }
+.db-previa-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 16px; }
+.db-previa-lista li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--borda); font-size: 0.92rem; }
+.db-previa-lista strong { font-variant-numeric: tabular-nums; }
+.db-previa .alerta-aviso { margin: 0; }
+.db-confirmar { display: flex; align-items: flex-start; gap: 8px; font-weight: 600; cursor: pointer; }
+.db-confirmar input { margin-top: 3px; accent-color: var(--erro); }
 
 /* Compras (Fase 2, módulo 4) */
 .compra-cabeca { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr); }
@@ -1302,6 +1316,7 @@ h2 { font-size: 1.05rem; }
 }
 :root[data-tema='escuro'] .botao-perigo { background: #b3301e; border-color: #b3301e; }
 :root[data-tema='escuro'] .botao-perigo:hover { background: #962716; }
+:root[data-tema='escuro'] .botao-perigo:disabled { background: var(--desativado-fundo); border-color: var(--desativado-fundo); color: var(--desativado-texto); }
 :root[data-tema='escuro'] .sidebar { box-shadow: inset -1px 0 0 var(--borda); }
 :root[data-tema='escuro'] .modal-caixa { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); }
 :root[data-tema='escuro'] .entrada-botao:disabled { background: color-mix(in srgb, var(--primaria) 45%, var(--superficie)); color: rgba(255, 255, 255, 0.75); }

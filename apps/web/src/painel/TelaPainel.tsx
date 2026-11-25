@@ -218,7 +218,7 @@ export function TelaPainel({
           {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={acesso} fuso={fuso} intervaloMs={intervaloMs} />}
           {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
           {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} />}
-          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={acesso} aoMudar={carregarConfig} />}
+          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={acesso} aoMudar={carregarConfig} fuso={fuso} agora={agora} />}
           {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
           {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
           {ver('clientes') && (
