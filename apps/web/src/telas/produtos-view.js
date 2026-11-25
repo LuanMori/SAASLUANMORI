@@ -46,7 +46,7 @@ export function montarProdutos(app, api, aoSair, intervaloMs = 5000) {
       bloqueado = false;
     }
     contagem.hidden = false;
-    contagem.textContent = produtos.length + ' cadastrados';
+    contagem.replaceChildren(String(produtos.length), ' cadastrados');
     lista.querySelector('[data-carregando]').hidden = true;
     lista.querySelector('[role=status]').hidden = !avisoRede;
     lista.querySelector('.vazio').hidden = produtos.length !== 0;
