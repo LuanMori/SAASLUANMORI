@@ -1,12 +1,23 @@
 name: Validar migração Java e HTML
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  linguagens:
+    name: Consultar linguagens da branch principal no GitHub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar total de bytes por linguagem
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/languages"
   java:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -42,11 +53,12 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm run build:core
-      - name: Validar os contratos de cadastro da API original no banco de testes
+      - name: Executar a suíte original no banco de testes
         env:
           TEST_DATABASE_ADMIN_URL: postgres://postgres:postgres-ci@localhost:5432/postgres
-        run: npm test -w @saas/api -- --runTestsByPath test/codigos.spec.ts
+        run: npm test -w @saas/api
   html:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
