@@ -991,3 +991,21 @@ da tela, ou a tela toda numa faixa central de 1600 px. Entrou a primeira (opçã
   metade direita (acima de 1200 px), a ilustração sem entrar no cartão, o tema e o Suporte sem cobrir o cartão. As
   funções: o tema troca e fica guardado; o Suporte abre e fecha; "Esqueceu a senha?" mostra a orientação; a senha
   errada avisa; a Ana entra; um usuário novo cai no primeiro acesso, com o cartão no mesmo lugar; console sem erros.
+
+### 25/11/2026: a tela de entrada cabe na altura da tela
+
+O Luan mandou um print em que a tela de entrada passava do fundo da tela (o último recurso, "Gestão financeira",
+ficava cortado). Era uma tela mais baixa: notebook, ou o Windows com zoom de 125%, que deixa uns 1495×695 px úteis.
+
+- **No PC:** as medidas de altura acompanham a altura da tela. Entram nessa conta a logo, a chamada, o texto, os
+  recursos, os espaços, os campos, o botão e o cartão. A partir de ~900 px de altura fica tudo como antes. Abaixo
+  disso diminui junto com a tela, até um mínimo legível.
+- **Tela baixa (até 700 px):** o tema e o Suporte ficam um pouco menores e o conteúdo começa abaixo deles, sem
+  encostar no cartão.
+- **Na demonstração**, a conta desconta a faixa amarela (que sai depois).
+- **Tablet e celular:** sem mudança.
+- Só CSS: `apps/web/src/estilos.css` e `apps/web/src/demo/demo.css`.
+- **Navegador:** 1495×695, 1366×650, 1280×590, 1280×600, 1536×730, 1440×800, 1920×950, 1920×1080, 1024×640, 1100×620,
+  1280×720, 1600×900, 2560×1300, tablet e celular, no claro e no escuro: sem rolagem nenhuma; o tema e o Suporte sem
+  encostar no cartão; a ilustração fora do cartão; console sem erros. Em 1920×950 e 1920×1080 as medidas são as
+  mesmas de antes.

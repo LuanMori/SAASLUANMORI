@@ -14,6 +14,13 @@
 /* a entrada ocupa só o resto da altura debaixo da faixa (qualquer que seja a altura dela): sem rolagem à toa */
 #raiz:has(> .demo-faixa + .entrada) { min-height: 100vh; display: flex; flex-direction: column; }
 #raiz:has(> .demo-faixa + .entrada) > .entrada { flex: 1 0 auto; min-height: 0; }
+/* as medidas da entrada que acompanham a altura da tela descontam a faixa (uma linha no PC; duas até 1100 px) */
+@media (min-width: 901px) {
+  #raiz:has(> .demo-faixa + .entrada) > .entrada { --evh: calc((100vh - 44px) / 100); }
+}
+@media (min-width: 901px) and (max-width: 1100px) {
+  #raiz:has(> .demo-faixa + .entrada) > .entrada { --evh: calc((100vh - 74px) / 100); }
+}
 .demo-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .demo-check input { accent-color: var(--primaria); }
 :root[data-tema='escuro'] { --demo-borda: #4d3f17; --demo-borda-botao: #6a5620; --demo-botao: #2b2414; }

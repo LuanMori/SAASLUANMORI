@@ -279,6 +279,42 @@ h2 { font-size: 1.05rem; }
 .entrada-suporte-caixa p { margin: 0 0 8px; }
 .entrada-suporte-caixa a { color: var(--primaria-texto); font-weight: 600; overflow-wrap: anywhere; }
 
+/* PC: as medidas de altura acompanham a altura da tela, para tudo caber sem rolagem (pedido do Luan, 25/11/2026:
+   "alinhe com o tamanho da tela"). Cada medida é a de sempre a partir de ~900 px de altura e diminui junto com a tela
+   até um mínimo legível. --evh = 1% da altura útil (na demonstração, sem a faixa amarela: ver demo.css). */
+@media (min-width: 901px) {
+  .entrada { --evh: 1vh; --entrada-logo: clamp(44px, calc(var(--evh) * 6.9), 62px); padding-block: clamp(16px, calc(var(--evh) * 4.4), 40px); }
+  .entrada-vitrine { gap: clamp(14px, calc(var(--evh) * 3.8), 34px); }
+  .entrada-vitrine-marca .logo-simbolo { width: var(--entrada-logo); height: var(--entrada-logo); }
+  .entrada-vitrine-marca .logo-nome { font-size: clamp(1.65rem, calc(var(--evh) * 4.1), 2.3rem); }
+  .entrada-vitrine-linha { margin-left: calc(var(--entrada-logo) + 14px); }
+  .entrada-vitrine-chamada { font-size: clamp(1.9rem, min(3.5vw, calc(var(--evh) * 5.9)), 3.3rem); }
+  .entrada-vitrine-traco { margin: clamp(12px, calc(var(--evh) * 2.67), 24px) 0 clamp(10px, calc(var(--evh) * 2.45), 22px); }
+  .entrada-vitrine-descricao { font-size: clamp(0.95rem, calc(var(--evh) * 1.88), 1.06rem); }
+  .entrada-vitrine-recursos { margin-top: clamp(12px, calc(var(--evh) * 3.33), 30px); gap: clamp(6px, calc(var(--evh) * 1.56), 14px); }
+  .entrada-vitrine-icone { width: clamp(36px, calc(var(--evh) * 5.1), 46px); height: clamp(36px, calc(var(--evh) * 5.1), 46px); }
+  .entrada-cartao { padding-block: clamp(20px, calc(var(--evh) * 4.2), 38px) clamp(16px, calc(var(--evh) * 3.55), 32px); }
+  .entrada-logo { margin-bottom: clamp(10px, calc(var(--evh) * 2.2), 20px); }
+  .entrada-logo .logo-simbolo { width: clamp(38px, calc(var(--evh) * 5.3), 48px); height: clamp(38px, calc(var(--evh) * 5.3), 48px); }
+  .entrada-logo .logo-nome { font-size: clamp(1.4rem, calc(var(--evh) * 3), 1.7rem); }
+  .entrada-loja-selo { margin-bottom: clamp(8px, calc(var(--evh) * 1.8), 16px); }
+  .entrada-titulo { font-size: clamp(1.4rem, calc(var(--evh) * 3.1), 1.75rem); }
+  .entrada-subtitulo { margin: clamp(4px, calc(var(--evh) * 0.9), 8px) 0 clamp(14px, calc(var(--evh) * 2.9), 26px); }
+  .entrada-campo { margin-bottom: clamp(12px, calc(var(--evh) * 2.2), 20px); }
+  .entrada-rotulo { margin-bottom: clamp(5px, calc(var(--evh) * 0.9), 8px); }
+  .entrada-caixa, .entrada-botao { height: clamp(44px, calc(var(--evh) * 6), 54px); }
+  .entrada-link { margin-top: clamp(10px, calc(var(--evh) * 3.1), 28px); }
+}
+/* tela baixa (notebook, zoom do Windows): o tema e o Suporte ficam um pouco menores e o conteúdo começa abaixo deles */
+@media (min-width: 901px) and (max-height: 700px) {
+  .entrada { padding-top: max(clamp(16px, calc(var(--evh) * 4.4), 40px), 60px); }
+  .entrada-acoes { top: 12px; right: 16px; gap: 8px; }
+  .entrada-tema { width: 38px; height: 38px; }
+  .entrada-tema svg { width: 19px; height: 19px; }
+  .entrada-suporte-botao { padding: 4px 12px 4px 4px; font-size: 0.9rem; }
+  .entrada-suporte-icone { width: 28px; height: 28px; }
+}
+
 /* tela média: sem a ilustração; celular e tablet: a logo em cima e o cartão */
 @media (max-width: 1200px) {
   .entrada-vitrine-corpo { grid-template-columns: minmax(0, 1fr); }
