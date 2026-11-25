@@ -1009,3 +1009,29 @@ ficava cortado). Era uma tela mais baixa: notebook, ou o Windows com zoom de 125
   1280×720, 1600×900, 2560×1300, tablet e celular, no claro e no escuro: sem rolagem nenhuma; o tema e o Suporte sem
   encostar no cartão; a ilustração fora do cartão; console sem erros. Em 1920×950 e 1920×1080 as medidas são as
   mesmas de antes.
+
+## Relatórios — ajustes pedidos pelo Luan
+
+### 25/11/2026: aba "Tudo" e o ícone do Excel
+
+- **Aba "Tudo"**, a primeira, que abre ao entrar em Relatórios: um cartão para cada assunto com os números do período
+  escolhido:
+  - Vendas: total, quantidade, ticket médio e itens;
+  - Produtos: o mais vendido, o custo, o lucro estimado e as taxas;
+  - Estoque: ativos, abaixo do mínimo, zerados e valor;
+  - Clientes: ativos, os que compraram, o comprado e o fiado em aberto;
+  - Financeiro: entradas, saídas, resultado e despesas;
+  - Caixa: dias, diferenças, faltas e sobras;
+  - Compras: quantidade, total, a prazo e estornos;
+  - Histórico: registros, pessoas e o último registro.
+
+  Os números são os mesmos de cada aba sem os filtros dela (só o período do topo). "Ver detalhes" abre a aba do
+  assunto. Parte que o sistema da loja ainda não tem avisa no próprio cartão.
+- **Ícone no estilo do Excel** (a planilha com o "X" verde, desenhada no próprio sistema) em "Exportar tudo (Excel)" e
+  em "Exportar esta aba (Excel)".
+- **Correção:** valor zero com o sinal trocado aparecia como "-R$ 0,00" (as Faltas do caixa sem nenhuma falta). Agora
+  `formatarCentavos` mostra "R$ 0,00" em todo o sistema.
+- **Testes:** cada número da aba Tudo é comparado com o cartão da aba do assunto; o período do topo vale para o Tudo;
+  "Ver detalhes" abre a aba certa; parte indisponível avisa; os dois botões têm o ícone; o zero negativo no núcleo.
+- **Navegador:** 1600 px no claro e no escuro, 1366 px e celular: os 8 assuntos, o ícone, sem rolagem para o lado e
+  console sem erros.

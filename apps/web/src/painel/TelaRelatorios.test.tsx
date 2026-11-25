@@ -33,6 +33,12 @@ async function preparar() {
   return { api: ana, agora };
 }
 
+/** A tela abre na aba Tudo (pedido do Luan, 25/11/2026); estes testes são da aba Vendas. */
+async function abrirEmVendas(api: Parameters<typeof TelaRelatorios>[0]['api'], agora: () => Date) {
+  render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+  await userEvent.click(within(screen.getByRole('navigation', { name: 'Assuntos dos relatórios' })).getByRole('button', { name: 'Vendas' }));
+}
+
 const linhas = () =>
   within(screen.getByRole('table'))
     .getAllByRole('row')
@@ -42,7 +48,7 @@ const linhas = () =>
 describe('TelaRelatorios', () => {
   it('mostra TODAS as vendas, de todos os dias, com quem vendeu', async () => {
     const { api, agora } = await preparar();
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     expect(linhas()).toEqual([
       ['12/11/2026', 'Ana', 'R$ 89,70'],
@@ -54,7 +60,7 @@ describe('TelaRelatorios', () => {
 
   it('filtra por quem vendeu e por forma de pagamento', async () => {
     const { api, agora } = await preparar();
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     await userEvent.selectOptions(screen.getByLabelText('Vendido por'), 'Bruno');
     expect(linhas()).toEqual([['11/11/2026', 'Bruno', 'R$ 59,80']]);
@@ -65,7 +71,7 @@ describe('TelaRelatorios', () => {
 
   it('atalhos de período: Hoje, Ontem e Este mês', async () => {
     const { api, agora } = await preparar();
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     await userEvent.click(screen.getByRole('button', { name: 'Hoje' }));
     await waitFor(() => expect(linhas()).toEqual([['12/11/2026', 'Ana', 'R$ 89,70']]));
@@ -79,7 +85,7 @@ describe('TelaRelatorios', () => {
 
   it('itens de cada venda abrem no "N itens"', async () => {
     const { api, agora } = await preparar();
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     expect(screen.getByText('3× Coleira M', { exact: false }).closest('details')).toBeTruthy();
   });
@@ -90,7 +96,7 @@ describe('TelaRelatorios · canceladas, devoluções e pagamento dividido', () =
     const { api, agora } = await preparar();
     const deHoje = (await api.listarVendas()).find((v) => v.numero === 3)!;
     await api.cancelarVenda(deHoje.id, { motivo: 'errou o produto' });
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     await waitFor(() => expect(txt(screen.getByText('Total vendido').nextElementSibling?.textContent)).toBe('R$ 89,70'));
     const linha = screen.getByText('#00003').closest('tr')!;
@@ -111,7 +117,7 @@ describe('TelaRelatorios · canceladas, devoluções e pagamento dividido', () =
       recebidoDinheiroCentavos: 1000,
     });
     await api.devolverItens(dividida.id, { itens: [{ linha: 0, quantidade: 1 }], motivo: 'troca de tamanho' });
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     await userEvent.selectOptions(screen.getByLabelText('Pagamento'), 'Pix');
     await waitFor(() => expect(linhas().map((l) => l[0])).toEqual(['12/11/2026', '20/10/2026']));
@@ -137,7 +143,7 @@ describe('TelaRelatorios · cliente e taxas', () => {
     const [produto] = await api.listarProdutos();
     const maria = await api.cadastrarCliente({ nome: 'Maria Souza', telefone: '41999998888', cpf: '52998224725' });
     await api.criarVenda({ itens: [{ produtoId: produto!.id, quantidade: 1 }], pagamentos: [{ forma: 'pix', valorCentavos: 2990 }], clienteId: maria.id });
-    render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} />);
+    await abrirEmVendas(api, agora);
     await screen.findByRole('table');
     const clientes = () =>
       within(screen.getByRole('table'))

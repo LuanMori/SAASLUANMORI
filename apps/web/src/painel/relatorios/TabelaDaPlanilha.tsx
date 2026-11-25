@@ -107,11 +107,24 @@ export function Cartao({ rotulo, valor, nota }: { rotulo: string; valor: string;
   );
 }
 
-/** "Exportar esta aba (Excel)". */
+/** "Exportar esta aba (Excel)", com o ícone no estilo do Excel (pedido do Luan, 25/11/2026). */
 export function BotaoExportar({ aoExportar, rotulo = 'Exportar esta aba (Excel)', ocupado = false }: { aoExportar: () => void; rotulo?: string; ocupado?: boolean }) {
   return (
     <button type="button" className="botao rel-exportar" onClick={aoExportar} disabled={ocupado}>
+      <IconeExcel />
       {ocupado ? 'Gerando…' : rotulo}
     </button>
+  );
+}
+
+/** A planilha com o "X" verde (desenhada aqui; a página não carrega imagem de fora). */
+export function IconeExcel() {
+  return (
+    <svg className="icone-excel" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="8.5" y="3" width="12.5" height="18" rx="2" fill="#fff" stroke="#107c41" strokeWidth="1.4" />
+      <path d="M8.5 9h12.5M8.5 15h12.5M14.75 3v18" stroke="#107c41" strokeWidth="1.1" opacity="0.6" />
+      <rect x="2.5" y="6" width="11.5" height="12" rx="2" fill="#107c41" />
+      <path d="M5.6 9.2l5.3 5.6M10.9 9.2l-5.3 5.6" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
   );
 }

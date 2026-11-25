@@ -174,6 +174,8 @@ describe('TelaPainel · vendas ligadas: Frente de caixa → Visão geral → Rel
     expect(txt(tabela.textContent)).toMatch(/2× Petisco Bifinho/);
 
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu principal' })).getByRole('button', { name: 'Relatórios' }));
+    // os Relatórios abrem na aba Tudo; a lista das vendas fica na aba Vendas
+    await userEvent.click(within(await screen.findByRole('navigation', { name: 'Assuntos dos relatórios' })).getByRole('button', { name: 'Vendas' }));
     const linha = (await screen.findByText('#00001')).closest('tr')!;
     expect(within(linha).getByText('Ana')).toBeTruthy();
     expect(within(linha).getByText('R$ 15,00')).toBeTruthy();

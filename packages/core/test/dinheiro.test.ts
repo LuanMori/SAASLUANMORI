@@ -9,6 +9,12 @@ describe('formatarCentavos', () => {
     expect(formatarCentavos(123456789)).toBe('R$\u00a01.234.567,89');
   });
 
+  it('zero negativo aparece sem o "-"', () => {
+    expect(formatarCentavos(-0)).toBe('R$\u00a00,00');
+    expect(formatarCentavos(-[].reduce((s: number, x: number) => s + x, 0))).toBe('R$\u00a00,00');
+    expect(formatarCentavos(-150)).toBe('-R$\u00a01,50');
+  });
+
   it('recusa não-inteiro', () => {
     expect(() => formatarCentavos(10.5)).toThrow(RangeError);
   });

@@ -19,6 +19,7 @@ import { plural } from './formato';
 import { usarNomesDasContas } from './nomesDasContas';
 import { AbaVendas } from './relatorios/AbaVendas';
 import { AbaCaixa, AbaClientes, AbaCompras, AbaEstoque, AbaFinanceiro, AbaHistorico, AbaProdutos } from './relatorios/AbasRelatorios';
+import { AbaTudo, type AssuntoDoTudo } from './relatorios/AbaTudo';
 import { BotaoExportar } from './relatorios/TabelaDaPlanilha';
 import { usarCarga } from './usarCarga';
 
@@ -56,8 +57,10 @@ const ATALHOS: { id: Atalho; rotulo: string }[] = [
   { id: 'mes', rotulo: 'Este mês' },
 ];
 
-type IdAba = 'vendas' | 'produtos' | 'estoque' | 'clientes' | 'financeiro' | 'caixa' | 'compras' | 'historico';
+type IdAba = 'tudo' | AssuntoDoTudo;
+// "Tudo" (pedido do Luan, 25/11/2026): o resumo de todos os assuntos; é a primeira e a que abre
 const ABAS: { id: IdAba; rotulo: string }[] = [
+  { id: 'tudo', rotulo: 'Tudo' },
   { id: 'vendas', rotulo: 'Vendas' },
   { id: 'produtos', rotulo: 'Produtos' },
   { id: 'estoque', rotulo: 'Estoque' },
@@ -79,7 +82,8 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
   const nomes = usarNomesDasContas();
   const [de, setDe] = useState('');
   const [ate, setAte] = useState('');
-  const [aba, setAba] = useState<IdAba>('vendas');
+  // sem todas as partes (servidor que ainda não as tem) não há abas: fica só Vendas
+  const [aba, setAba] = useState<IdAba>(() => (temTudo(api) ? 'tudo' : 'vendas'));
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'erro'; texto: string } | null>(null);
   const [exportando, setExportando] = useState(false);
   const periodo: Periodo = { de: de || null, ate: ate || null };
@@ -192,6 +196,8 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
         </p>
       ) : !props ? (
         <p className="vazio">Carregando…</p>
+      ) : aba === 'tudo' ? (
+        <AbaTudo dados={props.dados} periodo={periodo} fuso={fuso} aoVer={setAba} />
       ) : aba === 'produtos' ? (
         <AbaProdutos {...props} />
       ) : aba === 'estoque' ? (

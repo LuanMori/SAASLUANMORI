@@ -37,11 +37,13 @@ const arquivo = (baixar: ReturnType<typeof vi.fn>, i = 0) => {
 };
 
 describe('Relatórios em abas', () => {
-  it('Vendas é a aba de sempre; cada assunto tem a sua aba, com a tabela dele', async () => {
+  it('Tudo abre primeiro; cada assunto tem a sua aba, com a tabela dele', async () => {
     const { api, agora } = await loja();
     render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} baixar={vi.fn()} />);
-    expect(within(abas()).getAllByRole('button').map((b) => b.textContent)).toEqual(['Vendas', 'Produtos', 'Estoque', 'Clientes', 'Financeiro', 'Caixa', 'Compras', 'Histórico']);
-    expect(within(abas()).getByRole('button', { name: 'Vendas' }).getAttribute('aria-current')).toBe('page');
+    expect(within(abas()).getAllByRole('button').map((b) => b.textContent)).toEqual(['Tudo', 'Vendas', 'Produtos', 'Estoque', 'Clientes', 'Financeiro', 'Caixa', 'Compras', 'Histórico']);
+    // abre na aba Tudo (o resumo de todos os assuntos)
+    expect(within(abas()).getByRole('button', { name: 'Tudo' }).getAttribute('aria-current')).toBe('page');
+    await irPara('Vendas');
     expect(await screen.findByRole('heading', { name: 'Por quem vendeu' })).toBeTruthy();
     for (const [aba, titulo] of [
       ['Produtos', 'Produtos vendidos'],
@@ -91,6 +93,7 @@ describe('Relatórios em abas', () => {
     const baixar = vi.fn();
     render(<TelaRelatorios api={api} fuso={FUSO} agora={agora} baixar={baixar} />);
     // aba Vendas: vendas, itens, pagamentos e devoluções
+    await irPara('Vendas');
     await screen.findByRole('heading', { name: 'Por quem vendeu' });
     await userEvent.click(screen.getByRole('button', { name: 'Exportar esta aba (Excel)' }));
     expect(arquivo(baixar)).toEqual({ nome: 'relatorio-vendas-ate-2026-11-21.xlsx', zip: true });

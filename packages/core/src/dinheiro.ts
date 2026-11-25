@@ -11,7 +11,8 @@ export function formatarCentavos(centavos: number): string {
   if (!Number.isSafeInteger(centavos)) {
     throw new RangeError('centavos deve ser inteiro');
   }
-  return formatador.format(centavos / 100);
+  // -0 (ex.: uma soma de faltas vazia com o sinal trocado) aparece como "R$ 0,00", sem o "-"
+  return formatador.format(centavos === 0 ? 0 : centavos / 100);
 }
 
 /**
