@@ -1,6 +1,7 @@
 import { Auth0Client } from '@auth0/auth0-spa-js';
-import { criarApi, ErroApi } from '../src/api';
-import { formatarCentavos, reaisParaCentavos, validarNovoProduto } from '@saas/core';
+import { criarApi, ErroApi } from './api.js';
+import { formatarCentavos, reaisParaCentavos } from './dinheiro.js';
+import { validarNovoProduto } from './produto.js';
 
 const raiz = document.getElementById('raiz');
 const clonar = id => document.getElementById(id).content.cloneNode(true);
