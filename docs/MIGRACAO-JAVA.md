@@ -17,3 +17,11 @@ java -cp /tmp/saas-java-test saas.core.DinheiroTeste
 - Executar a suíte original, testes comparativos de API e dados, isolamento de lojas, concorrência, segurança e testes de navegador.
 - Não introduzir funcionalidades novas durante a migração; requisitos ainda não implementados ficam separados.
 - Não remover TypeScript nem substituir main antes de comprovar equivalência e aprovar a troca.
+
+## Candidata atual (não é produção)
+- API Java 21 + Spring Boot em `apps/java`. Rotas GET e POST /produtos, Auth0/JWT, JdbcTemplate com RLS por transação, trava por loja. Nenhuma migration SQL existente foi modificada. Os scripts operacionais ainda são os originais.
+- Interface alternativa em `apps/web/html`, HTML com os mesmos elementos e textos, CSS importado de `apps/web/src/estilos.css` e módulos JS locais. O SDK Auth0 SPA é a dependência transitiva já fixada pelo lockfile; será explicitado na remoção do React.
+- A API Java usa JDBC_DATABASE_URL (formato jdbc:postgresql://host:porta/banco), SAAS_APP_DB_PASSWORD, AUTH0_DOMAIN, AUTH0_AUDIENCE, WEB_ORIGINS e PORT. Usa exclusivamente saas_app. Execute somente em banco de teste com as migrations existentes aplicadas.
+- Testes: `mvn -f apps/java/pom.xml test`; `node --test apps/web/html/paridade.test.js`; build da interface, após npm ci: `npm exec -w @saas/web -- vite build --config html/vite.config.js`. Para desenvolvimento: `npm exec -w @saas/web -- vite --config html/vite.config.js`. A configuração VITE_* é a mesma do app original.
+- O CSS original não foi duplicado para aumentar a estatística. A branch principal não será substituída até os testes de integração e visuais passarem.
+- Pendências: testar JWT real e JWKS, conferir cabeçalhos HTTP e limite JSON de 100 KB, validar SQL e concorrência com Postgres real, executar testes de navegador e comparar screenshots, migrar scripts de administração/migration, executar suíte antiga contra a nova API. Só então remover runtime antigo e apurar linguagens.
