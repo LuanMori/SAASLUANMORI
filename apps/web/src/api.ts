@@ -5,6 +5,8 @@
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
   AcessoDoUsuario,
+  AjustesDaLoja,
+  MudancaDosAjustes,
   Atualizacao,
   AvisoDaEquipe,
   ImportanciaDoAviso,
@@ -796,6 +798,15 @@ export interface ApiComunicados {
   encerrarAvisoDaEquipe(id: string): Promise<AvisoDaEquipe>;
 }
 
+// ---- Ajustes da loja (Adm. Sup, módulo 13f): recursos ligados e desligados e limites (@saas/core recursosDaLoja).
+
+export interface ApiAjustes {
+  /** Todos os logados (as telas escondem o que está desligado). */
+  lerAjustesDaLoja(): Promise<AjustesDaLoja>;
+  /** Só o Adm. Sup. Os limites vazios (null) = sem limite. */
+  salvarAjustesDaLoja(ajustes: MudancaDosAjustes): Promise<AjustesDaLoja>;
+}
+
 export type ApiPainel = ApiProdutos &
   ApiVendas &
   ApiEstoque &
@@ -809,7 +820,8 @@ export type ApiPainel = ApiProdutos &
   ApiVales &
   ApiRelatorios &
   ApiDados &
-  ApiComunicados;
+  ApiComunicados &
+  ApiAjustes;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

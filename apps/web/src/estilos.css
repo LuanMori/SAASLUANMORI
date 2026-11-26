@@ -1085,6 +1085,24 @@ h2 { font-size: 1.05rem; }
 .as-avisos p { margin: 0; }
 .as-avisos p + p { margin-top: 4px; font-size: 0.85rem; }
 .as-aviso-venceu, .as-aviso-encerrado { opacity: 0.7; }
+/* Adm. Sup → Ajustes desta loja (módulo 13f): recursos ligados e desligados e limites */
+.as-recursos, .as-limites { margin: 0; padding: 0; border: 0; min-width: 0; }
+.as-recursos legend, .as-limites legend { padding: 0; margin-bottom: 8px; font-weight: 600; font-size: 0.92rem; }
+.as-recursos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.as-recursos legend { grid-column: 1 / -1; }
+.as-recurso { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--borda-campo); border-radius: 10px; }
+.as-recurso input { accent-color: var(--primaria); margin: 3px 0 0; flex: none; width: 18px; height: 18px; cursor: pointer; }
+.as-recurso span { display: flex; flex-direction: column; gap: 2px; }
+.as-recurso label { font-weight: 600; cursor: pointer; }
+.as-recurso small { font-size: 0.82rem; line-height: 1.35; }
+.as-recurso:has(input:checked) { border-color: var(--primaria); background: var(--primaria-clara); }
+.as-recurso:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primaria) 35%, transparent); outline-offset: 1px; }
+.as-recurso-off label { text-decoration: line-through; color: var(--suave); }
+.as-limites { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.as-limites legend { width: 100%; }
+.as-limites .campo small { display: block; margin-top: 4px; font-size: 0.82rem; }
+.as-ajustes-acoes { align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.as-ajustes-acoes p { margin: 0; font-size: 0.85rem; }
 .db-importar-tabela td { vertical-align: top; }
 .db-importar-tabela td:first-child, .db-importar-tabela th:first-child { padding-left: 14px; width: 1%; white-space: nowrap; }
 .db-importar-tabela td:nth-child(3) { white-space: nowrap; }

@@ -252,6 +252,14 @@ import {
   validarAtualizacao,
   validarAviso,
   versaoAtual,
+  type AjustesDaLoja,
+  AJUSTES_PADRAO,
+  conferirLimiteDaLoja,
+  mensagemRecursoDesligado,
+  mudancasDosAjustes,
+  type RecursoDaLoja,
+  recursoLigado,
+  validarAjustes,
 } from '@saas/core';
 import {
   type ApiSistema,
@@ -314,15 +322,24 @@ const CHAVES = {
 } as const;
 
 /**
- * As ferramentas do Adm. Sup (módulo 13): as atualizações valem para o sistema todo (fora das lojas); os avisos e o
- * que cada pessoa já viu, por loja. Não vão na cópia de segurança da loja (são do suporte).
+ * As ferramentas do Adm. Sup (módulo 13): as atualizações valem para o sistema todo (fora das lojas); os avisos, o
+ * que cada pessoa já viu e os ajustes, por loja. Não vão na cópia de segurança da loja (são do suporte: restaurar uma
+ * cópia antiga não religa um recurso nem muda um limite).
  */
 const CHAVES_DO_SUPORTE = {
   atualizacoes: 'saas-demo:atualizacoes:v1',
   avisos: 'saas-demo:avisos-equipe:v1',
   /** loja -> pessoa -> ids dos avisos e das novidades que ela já fechou. */
   vistos: 'saas-demo:comunicados-vistos:v1',
+  /** loja -> os ajustes do suporte (módulo 13f): recursos desligados e limites. */
+  ajustes: 'saas-demo:ajustes-loja:v1',
 } as const;
+
+/** Os ajustes que o suporte fez na loja; sem nenhum, o padrão (tudo ligado e sem limite). */
+function ajustesGuardados(lojaId: string): AjustesDaLoja {
+  const a = ler<Record<string, AjustesDaLoja>>(CHAVES_DO_SUPORTE.ajustes, {})[lojaId];
+  return a ? { ...AJUSTES_PADRAO, ...a, limites: { ...AJUSTES_PADRAO.limites, ...a.limites } } : AJUSTES_PADRAO;
+}
 
 /**
  * Onde cada assunto da cópia de segurança (@saas/core copiaDaLoja) fica guardado. Toda chave da demonstração com
@@ -1250,7 +1267,9 @@ export function criarApiLocal({
   const exigirParaImportar = (cadastro: unknown): { quem: OperadorComPapel; qual: CadastroDaPlanilha } => {
     if (cadastro !== 'produtos' && cadastro !== 'clientes' && cadastro !== 'fornecedores') throw new ErroApi(400, 'Escolha o que vai importar: produtos, clientes ou fornecedores.');
     exigir('dados');
-    return { quem: exigir(PERMISSAO_DO_CADASTRO[cadastro]), qual: cadastro };
+    const quem = exigir(PERMISSAO_DO_CADASTRO[cadastro]);
+    if (cadastro === 'fornecedores') exigirRecurso('compras'); // os fornecedores ficam na aba Compras (módulo 13f)
+    return { quem, qual: cadastro };
   };
   /** Confere a planilha com as regras do cadastro e o que a loja já tem (@saas/core importacao.ts). */
   const conferirPlanilha = (qual: CadastroDaPlanilha, tabela: unknown, quem: OperadorComPapel): ConferenciaDaImportacao<unknown> => {
@@ -1327,7 +1346,9 @@ export function criarApiLocal({
   /** Vendas antigas: Dados e backup para importar e Relatórios (o histórico de vendas). */
   const exigirParaVendasAntigas = (): OperadorComPapel => {
     exigir('dados');
-    return exigir('relatorios');
+    const quem = exigir('relatorios');
+    exigirRecurso('relatorios'); // as vendas antigas só aparecem nos Relatórios (módulo 13f)
+    return quem;
   };
   const conferirAsVendasAntigas = (tabela: unknown): ConferenciaDasVendasAntigas => {
     if (!tabelaValida(tabela)) throw new ErroApi(400, 'A planilha não chegou inteira. Escolha o arquivo de novo.');
@@ -1338,6 +1359,18 @@ export function criarApiLocal({
   const gravarFornecedoresImportados = (itens: NovoFornecedor[], quando: string) => {
     const novos = itens.map((v): Fornecedor => ({ id: novoId(), ...v, ativo: true, criadoEm: quando, atualizadoEm: quando }));
     gravarDaLoja(CHAVES.fornecedores, lojaId, [...fornecedoresDaLoja(), ...novos]);
+  };
+
+  // ---------------------------------------------------------------- ajustes da loja (Adm. Sup, módulo 13f)
+  const ajustesDaLoja = () => ajustesGuardados(lojaId);
+  /** Recurso desligado pelo suporte nesta loja: o que é novo dele é recusado (@saas/core recursosDaLoja). */
+  const exigirRecurso = (recurso: RecursoDaLoja) => {
+    if (!recursoLigado(ajustesDaLoja(), recurso)) throw new ErroApi(403, mensagemRecursoDesligado(recurso), [], 'recurso_desligado');
+  };
+  /** Mais `novos` produtos ativos cabem no limite que o suporte deu à loja? */
+  const exigirLimiteDeProdutos = (novos = 1) => {
+    const m = conferirLimiteDaLoja('produtosAtivos', ajustesDaLoja(), produtosDaLoja().filter((p) => p.ativo).length, novos);
+    if (m) throw new ErroApi(409, m, [], 'limite_da_loja');
   };
 
   const usuarios = criarApiUsuariosDemo({
@@ -1354,6 +1387,7 @@ export function criarApiLocal({
             ? (lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId).find((f) => f.id === id)?.nome ?? null)
             : null,
     nomesDasContas: () => nomesContas(),
+    ajustesDaLoja,
   });
 
   return {
@@ -1384,6 +1418,7 @@ export function criarApiLocal({
         }
 
         exigirFornecedorAtivo(novo.fornecedorId);
+        exigirLimiteDeProdutos();
         const daLoja = produtosDaLoja();
         conferirCodigoDeBarras(novo.codigoBarras, daLoja, null);
         const parecido = produtoParecido(novo, daLoja);
@@ -1468,6 +1503,7 @@ export function criarApiLocal({
         if (i < 0) throw new ErroApi(404, 'Produto não encontrado.');
         const antes = normalizarProduto(guardados[i]!);
         if (antes.ativo === (ativo === true)) return antes;
+        if (ativo === true) exigirLimiteDeProdutos();
         const salvo: Produto = { ...antes, ativo: ativo === true, atualizadoEm: agora().toISOString() };
         guardados[i] = salvo;
         gravarDaLoja(CHAVES.produtos, lojaId, guardados);
@@ -1517,6 +1553,8 @@ export function criarApiLocal({
 
         const validacao = validarNovaVenda(dados);
         if (!validacao.ok) throw new ErroApi(400, 'Dados da venda inválidos.', validacao.erros);
+        // fiado desligado pelo suporte (módulo 13f): não vende fiado; o que já existe continua podendo ser recebido
+        if (validacao.valor.pagamentos.some((p) => p.forma === 'fiado')) exigirRecurso('fiado');
 
         // cashback e cupom de retorno do cliente identificado (módulo 7): o servidor decide, nunca a tela
         const hoje = hojeNaLoja();
@@ -1589,7 +1627,8 @@ export function criarApiLocal({
           lotesDepois = r.lotes;
           usoCashback = { clienteId: cliVenda.id, tipo: 'venda', dia: hoje, valorCentavos: usadoCashback, vendaId: venda.id, vendaNumero: venda.numero, lotes: r.usados, rotulo: null, criadoEm: venda.criadaEm, por: venda.vendedor };
         }
-        const ganho = gerarCashback(venda, cliVenda, regras().cashback, { dia: hoje, em: venda.criadaEm, por: venda.vendedor, novoId });
+        // fidelidade desligada (módulo 13f): a compra não gera cashback (o saldo que o cliente já tem continua valendo)
+        const ganho = recursoLigado(ajustesDaLoja(), 'fidelidade') ? gerarCashback(venda, cliVenda, regras().cashback, { dia: hoje, em: venda.criadaEm, por: venda.vendedor, novoId }) : null;
         if (ganho) {
           lotesDepois = [...lotesDepois, ganho];
           venda.cashbackGeradoCentavos = ganho.valorCentavos;
@@ -1709,6 +1748,7 @@ export function criarApiLocal({
         const quem = exigirOperador();
         const validacao = validarPedidoDevolucao(pedido);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Pedido inválido.', validacao.erros);
+        if (validacao.valor.modo === 'vale') exigirRecurso('vales'); // vale-troca desligado pelo suporte (módulo 13f)
         const vendas = vendasDaLoja();
         const i = acharVenda(vendas, vendaId);
         const venda = vendas[i]!;
@@ -2369,11 +2409,13 @@ export function criarApiLocal({
       const pct = painel.regras.retorno.cupomPct;
       // as listas têm nomes de clientes: só para quem tem a função Clientes (o Personalizado pode não ter)
       const veClientes = pode(quem, 'clientes');
+      // fidelidade desligada pelo suporte (módulo 13f): sem lembretes de cashback e de retorno (o fiado continua)
+      const fidelidade = recursoLigado(ajustesDaLoja(), 'fidelidade');
       return {
         hoje: painel.hoje,
         fiado: pode(quem, 'clientes.fiado') ? fiadoAVencer(recebiveisDaLoja(), clientes, contatosDaLoja(), painel.hoje) : null,
-        cashback: veClientes ? painel.cashback : [],
-        promocao: veClientes && pct > 0 ? painel.retorno.filter((x) => !x.bloqueio).map((x) => ({ ...x, percentual: pct })) : [],
+        cashback: veClientes && fidelidade ? painel.cashback : [],
+        promocao: veClientes && fidelidade && pct > 0 ? painel.retorno.filter((x) => !x.bloqueio).map((x) => ({ ...x, percentual: pct })) : [],
       };
     },
 
@@ -2473,6 +2515,7 @@ export function criarApiLocal({
         const canal = dados?.canal as CanalContato;
         if (!(TIPOS_CONTATO as readonly string[]).includes(tipo) || (canal !== 'whatsapp' && canal !== 'outro')) throw new ErroApi(400, 'Lembrete inválido.');
         if (tipo === 'cobranca' && !pode(quem, 'clientes.fiado')) throw new ErroApi(403, mensagemSemPermissao('clientes.fiado'));
+        if (tipo !== 'cobranca') exigirRecurso('fidelidade'); // lembrete de retorno (com cupom) e aviso de cashback
         const c = exigirClienteDaFidelidade(clienteId);
         // pelo WhatsApp, só para quem tem WhatsApp e autorizou (o lembrete de pagamento só pede o WhatsApp). O "não
         // incomodar" não bloqueia aqui: só tira o cliente das listas de lembrete (decisão do Luan, 23/11/2026)
@@ -2566,6 +2609,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirRecurso('financeiro');
         exigirHojeNaoFechado();
         if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || new Set(ids).size !== ids.length) throw new ErroApi(400, 'Escolha os recebimentos a confirmar.');
         if (conta === 'caixa') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
@@ -2593,6 +2637,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirRecurso('financeiro');
         exigirHojeNaoFechado();
         // dinheiro entrando na gaveta: com o caixa de hoje aberto (senão não entra na conta da gaveta)
         if (conta === 'caixa') exigirOk(conferirCaixaAberto(situacaoCaixa(), 'Receber em dinheiro'), 409, 'caixa');
@@ -2612,6 +2657,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirRecurso('financeiro');
         const validacao = validarLancamentoManual(dados);
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]?.mensagem ?? 'Lançamento inválido.', validacao.erros);
         exigirHojeNaoFechado();
@@ -2632,6 +2678,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirRecurso('financeiro');
         exigirHojeNaoFechado();
         const validacao = validarSaldoInicial(dados, lancamentosDaLoja());
         if (!validacao.ok) throw new ErroApi(400, validacao.erros[0]!.mensagem, validacao.erros);
@@ -2898,6 +2945,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('compras');
+        exigirRecurso('compras');
         const v = validarNovaCompra(dados, { hoje: diaNoFuso(agora(), fuso) });
         if (!v.ok) throw new ErroApi(400, v.erros[0]?.mensagem ?? 'Compra inválida.', v.erros);
         const pedido = v.valor;
@@ -3026,6 +3074,7 @@ export function criarApiLocal({
       await preparar(atrasoMs * 2);
       return gravarOperacao(() => {
         const quem = exigir('financeiro');
+        exigirRecurso('financeiro');
         const v = validarNovaContaAPagar(dados, { hoje: hojeNaLoja() });
         if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
         const nova: ContaPagar = { id: novoId(), ...contaAPagarAvulsa(v.valor, { em: agora().toISOString(), por: pessoa(quem) }) };
@@ -3212,7 +3261,9 @@ export function criarApiLocal({
     async conferirImportacao(cadastro, tabela) {
       await preparar();
       const { quem, qual } = exigirParaImportar(cadastro);
-      return previaDaImportacao(conferirPlanilha(qual, tabela, quem));
+      const c = conferirPlanilha(qual, tabela, quem);
+      if (qual === 'produtos') exigirLimiteDeProdutos(c.contagem.nova); // o limite do suporte já na prévia (módulo 13f)
+      return previaDaImportacao(c);
     },
 
     async importarCadastro(cadastro, tabela, opcoes = {}) {
@@ -3227,6 +3278,7 @@ export function criarApiLocal({
         }
         const novas = c.linhas.filter((l) => l.situacao === 'nova').map((l) => l.valor);
         if (novas.length === 0) throw new ErroApi(409, 'Nada a importar: as linhas da planilha já estão cadastradas, repetidas ou com erro.');
+        if (qual === 'produtos') exigirLimiteDeProdutos(novas.length);
         const quando = agora().toISOString();
         if (qual === 'produtos') gravarProdutosImportados(novas as ProdutoImportado[], quem, quando);
         else if (qual === 'clientes') gravarClientesImportados(novas as NovoCliente[], quem, quando);
@@ -3345,6 +3397,29 @@ export function criarApiLocal({
         gravarDaLoja(CHAVES_DO_SUPORTE.avisos, lojaId, lista.map((a, j) => (j === i ? encerrado : a)));
         auditar('suporte.aviso_encerrado', null, {});
         return encerrado;
+      });
+    },
+
+    // ---------------------------------------------------------------- ajustes da loja (Adm. Sup, módulo 13f)
+    async lerAjustesDaLoja() {
+      await preparar();
+      exigirOperador();
+      return ajustesDaLoja();
+    },
+
+    async salvarAjustesDaLoja(pedido) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('suporte.ferramentas');
+        const v = validarAjustes(pedido);
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const antes = ajustesDaLoja();
+        const mudou = mudancasDosAjustes(antes, v.valor);
+        if (Object.keys(mudou).length === 0) return antes;
+        const salvos: AjustesDaLoja = { ...v.valor, alteradoEm: agora().toISOString(), alteradoPor: pessoa(quem) };
+        gravar(CHAVES_DO_SUPORTE.ajustes, { ...ler<Record<string, AjustesDaLoja>>(CHAVES_DO_SUPORTE.ajustes, {}), [lojaId]: salvos });
+        auditar('suporte.ajustes_alterados', null, mudou);
+        return salvos;
       });
     },
 

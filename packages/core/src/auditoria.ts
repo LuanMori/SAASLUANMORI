@@ -10,6 +10,7 @@ import { contaNaFrase, ehConta, nomeDaConta, type NomesDasContas } from './finan
 import { ehObjeto } from './interno';
 import { ehPapelDeLoja, NOME_PAPEL } from './papeis';
 import { formatarQuantidade, unidadeDe } from './quantidade';
+import { resumoDosAjustes } from './recursosDaLoja';
 
 /** Ações registradas no histórico, com o texto que aparece na tela (nomes do DaniPets V9.3.3). */
 export const ACOES_AUDITORIA = {
@@ -60,6 +61,7 @@ export const ACOES_AUDITORIA = {
   'suporte.atualizacao_publicada': 'Atualização do sistema publicada',
   'suporte.aviso_publicado': 'Aviso para a equipe publicado',
   'suporte.aviso_encerrado': 'Aviso para a equipe encerrado',
+  'suporte.ajustes_alterados': 'Ajustes da loja alterados (recursos e limites)',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -284,6 +286,9 @@ export function resumirAuditoria(
       partes.push(typeof d.versao === 'string' ? d.versao : null, n === null ? null : `${n} ${n === 1 ? 'novidade' : 'novidades'}`);
       break;
     }
+    case 'suporte.ajustes_alterados':
+      partes.push(resumoDosAjustes(d) || null);
+      break;
     case 'suporte.aviso_publicado':
       partes.push(d.importancia === 'atencao' ? 'atenção' : d.importancia === 'info' ? 'informação' : null, diaBr(d.ate) ? `até ${diaBr(d.ate)}` : null);
       break;

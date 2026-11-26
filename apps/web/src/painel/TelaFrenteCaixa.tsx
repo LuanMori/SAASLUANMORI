@@ -24,7 +24,7 @@
 // A tela manda só produto, quantidade, desconto pedido, pagamento e o id do cliente: quem vendeu é
 // quem está logado, o preço de tabela vem do cadastro e as autorizações são conferidas pelo servidor.
 // Cada venda alimenta o estoque, o histórico do cliente, o financeiro, a Visão geral e os Relatórios.
-import { dataBr, descreverPagamentos, type FormaPagamento, FORMAS_DA_TELA, MENSAGEM_CASHBACK_SEM_CLIENTE, mensagemFormaSemCliente, pctTexto, primeiroNome, formatarCentavos, formatarNumeroVenda, formaPrecisaDeCliente, formatarQuantidade, lerQuantidade, LIMITES_VENDA, PASSO_QUANTIDADE, QUANTIDADE_MAX, quantidadeParaTexto, unidadeDe, valorDaQuantidade, NOME_FORMA_PAGAMENTO, semAcento, type ValeTroca, type PapelNaLoja } from '@saas/core';
+import { type AjustesDaLoja, recursoLigado, dataBr, descreverPagamentos, type FormaPagamento, FORMAS_DA_TELA, MENSAGEM_CASHBACK_SEM_CLIENTE, mensagemFormaSemCliente, pctTexto, primeiroNome, formatarCentavos, formatarNumeroVenda, formaPrecisaDeCliente, formatarQuantidade, lerQuantidade, LIMITES_VENDA, PASSO_QUANTIDADE, QUANTIDADE_MAX, quantidadeParaTexto, unidadeDe, valorDaQuantidade, NOME_FORMA_PAGAMENTO, semAcento, type ValeTroca, type PapelNaLoja } from '@saas/core';
 import { type FormEvent, type KeyboardEvent as TeclaNoCampo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type ApiPainel, ErroApi, type Produto } from '../api';
 import {
@@ -76,6 +76,8 @@ interface Props {
   aoAbrirCaixa?: () => void;
   /** Aviso do painel quando o caixa fechou sozinho na virada da meia-noite (aparece com o caixa não aberto). */
   avisoDaVirada?: string | null;
+  /** Os recursos que o suporte desligou nesta loja (módulo 13f): sem fiado, sem o botão e a tecla F7; sem vale-troca, a devolução não vira vale. */
+  ajustes?: Pick<AjustesDaLoja, 'desligados'> | null;
 }
 
 /** De quanto em quanto tempo o saldo de estoque é buscado de novo (outra pessoa pode ter vendido). */
@@ -99,7 +101,10 @@ type Janela =
   | { tipo: 'valeEmitido'; dados: ValeDaDevolucao }
   | null;
 
-export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa, avisoDaVirada = null }: Props) {
+export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new Date(), chaveCarrinho = null, aoSair, limiteDescontoPct, aoAbrirCaixa, avisoDaVirada = null, ajustes = null }: Props) {
+  // fiado desligado pelo suporte (módulo 13f): a forma some da tela (o servidor também recusa)
+  const fiadoLigado = recursoLigado(ajustes, 'fiado');
+  const formasDaTela = fiadoLigado ? FORMAS_DA_TELA : FORMAS_DA_TELA.filter((f) => f !== 'fiado');
   const { estado: carga, recarregar } = usarCarga(async () => {
     const [lista, estoque] = await Promise.all([api.listarProdutos(), api.listarEstoque()]);
     return { produtos: lista, saldos: new Map(estoque.map((e) => [e.produtoId, e.saldo])) };
@@ -450,7 +455,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       } else if (e.key === 'F6') {
         e.preventDefault();
         setJanela({ tipo: 'cliente' });
-      } else if (FORMA_DA_TECLA[e.key]) {
+      } else if (FORMA_DA_TECLA[e.key] && (FORMA_DA_TECLA[e.key] !== 'fiado' || fiadoLigado)) {
         e.preventDefault();
         acoes.current.definirForma(FORMA_DA_TECLA[e.key]!);
       } else if (e.key === 'Escape') {
@@ -830,7 +835,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
             ) : (
             <>
             <div className="pdv-formas" role="group" aria-label="Forma de pagamento">
-              {FORMAS_DA_TELA.map((f) => {
+              {formasDaTela.map((f) => {
                 const bloqueada = formaPrecisaDeCliente(f) && !cliente;
                 return (
                 <button
@@ -864,7 +869,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
                 {pag.partes.map((parte, i) => (
                   <div key={i} className="pdv-parte">
                     <select value={parte.forma} onChange={(e) => mudarParte(i, { forma: e.target.value as FormaPagamento })} aria-label={`Forma da parte ${i + 1}`}>
-                      {FORMAS_DA_TELA.filter((f) => !formaPrecisaDeCliente(f) || cliente || parte.forma === f).map((f) => (
+                      {formasDaTela.filter((f) => !formaPrecisaDeCliente(f) || cliente || parte.forma === f).map((f) => (
                         <option key={f} value={f}>
                           {NOME_FORMA_PAGAMENTO[f]}
                         </option>
@@ -974,7 +979,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
           ['F3', 'buscar'],
           ['F4', 'dinheiro'],
           ['F6', 'cliente'],
-          ['F7', 'fiado'],
+          ...(fiadoLigado ? [['F7', 'fiado']] : []),
           ['F8', 'pix'],
           ['F9', 'débito'],
           ['F10', 'crédito'],
@@ -1021,6 +1026,7 @@ export function TelaFrenteCaixa({ api, operador, loja, fuso, agora = () => new D
       {janela?.tipo === 'devolucao' && (
         <ModalDevolucao
           api={api}
+          comVale={recursoLigado(ajustes, 'vales')}
           operador={operador}
           fuso={fuso}
           agora={agora}

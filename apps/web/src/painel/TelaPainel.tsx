@@ -13,7 +13,7 @@
 // Sai sozinho depois de `inatividadeMin` minutos sem uso (DaniPets: 30).
 // À meia-noite com o sistema aberto (usarViradaDoDia), o caixa que ficou aberto fecha sozinho, as telas
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
-import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelNaLoja } from '@saas/core';
+import { type AjustesDaLoja, type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, mensagemRecursoDesligado, NOME_CONTA, type PapelNaLoja } from '@saas/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type ApiSistema, type ComunicadosDaPessoa, MENSAGEM_SEM_SERVIDOR, type UsuarioDaLoja } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
@@ -127,6 +127,15 @@ export function TelaPainel({
     carregarComunicados();
     return aoMudaremOsDados(carregarComunicados);
   }, [carregarComunicados]);
+  // os ajustes do suporte (módulo 13f): os recursos desligados somem da barra e das telas
+  const [ajustes, setAjustes] = useState<AjustesDaLoja | null>(null);
+  const carregarAjustes = useCallback(() => {
+    api.lerAjustesDaLoja().then(setAjustes, () => undefined); // sem essa parte no servidor: tudo ligado
+  }, [api]);
+  useEffect(() => {
+    carregarAjustes();
+    return aoMudaremOsDados(carregarAjustes);
+  }, [carregarAjustes]);
   /** "Entendi": some só para esta pessoa (o servidor guarda que ela viu). */
   const fecharComunicado = (id: string) => {
     setComunicados((c) => (c ? { ...c, avisos: c.avisos.filter((a) => a.id !== id), novidades: c.novidades?.id === id ? null : c.novidades } : c));
@@ -138,12 +147,14 @@ export function TelaPainel({
   const acesso = useMemo(() => ({ papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }), [pessoa.papel, pessoa.permissoes]);
 
   const item = ITENS_MENU.find((i) => i.id === secao);
-  // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo.
-  const permitido = item ? podeVer(item, acesso) : false;
+  // Mesmo que alguém force a seção, o papel sem permissão não vê o conteúdo (nem o recurso desligado pelo suporte).
+  const permitido = item ? podeVer(item, acesso, ajustes) : false;
+  // estava na aba quando o suporte desligou o recurso dela: avisa no lugar do conteúdo
+  const desligada = item?.recurso && podeVer(item, acesso) && !permitido ? mensagemRecursoDesligado(item.recurso) : null;
   const disponivel = (id: IdSecao) => secoesDisponiveis === null || secoesDisponiveis.includes(id);
   const pode = (id: IdSecao) => {
     const alvo = ITENS_MENU.find((i) => i.id === id);
-    return alvo ? podeVer(alvo, acesso) && disponivel(id) : false;
+    return alvo ? podeVer(alvo, acesso, ajustes) && disponivel(id) : false;
   };
   // Pendência "só gestor" some para o Vendedor e "só Dono" para quem não é Dono; nas outras, o botão só aparece
   // para quem pode abrir a aba de destino.
@@ -171,6 +182,7 @@ export function TelaPainel({
             aoSair={() => setSecao('visao-geral')}
             aoAbrirCaixa={pode('caixa-do-dia') ? () => setSecao('caixa-do-dia') : undefined}
             avisoDaVirada={avisoDaVirada}
+            ajustes={ajustes}
           />
         </main>
       </div>
@@ -181,7 +193,7 @@ export function TelaPainel({
   return (
     <ContextoNomesDasContas.Provider value={nomesDasContas}>
       <div className="painel-app">
-        <BarraLateral loja={lojaDaBarra} pessoa={{ ...pessoa, foto }} secao={secao} aoEscolher={escolher} aoSair={aoSair} versao={comunicados?.versao} />
+        <BarraLateral loja={lojaDaBarra} pessoa={{ ...pessoa, foto }} secao={secao} aoEscolher={escolher} aoSair={aoSair} versao={comunicados?.versao} ajustes={ajustes} />
         <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
           {avisoDaVirada && (
             <AvisoComIcone
@@ -233,6 +245,18 @@ export function TelaPainel({
               <strong>Aviso do suporte:</strong> {a.texto}
             </AvisoComIcone>
           ))}
+          {desligada && (
+            <div className="rel">
+              <header className="vg-topo">
+                <div>
+                  <h1>{item?.rotulo}</h1>
+                  <p className="alerta" role="status">
+                    {desligada}
+                  </p>
+                </div>
+              </header>
+            </div>
+          )}
           {permitido && !disponivel(secao) && (
             <div className="rel">
               <header className="vg-topo">
@@ -270,15 +294,24 @@ export function TelaPainel({
               aoMudar={() => {
                 carregarConfig();
                 carregarComunicados();
+                carregarAjustes();
               }}
               fuso={fuso}
               agora={agora}
+              ajustes={ajustes}
             />
           )}
           {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
           {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
           {ver('clientes') && (
-            <TelaClientes api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />
+            <TelaClientes
+              api={api}
+              pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
+              fuso={fuso}
+              agora={agora}
+              aoMudarRegras={carregarConfig}
+              ajustes={ajustes}
+            />
           )}
           {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} aoMudarRegras={carregarConfig} />}
           {ver('meu-usuario') && (

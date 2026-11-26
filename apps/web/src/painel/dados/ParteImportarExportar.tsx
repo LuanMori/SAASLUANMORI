@@ -10,6 +10,7 @@
 //     (formato, loja e conferência), a tela mostra o que ele leva, pede a confirmação e, antes de trocar, baixa uma
 //     cópia dos dados de agora.
 import {
+  type AjustesDaLoja,
   type CadastroDaPlanilha,
   type CelulaImportada,
   COPIA_MAX_BYTES,
@@ -24,6 +25,8 @@ import {
   pode,
   podeBaixarCopia,
   type QuemAcessa,
+  type RecursoDaLoja,
+  recursoLigado,
   resumoDaImportacao,
 } from '@saas/core';
 import { type ChangeEvent, useState } from 'react';
@@ -45,6 +48,8 @@ interface Props {
   baixar?: Baixar;
   /** Uma cópia foi restaurada: a área logada recarrega (o nome e o logo da loja podem ter mudado). */
   aoMudar?: () => void;
+  /** Os recursos que o suporte desligou nesta loja (módulo 13f). */
+  ajustes?: Pick<AjustesDaLoja, 'desligados'> | null;
 }
 
 type Aviso = { tipo: 'ok' | 'erro'; texto: string };
@@ -78,10 +83,10 @@ function MostrarAviso({ aviso }: { aviso: Aviso | null }) {
   );
 }
 
-export function ParteImportarExportar({ api, papel, nomeDaLoja, fuso, agora = () => new Date(), baixar = baixarArquivo, aoMudar }: Props) {
+export function ParteImportarExportar({ api, papel, nomeDaLoja, fuso, agora = () => new Date(), baixar = baixarArquivo, aoMudar, ajustes = null }: Props) {
   return (
     <>
-      <CartaoImportar api={api} papel={papel} baixar={baixar} aoMudar={aoMudar} />
+      <CartaoImportar api={api} papel={papel} baixar={baixar} aoMudar={aoMudar} ajustes={ajustes} />
       <CartaoExportar api={api} papel={papel} nomeDaLoja={nomeDaLoja} fuso={fuso} agora={agora} baixar={baixar} />
       <CartaoCopia api={api} papel={papel} fuso={fuso} baixar={baixar} />
       {pode(papel, 'dados.restaurar') && <CartaoRestaurar api={api} fuso={fuso} baixar={baixar} aoMudar={aoMudar} />}
@@ -95,6 +100,8 @@ export function ParteImportarExportar({ api, papel, nomeDaLoja, fuso, agora = ()
 type OQueImportar = CadastroDaPlanilha | 'vendas';
 /** Cada um com o acesso da aba dele (além de Dados e backup); as vendas antigas, com Relatórios. */
 const PERMISSAO_PARA_IMPORTAR: Record<OQueImportar, Permissao> = { produtos: 'produtos.cadastrar', clientes: 'clientes', fornecedores: 'compras', vendas: 'relatorios' };
+/** O recurso da loja de cada importação (módulo 13f): desligado pelo suporte, a opção some. */
+const RECURSO_PARA_IMPORTAR: Partial<Record<OQueImportar, RecursoDaLoja>> = { fornecedores: 'compras', vendas: 'relatorios' };
 const ROTULO_DO_QUE_IMPORTAR: Record<OQueImportar, string> = { ...NOME_DO_CADASTRO, vendas: 'Vendas antigas' };
 const NO_SINGULAR_E_PLURAL: Record<CadastroDaPlanilha, [string, string]> = { produtos: ['produto', 'produtos'], clientes: ['cliente', 'clientes'], fornecedores: ['fornecedor', 'fornecedores'] };
 
@@ -102,8 +109,11 @@ type Escolhida =
   | { tipo: 'cadastro'; nome: string; tabela: CelulaImportada[][]; previa: PreviaDaImportacao }
   | { tipo: 'vendas'; nome: string; tabela: CelulaImportada[][]; previa: PreviaDasVendasAntigas };
 
-function CartaoImportar({ api, papel, baixar, aoMudar }: Required<Pick<Props, 'api' | 'papel' | 'baixar'>> & Pick<Props, 'aoMudar'>) {
-  const opcoes = (['produtos', 'clientes', 'fornecedores', 'vendas'] as const).filter((c) => pode(papel, PERMISSAO_PARA_IMPORTAR[c]));
+function CartaoImportar({ api, papel, baixar, aoMudar, ajustes }: Required<Pick<Props, 'api' | 'papel' | 'baixar'>> & Pick<Props, 'aoMudar' | 'ajustes'>) {
+  const opcoes = (['produtos', 'clientes', 'fornecedores', 'vendas'] as const).filter((c) => {
+    const recurso = RECURSO_PARA_IMPORTAR[c];
+    return pode(papel, PERMISSAO_PARA_IMPORTAR[c]) && (!recurso || recursoLigado(ajustes, recurso));
+  });
   const [oQue, setOQue] = useState<OQueImportar>(opcoes[0] ?? 'produtos');
   const [escolhida, setEscolhida] = useState<Escolhida | null>(null);
   const [ocupado, setOcupado] = useState<'lendo' | 'importando' | null>(null);

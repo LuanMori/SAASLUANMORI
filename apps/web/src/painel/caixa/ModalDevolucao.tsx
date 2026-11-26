@@ -29,16 +29,18 @@ interface Props {
   agora: () => Date;
   aoConcluir: (mensagem: string, vale?: ValeDaDevolucao) => void;
   aoFechar: () => void;
+  /** false = o suporte desligou o vale-troca nesta loja (módulo 13f): a devolução volta só pela forma da venda. */
+  comVale?: boolean;
 }
 
 const comValores = pagamentosComValores;
 
 const mensagemDe = (e: unknown, padrao: string) => (e instanceof ErroApi ? e.message : padrao);
 
-export function ModalDevolucao({ api, operador, fuso, agora, aoConcluir, aoFechar }: Props) {
+export function ModalDevolucao({ api, operador, fuso, agora, aoConcluir, aoFechar, comVale = true }: Props) {
   const [venda, setVenda] = useState<Venda | null>(null);
   return venda ? (
-    <PassoVenda venda={venda} api={api} operador={operador} fuso={fuso} agora={agora} aoConcluir={aoConcluir} aoVoltar={() => setVenda(null)} aoFechar={aoFechar} />
+    <PassoVenda venda={venda} api={api} operador={operador} fuso={fuso} agora={agora} comVale={comVale} aoConcluir={aoConcluir} aoVoltar={() => setVenda(null)} aoFechar={aoFechar} />
   ) : (
     <PassoEscolher api={api} fuso={fuso} agora={agora} aoEscolher={setVenda} aoFechar={aoFechar} />
   );
@@ -138,6 +140,7 @@ function PassoVenda({
   aoConcluir,
   aoVoltar,
   aoFechar,
+  comVale,
 }: {
   venda: Venda;
   api: Props['api'];
@@ -147,6 +150,7 @@ function PassoVenda({
   aoConcluir: Props['aoConcluir'];
   aoVoltar: () => void;
   aoFechar: () => void;
+  comVale: boolean;
 }) {
   const podeCancelar = podeCancelarVenda(venda, agora(), fuso);
   const restante = restanteParaDevolver(venda);
@@ -344,7 +348,7 @@ function PassoVenda({
               <label htmlFor="dev-modo">Como o valor volta</label>
               <select id="dev-modo" value={modo} onChange={(e) => setModo(e.target.value as 'mesma' | 'vale')}>
                 <option value="mesma">Mesma forma da venda ({disponivel.length ? comValores(disponivel) : 'nada mais a devolver'})</option>
-                <option value="vale">Vale-troca (troca agora ou compra depois)</option>
+                {comVale && <option value="vale">Vale-troca (troca agora ou compra depois)</option>}
               </select>
             </div>
             {modo === 'vale' && (

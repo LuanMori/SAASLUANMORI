@@ -1,7 +1,7 @@
 // apps/web/src/painel/menu.tsx — itens da barra lateral, copiados do DaniPets V9.3.3:
 // "Frente de caixa" em destaque acima do menu e os outros itens em grupos
 // (Operação, Cadastros, Gestão, Sistema). Para mudar a barra, mexa só nesta lista.
-import { type Permissao, pode, type QuemAcessa } from '@saas/core';
+import { type AjustesDaLoja, type Permissao, pode, type QuemAcessa, type RecursoDaLoja, recursoLigado } from '@saas/core';
 import type { ReactNode } from 'react';
 
 export type IdSecao =
@@ -24,6 +24,8 @@ export interface ItemMenu {
   icone: ReactNode;
   /** Quem não tem esta permissão não vê o item (matriz única de @saas/core/permissoes; DaniPets: PAGE_PERM). */
   permissao?: Permissao;
+  /** Some de todos quando o suporte desliga este recurso na loja (Adm. Sup → Ajustes desta loja, módulo 13f). */
+  recurso?: RecursoDaLoja;
 }
 
 export interface GrupoMenu {
@@ -88,6 +90,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'compras',
     permissao: 'compras',
+    recurso: 'compras',
     rotulo: 'Compras',
     icone: (
       <Icone>
@@ -111,6 +114,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'financeiro',
     permissao: 'financeiro',
+    recurso: 'financeiro',
     rotulo: 'Financeiro',
     icone: (
       <Icone>
@@ -121,6 +125,7 @@ const ITENS: readonly ItemMenu[] = [
   {
     id: 'relatorios',
     permissao: 'relatorios',
+    recurso: 'relatorios',
     rotulo: 'Relatórios',
     icone: (
       <Icone>
@@ -195,6 +200,7 @@ export const GRUPOS_MENU: readonly GrupoMenu[] = [
 /** Todos os itens, na ordem em que aparecem na barra. */
 export const ITENS_MENU: readonly ItemMenu[] = [ITEM_CAIXA, ...GRUPOS_MENU.flatMap((g) => g.itens)];
 
-export function podeVer(item: ItemMenu, quem: QuemAcessa): boolean {
-  return !item.permissao || pode(quem, item.permissao);
+/** Quem tem a permissão vê o item, desde que o suporte não tenha desligado o recurso dele nesta loja. */
+export function podeVer(item: ItemMenu, quem: QuemAcessa, ajustes?: Pick<AjustesDaLoja, 'desligados'> | null): boolean {
+  return (!item.permissao || pode(quem, item.permissao)) && (!item.recurso || recursoLigado(ajustes, item.recurso));
 }

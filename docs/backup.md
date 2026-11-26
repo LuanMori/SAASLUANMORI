@@ -51,6 +51,8 @@ Diferente do backup acima (o banco inteiro, de todas as lojas, feito pelo servid
   - É recusado o arquivo de outra loja, de versão mais nova do sistema ou alterado depois de gerado.
   - Antes de trocar, a tela baixa uma cópia dos dados de agora (`copia-antes-de-restaurar-...json`).
   - A equipe (com as senhas de hoje) e o histórico não mudam, e a restauração entra no histórico.
+- **Ficam fora** as ferramentas do suporte: as atualizações, os avisos para a equipe e os ajustes da loja (recursos
+  ligados e limites). Restaurar uma cópia antiga não religa um recurso nem muda um limite.
 - **Conferência:** o arquivo leva o SHA-256 do conteúdo (em JSON canônico). Ela pega arquivo corrompido ou mexido à
   mão, mas não é assinatura: quem souber recalcular passa. Ela é calculada sobre o arquivo como veio: uma cópia feita
   antes de um assunto novo existir (como as vendas antigas) continua valendo, e o assunto que falta volta vazio.

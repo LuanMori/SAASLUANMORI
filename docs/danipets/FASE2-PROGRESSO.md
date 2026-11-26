@@ -1316,3 +1316,45 @@ A parte **Adm. Sup** de Dados e backup (só o Adm. Sup vê) ganhou os dois prime
   - o Bruno viu as novidades e o aviso no alto e a V0.2 no rodapé;
   - "Entendi" tirou cada um;
   - celular sem rolagem para o lado, console sem erros.
+
+### 13f (26/11/2026): Adm. Sup — ajustes desta loja (recursos e limites)
+
+A parte **Adm. Sup** ganhou o cartão **Ajustes desta loja**: o suporte decide, loja por loja, o que ela usa (o que o
+plano dela inclui).
+
+- **Recursos ligados**, com o que muda quando desligados:
+  - **Compras:** a aba Compras some, e a compra nova e a importação de fornecedores são recusadas;
+  - **Financeiro:** a aba Financeiro some, e os lançamentos feitos à mão são recusados (lançar, saldo inicial, conta a
+    pagar avulsa, confirmar o recebimento do cartão). As vendas e o caixa continuam movimentando as contas, e
+    "Pagar" uma conta da compra continua na aba Compras;
+  - **Relatórios:** a aba Relatórios some, e a importação de vendas antigas também (elas só aparecem nos Relatórios);
+  - **Fiado:** a Frente de caixa fica sem o botão Fiado e sem a tecla F7, e a venda fiado é recusada. O fiado que já
+    existe continua podendo ser recebido (a aba Fiado de Clientes continua);
+  - **Fidelidade:** a compra não gera cashback, a aba Retorno some de Clientes e os lembretes de retorno e de cashback
+    saem da Visão geral. O saldo de cashback e os cupons que os clientes já têm continuam valendo. A aba "Regras do
+    programa" continua, porque tem também as regras do fiado e do cadastro;
+  - **Vale-troca:** a devolução não oferece mais "Vale-troca"; volta pela forma da venda. Os vales que já existem
+    continuam podendo ser usados.
+- **Nada é apagado:** o histórico continua na cópia de segurança, e tudo volta ao ligar de novo.
+- **Limites** (em branco = sem limite), com quantos a loja tem hoje ao lado:
+  - **usuários ativos:** recusa criar e reativar acima do limite. O Adm. Sup não conta;
+  - **produtos ativos:** recusa cadastrar, reativar e importar acima do limite. A importação avisa já na prévia
+    ("A planilha traz 30 produtos novos, e esta loja pode ter até 1.000 produtos ativos (hoje: 990)").
+  - Baixar o limite não desativa ninguém nem inativa produto: a tela avisa, e só não entra nenhum novo até ficar abaixo.
+- **Quem estava na aba** quando o suporte desligou vê "Relatórios: este recurso está desligado nesta loja. Fale com o
+  suporte." no lugar dela.
+- **Histórico:** "Ajustes da loja alterados (recursos e limites) • desligou Fiado e Vale-troca • usuários: até 5".
+- **Regras:** `packages/core/src/recursosDaLoja.ts`. Só o Adm. Sup muda (`suporte.ferramentas`); todos da loja leem.
+- **Cópia de segurança:** os ajustes são do suporte e ficam fora dela. Restaurar uma cópia antiga não religa nada.
+- **Servidor:** responde 501. No sistema real, por enquanto, fica tudo ligado e sem limite.
+- **Testes:**
+  - núcleo 468 (+4): os recursos e a mensagem, a conferência dos ajustes, os limites e o resumo no histórico;
+  - tela 492 (+13): a API da demonstração (só o Adm. Sup muda; fora da cópia; cada recurso desligado recusa o que é
+    novo, e o que o cliente já tem continua; os limites de produtos e usuários) e as telas (o cartão, a barra, Clientes,
+    a Frente de caixa e a devolução).
+- **Navegador:**
+  - o Adm. Sup desligou Fiado, Vale-troca e Relatórios e limitou os produtos a 7 (a loja de exemplo tem 7);
+  - Relatórios sumiu da barra na hora, e também para a Ana;
+  - o produto novo foi recusado com a mensagem do limite;
+  - a Frente de caixa ficou sem Fiado e sem F7;
+  - celular sem rolagem para o lado, console sem erros.

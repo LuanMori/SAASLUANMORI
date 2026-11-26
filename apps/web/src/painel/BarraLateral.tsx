@@ -4,8 +4,9 @@
 //   Operação / Cadastros / Gestão / Sistema · pessoa (foto ou inicial, nome, papel,
 //   botão de tema, Sair) · versão no rodapé. Clicar na pessoa abre "Meu usuário", onde ficam a foto, as
 //   entradas e saídas e a troca de senha (pedido do Luan, 25/11/2026).
-// Itens que o papel não pode ver somem; grupo sem item visível some junto.
-import { nomeDoPapel, type PapelNaLoja } from '@saas/core';
+// Itens que o papel não pode ver somem, e também os dos recursos que o suporte desligou na loja (módulo 13f); grupo
+// sem item visível some junto.
+import { type AjustesDaLoja, nomeDoPapel, type PapelNaLoja } from '@saas/core';
 import { BotaoTema } from '../BotaoTema';
 import { MARCA } from '../marca';
 import { GRUPOS_MENU, type IdSecao, ITEM_CAIXA, type ItemMenu, podeVer } from './menu';
@@ -22,6 +23,8 @@ interface Props extends DadosBarra {
   aoEscolher: (id: IdSecao) => void;
   aoSair: () => void;
   versao?: string;
+  /** Os recursos que o suporte desligou nesta loja: os itens deles somem (módulo 13f). */
+  ajustes?: Pick<AjustesDaLoja, 'desligados'> | null;
 }
 
 /** "Pet Shop da Ana" -> "PA"; "Loja A" -> "LA" (logo provisória da loja). */
@@ -34,7 +37,7 @@ export function iniciais(nome: string): string {
   return (letras.join('') || nome.trim().charAt(0)).toUpperCase() || '?';
 }
 
-export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao = 'V0.1' }: Props) {
+export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao = 'V0.1', ajustes = null }: Props) {
   const botao = (item: ItemMenu, extra = '') => (
     <button
       key={item.id}
@@ -48,7 +51,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao =
     </button>
   );
 
-  const grupos = GRUPOS_MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => podeVer(i, pessoa)) })).filter(
+  const grupos = GRUPOS_MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => podeVer(i, pessoa, ajustes)) })).filter(
     (g) => g.itens.length > 0,
   );
 
@@ -64,7 +67,7 @@ export function BarraLateral({ loja, pessoa, secao, aoEscolher, aoSair, versao =
         </div>
       </div>
 
-      {podeVer(ITEM_CAIXA, pessoa) && botao(ITEM_CAIXA, ' nav-pos')}
+      {podeVer(ITEM_CAIXA, pessoa, ajustes) && botao(ITEM_CAIXA, ' nav-pos')}
 
       <nav className="navlist" aria-label="Menu principal">
         {grupos.map((g) => (

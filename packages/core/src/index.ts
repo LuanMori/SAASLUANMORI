@@ -27,3 +27,4 @@ export * from './perfil';
 export * from './importacao';
 export * from './vendasAntigas';
 export * from './comunicados';
+export * from './recursosDaLoja';

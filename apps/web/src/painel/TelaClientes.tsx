@@ -12,7 +12,7 @@
 //   - no alto: cashback em aberto (e de onde vem), clientes, fiado a receber e para lembrar hoje;
 //   - aviso para o Dono e o Administrador quando o Vendedor exclui um cliente (até marcar "Ciente").
 // O CPF aparece mascarado; o Dono e o Administrador podem ver o número inteiro na conta (fica no histórico).
-import { dataBr, diaNoFuso, formatarCentavos, formatarTelefone, FUSO_PADRAO, pctTexto, pode, primeiroNome, regrasPadrao, type TipoContato, type PapelNaLoja, type QuemAcessa } from '@saas/core';
+import { type AjustesDaLoja, recursoLigado, dataBr, diaNoFuso, formatarCentavos, formatarTelefone, FUSO_PADRAO, pctTexto, pode, primeiroNome, regrasPadrao, type TipoContato, type PapelNaLoja, type QuemAcessa } from '@saas/core';
 import { useState } from 'react';
 import { type ApiPainel, type ContaDoCliente, ErroApi, type FiltroClientes, type LinhaCliente } from '../api';
 import { Modal } from './caixa/Modal';
@@ -32,6 +32,8 @@ interface Props {
   agora?: () => Date;
   /** Depois de salvar as regras (a barra e as outras abas leem de novo). */
   aoMudarRegras?: () => void;
+  /** Os recursos que o suporte desligou nesta loja (módulo 13f). */
+  ajustes?: Pick<AjustesDaLoja, 'desligados'> | null;
 }
 
 type Janela =
@@ -62,10 +64,13 @@ const mensagemDe = (e: unknown) => (e instanceof ErroApi ? e.message : 'Não foi
 const diasDesde = (iso: string, hoje: string, fuso: string) => Math.round((Date.parse(`${hoje}T12:00:00Z`) - Date.parse(`${diaNoFuso(iso, fuso)}T12:00:00Z`)) / 86_400_000);
 const haDias = (n: number) => (n === 0 ? 'hoje' : n === 1 ? 'ontem' : `há ${n} dias`);
 
-export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => new Date(), aoMudarRegras }: Props) {
+export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => new Date(), aoMudarRegras, ajustes = null }: Props) {
   const veFiado = pode(pessoa, 'clientes.fiado');
   const gestor = pode(pessoa, 'clientes.desativar');
-  const [aba, setAba] = useState<Aba>('clientes');
+  // fidelidade desligada pelo suporte (módulo 13f): sem a aba Retorno (os lembretes de retorno e de cashback)
+  const fidelidade = recursoLigado(ajustes, 'fidelidade');
+  const [abaEscolhida, setAba] = useState<Aba>('clientes');
+  const aba: Aba = abaEscolhida === 'retorno' && !fidelidade ? 'clientes' : abaEscolhida;
   const [ocupado, setOcupado] = useState(false);
   const [termo, setTermo] = useState('');
   const [filtro, setFiltro] = useState<FiltroClientes>('todos');
@@ -228,9 +233,11 @@ export function TelaClientes({ api, pessoa, fuso = FUSO_PADRAO, agora = () => ne
             <button type="button" className={aba === 'clientes' ? 'cli-aba-on' : ''} aria-current={aba === 'clientes' ? 'page' : undefined} onClick={() => setAba('clientes')}>
               Clientes{estadoTotal.tipo === 'pronto' ? <span className="cli-contagem">{estadoTotal.dados.total}</span> : null}
             </button>
-            <button type="button" className={aba === 'retorno' ? 'cli-aba-on' : ''} aria-current={aba === 'retorno' ? 'page' : undefined} onClick={() => setAba('retorno')}>
-              Retorno{estadoRetorno.tipo === 'pronto' ? <span className="cli-contagem">{estadoRetorno.dados.retorno.length + estadoRetorno.dados.cashback.length}</span> : null}
-            </button>
+            {fidelidade && (
+              <button type="button" className={aba === 'retorno' ? 'cli-aba-on' : ''} aria-current={aba === 'retorno' ? 'page' : undefined} onClick={() => setAba('retorno')}>
+                Retorno{estadoRetorno.tipo === 'pronto' ? <span className="cli-contagem">{estadoRetorno.dados.retorno.length + estadoRetorno.dados.cashback.length}</span> : null}
+              </button>
+            )}
             {veFiado && (
               <button type="button" className={aba === 'fiado' ? 'cli-aba-on' : ''} aria-current={aba === 'fiado' ? 'page' : undefined} onClick={() => setAba('fiado')}>
                 Fiado{estadoFiado.tipo === 'pronto' && estadoFiado.dados ? <span className="cli-contagem">{estadoFiado.dados.linhas.length}</span> : null}

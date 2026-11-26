@@ -31,6 +31,8 @@ import {
   type NomesDasContas,
   NOME_SUPORTE,
   ehPapelDeLoja,
+  type AjustesDaLoja,
+  conferirLimiteDaLoja,
 } from '@saas/core';
 import { type ApiConta, type ApiUsuarios, ErroApi, type ItemAuditoria, type UsuarioDaLoja } from '../api';
 import { comTrava, gravar, gravarDaLoja, ler, lerDaLoja, transacao } from './armazenamento';
@@ -375,6 +377,8 @@ export interface OpcoesUsuariosDemo {
   nomeDoAlvo?: (tipo: string, id: string) => string | null;
   /** Os nomes que a loja deu às contas do Financeiro ("Banco Itaú"), lidos na hora de mostrar o histórico. */
   nomesDasContas?: () => Partial<NomesDasContas> | null;
+  /** Os ajustes que o suporte fez na loja (módulo 13f): o limite de usuários ativos. null = sem limite. */
+  ajustesDaLoja?: () => Pick<AjustesDaLoja, 'limites'> | null;
 }
 
 export function criarApiUsuariosDemo({
@@ -384,6 +388,7 @@ export function criarApiUsuariosDemo({
   atrasoMs = 120,
   nomeDoAlvo = () => null,
   nomesDasContas = () => null,
+  ajustesDaLoja = () => null,
 }: OpcoesUsuariosDemo): ApiUsuarios & ApiConta {
   const ator = async (): Promise<{ eu: UsuarioGuardado; todos: UsuarioGuardado[] }> => {
     await esperar(atrasoMs);
@@ -410,6 +415,11 @@ export function criarApiUsuariosDemo({
   };
   const auditar = (acao: AcaoAuditoria, alvoId: string | null, detalhes: Record<string, unknown> = {}) =>
     registrarAuditoriaDemo(lojaId, operadorId, acao, alvoId ? { tipo: 'usuario', id: alvoId } : null, detalhes, agora());
+  /** Mais uma pessoa ativa cabe no limite que o suporte deu à loja? (o Adm. Sup não conta: não é da equipe) */
+  const exigirLimiteDeUsuarios = (todos: UsuarioGuardado[]) => {
+    const m = conferirLimiteDaLoja('usuariosAtivos', ajustesDaLoja(), todos.filter((u) => u.ativo).length);
+    if (m) throw new ErroApi(409, m, [], 'limite_da_loja');
+  };
 
   return {
     async listarUsuarios() {
@@ -426,6 +436,7 @@ export function criarApiUsuariosDemo({
         if (todos.some((u) => u.usuario === v.valor.usuario) || v.valor.usuario === LOGIN_SUPORTE) {
           throw new ErroApi(409, `Já existe o usuário "${v.valor.usuario}" nesta loja. Escolha outro login.`, [{ campo: 'usuario', mensagem: 'Já usado nesta loja.' }]);
         }
+        exigirLimiteDeUsuarios(todos);
         const novo: UsuarioGuardado = {
           id: novoId(),
           nome: v.valor.nome,
@@ -458,6 +469,7 @@ export function criarApiUsuariosDemo({
         const igual = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
         const campos = (Object.keys(v.valor) as (keyof typeof v.valor)[]).filter((k) => !igual(v.valor[k], alvo[k]));
         if (campos.length === 0) return publico(alvo);
+        if (campos.includes('ativo') && v.valor.ativo === true) exigirLimiteDeUsuarios(todos);
         const salvo: UsuarioGuardado = { ...alvo, ...Object.fromEntries(campos.map((k) => [k, v.valor[k]])) };
         // funções só no Personalizado: quem deixa de ser Personalizado perde a lista
         if (salvo.papel !== 'personalizado' && salvo.permissoes) {
