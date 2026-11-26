@@ -258,3 +258,116 @@ tabela de negócio, com `SET LOCAL app.tenant_id` no início de cada transação
 | `app_loja_atual()` com `current_setting('app.loja_id', true)`: sem a loja, zero linhas | `current_setting('app.tenant_id')` sem o segundo argumento: sem a loja, a consulta dá erro. As duas formas falham fechadas; a diferença está registrada em `06-RISCOS-E-DECISOES.md` |
 | `app.usuario_id` (quem fez) | o usuário da auditoria (`criadoPor`, `atualizadoPor`) |
 | Adm. Sup sem loja, lido só por funções do banco | precisa de um caminho equivalente: a entidade base exige `tenantId`, e o Adm. Sup não tem loja. Decisão da Fase 2, registrada em `06-RISCOS-E-DECISOES.md` |
+
+---
+
+## 3. Usuários (aba Usuários)
+
+Quem pode: `usuarios` (Dono, Administrador e Adm. Sup; ver `05-MATRIZ-PERMISSOES.md`). No servidor antigo as rotas são
+`GET /usuarios`, `POST /usuarios`, `PATCH /usuarios/:id`, `POST /usuarios/:id/senha` e
+`POST /usuarios/:id/excluir-dados`, todas com `@Exige('usuarios')`
+(`legacy/api/src/usuarios/usuarios.controller.ts:2,13-40`).
+
+### 3.1 Campos e validação
+
+| Campo | Regra | Mensagem | Fonte |
+|---|---|---|---|
+| nome | NFC, espaços repetidos viram um, sem espaço nas pontas; de 2 a 120 caracteres; sem caractere de controle | "Informe o nome da pessoa." · "O nome pode ter até 120 caracteres." · "O nome contém caracteres inválidos." | `legacy/core/src/usuario.ts:21,102-108` |
+| usuario (login) | ver 1.3 | "O usuário (login) tem de 2 a 40 letras minúsculas ou números, sem espaço (pode ter ponto, hífen e _)." | `usuario.ts:141-150` |
+| papel | `dono`, `administrador`, `vendedor` ou `personalizado` | "Escolha o papel: Dono, Administrador, Vendedor, Personalizado." | `usuario.ts:110-113`; `legacy/core/src/papeis.ts:16,24` |
+| permissoes (só Personalizado) | pelo menos uma; só das que se podem dar; o extra de uma tela exige o acesso dela; guardadas na ordem da lista de permissões | "Marque pelo menos uma função para o Personalizado." · "Esta função não pode ser dada a um Personalizado: <função>." · "Para “<texto do extra>”, marque também a tela “<tela>”." | `usuario.ts:115-135` |
+| permissoes em outro papel | lista vazia ou ausente | "Funções escolhidas só no papel Personalizado." | `usuario.ts:160-164` |
+| senha (provisória, ao criar) | as regras de 1.2, com o login e o nome da pessoa | ver 1.2 | `usuario.ts:165-166` |
+| ativo (ao alterar) | `true` ou `false` | "Informe se o usuário fica ativo (true ou false)." | `usuario.ts:179-182` |
+| qualquer outro campo | recusado | "Campo não permitido." | `usuario.ts:137-139,155,174` |
+| corpo que não é objeto | recusado | "Envie um objeto com os dados do usuário." · "Envie um objeto com o que muda." | `usuario.ts:153,172` |
+| alteração sem nenhum campo | recusada | "Nada para alterar." | `usuario.ts:183` |
+
+Erro de validação no servidor: 400 "Dados do usuário inválidos." com a lista `erros`
+(`legacy/api/src/usuarios/usuarios.service.ts:96-97,121-122`). Login repetido na loja, ou igual ao login do Adm. Sup:
+409 "Já existe o usuário "<login>" nesta loja. Escolha outro login." (campo `usuario`: "Já usado nesta loja.")
+(`usuarios.service.ts:103-106,201-206`; na demonstração, o login do Adm. Sup é `suporte`:
+`legacy/web/src/demo/usuariosDemo.ts:62,436-437`).
+
+### 3.2 Quem cadastra e altera quem
+
+Regra única em `conferirGestaoDeUsuario` (`legacy/core/src/usuario.ts:216-279`), que recusa com 403 e
+`codigo: regra_usuarios` no servidor (`usuarios.service.ts:48-50,90-93`):
+
+1. Quem faz precisa estar ativo e ter `usuarios`; senão, a mensagem de `mensagemSemPermissao('usuarios')` (`:226`).
+2. **Criar**: o Dono e o Administrador cadastram só Vendedor e Personalizado; o Adm. Sup cadastra qualquer papel
+   (`usuario.ts:196-204`). Dono ou Administrador criado por outra pessoa: "O Dono e o Administrador só são cadastrados
+   pelo suporte (Adm. Sup), na implantação do sistema." (`usuario.ts:206,232`). Personalizado sem função: "Marque pelo
+   menos uma função para o Personalizado." (`:233`).
+3. Só se dá ao Personalizado o que se tem: "Você só pode dar ao Personalizado as funções que você mesmo tem."
+   (`usuario.ts:227-229`).
+4. O alvo precisa existir na loja; o Adm. Sup não é da loja: "Usuário não encontrado." (`usuario.ts:236-237`;
+   `usuarios.service.ts:46,83-88`).
+5. Mexer num Dono (ou dar o papel de Dono) exige `usuarios.donos`: "Só um Dono altera, desativa ou redefine a senha de
+   outro Dono, ou dá o papel de Dono." (`usuario.ts:239-241`).
+6. **Redefinir a senha** da própria pessoa: "Para a sua própria senha, use “Trocar minha senha”." (`usuario.ts:243-246`).
+7. **Excluir os dados** (LGPD): exige `usuarios.excluir_dados` (só o Dono); não vale para si mesmo ("Você não pode
+   excluir os seus próprios dados por aqui.") e o usuário precisa estar desativado ("Desative o usuário antes de excluir
+   os dados dele.") (`usuario.ts:248-253`).
+8. **Alterar**: ninguém se desativa ("Você não pode desativar o seu próprio usuário.", campo `ativo`) nem muda o próprio
+   papel ou as próprias funções ("Você não pode mudar o seu próprio papel nem as suas funções. Peça a outro Dono.");
+   dar o papel de Dono ou de Administrador é só do Adm. Sup ("Só o suporte (Adm. Sup) dá o papel de Dono ou de
+   Administrador."); funções só no Personalizado; virar Personalizado exige pelo menos uma função
+   (`usuario.ts:255-271`).
+9. **A loja nunca fica sem um Dono ativo**: "Mantenha pelo menos um Dono ativo na loja." (`usuario.ts:273-277`).
+
+Toda alteração roda com uma trava por loja (`pg_advisory_xact_lock(hashtextextended('usuarios:<loja>', 0))`), e quem
+faz é relido do banco: o papel pode ter mudado depois do login. Sem quem faz: 403 "Seu acesso a esta loja está
+desativado." (`usuarios.service.ts:6-7,66-81`).
+
+### 3.3 Efeitos de cada operação
+
+| Operação | Efeito | Histórico | Fonte |
+|---|---|---|---|
+| Criar | grava com a senha provisória (o hash), `senhaProvisoria = true`; no primeiro acesso a pessoa cria a dela | `usuario.criado` com o papel e, no Personalizado, as funções | `usuarios.service.ts:95-118`; `legacy/core/src/usuario.ts:8-9` |
+| Alterar | grava só os campos que mudaram; quem deixa de ser Personalizado perde as funções; desativar encerra as sessões da pessoa | `usuario.desativado` ou `usuario.reativado`; `usuario.alterado` com os nomes dos campos (sem os valores pessoais) e, se mudou, o papel de antes e o de depois e as funções | `usuarios.service.ts:120-153` |
+| Redefinir a senha | nova senha provisória (regras de 1.2), zera as tentativas e o bloqueio, encerra as sessões da pessoa | `usuario.senha_redefinida` | `usuarios.service.ts:155-171` |
+| Excluir os dados (LGPD) | a linha fica, com o nome "Usuário removido", o login `removido-<24 últimos caracteres do id sem hífens>`, sem senha, sem último acesso e (na demonstração) sem foto; encerra as sessões | `usuario.dados_excluidos` | `usuarios.service.ts:173-198`; `legacy/core/src/usuario.ts:29-30`; `legacy/web/src/demo/usuariosDemo.ts:510-530` |
+
+Lista: ativos primeiro e, depois, em ordem de nome (`usuarios.service.ts:56-64`; na demonstração, comparação de nomes
+em português: `usuariosDemo.ts:425-428`). A situação de cada um na lista: "Desativado", "Bloqueado (senhas erradas)",
+"Senha provisória" ou "Ativo", nessa ordem de prioridade (`legacy/core/src/usuario.ts:281-287`).
+
+Limite de usuários ativos que o suporte deu à loja (Adm. Sup → Ajustes desta loja): criar ou reativar acima dele dá 409
+com a mensagem do limite (`codigo: limite_da_loja`); o Adm. Sup não conta (`usuariosDemo.ts:418-422`; regras do limite
+no módulo Ajustes da loja).
+
+### 3.4 Trava no banco (`usuarios_trava_api`)
+
+O servidor antigo tem uma segunda barreira, no próprio banco, para o que é mais grave
+(`legacy/api/prisma/migrations/20261123210000_adm_sup_e_personalizado/migration.sql:71-138`). Vale só para a role da API
+(`:79-81`) e usa a pessoa logada de `app.usuario_id` (`:76`):
+- o login (tentativas, bloqueio, último acesso) e a troca da própria senha passam sem conferência (`:83-99`);
+- sem ninguém logado, cadastro ou alteração é negado (`:90-92,101-103`);
+- só Dono, Administrador ou o Adm. Sup cadastram e alteram (`:104-111`);
+- só o Adm. Sup cadastra ou dá o papel de Dono ou de Administrador (`:112-118`);
+- só um Dono (ou o Adm. Sup) mexe em outro Dono (`:119-121`);
+- ninguém desativa, muda o próprio papel ou as próprias funções (`:122-125`);
+- o Personalizado precisa de pelo menos uma função (`:126-128`);
+- a loja precisa de pelo menos um Dono ativo, com a mesma trava por loja da API (`:129-135`).
+
+A negação do banco chega à pessoa como 403 "Você não tem permissão para fazer isso."
+(`legacy/api/src/http/filtro-erros.ts:47-51,83-86`).
+
+---
+
+## 4. Meu usuário (a própria pessoa, todos os papéis)
+
+| Item | Regra | Fonte |
+|---|---|---|
+| Foto do perfil | PNG, JPEG ou WebP em data URL base64 (`^data:image/(png\|jpeg\|webp);base64,...$`), com até 150.000 caracteres; vazia = tirar a foto | `legacy/core/src/perfil.ts:4,11-29` |
+| Mensagens da foto | "A foto precisa ser uma imagem PNG, JPEG ou WebP." · "A foto é grande demais. Use uma imagem menor (até 100 KB)." | `perfil.ts:18-21` |
+| Quem troca | cada pessoa só a própria foto; foto igual à atual não grava nada | `perfil.ts:4`; `legacy/web/src/demo/usuariosDemo.ts:588-601` |
+| Histórico | `usuario.foto_alterada` (com `tirou: true` quando tira) | `usuariosDemo.ts:597` |
+| Entradas e saídas | montadas do histórico da pessoa: cada "Entrou no sistema" com o "Saiu do sistema" seguinte; a saída diz se foi pelo botão Sair ou por falta de uso (`motivo: inatividade`); duas entradas seguidas = a primeira ficou sem saída; a última entrada sem saída é a sessão de agora; da mais recente para a mais antiga, no máximo 30 | `perfil.ts:5-7,32-80`; `usuariosDemo.ts:603-606` |
+| Duração | minutos inteiros entre a entrada e a saída (a de agora conta até agora); "menos de 1 min", "45 min", "2 h", "2 h 05 min" | `perfil.ts:82-98` |
+| Trocar a senha | a troca da própria senha de 1.6 | `legacy/api/src/auth/sessao.service.ts:389-449` |
+
+A foto, as entradas e saídas e a troca de senha da aba "Meu usuário" existem só na demonstração; no servidor antigo,
+só a troca de senha (`POST /sessao/senha`) existe (as outras partes respondem 501 pela API do sistema real, com a mensagem
+`MENSAGEM_SEM_SERVIDOR`: `legacy/web/src/api.ts:956,1036`).
