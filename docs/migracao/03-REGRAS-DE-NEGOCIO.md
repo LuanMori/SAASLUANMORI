@@ -371,3 +371,124 @@ A negação do banco chega à pessoa como 403 "Você não tem permissão para fa
 A foto, as entradas e saídas e a troca de senha da aba "Meu usuário" existem só na demonstração; no servidor antigo,
 só a troca de senha (`POST /sessao/senha`) existe (as outras partes respondem 501 pela API do sistema real, com a mensagem
 `MENSAGEM_SEM_SERVIDOR`: `legacy/web/src/api.ts:956,1036`).
+
+---
+
+## 5. Loja: endereço, dados, regras e ajustes do suporte
+
+### 5.1 Endereço da loja (subdomínio)
+
+- Formato `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`, depois de `trim()` e minúsculas; fora dele: "O endereço da loja tem
+  até 63 letras minúsculas, números ou hífen (sem acento, sem espaço, sem hífen nas pontas)." (campo `loja`)
+  (`legacy/core/src/loja.ts:7,12-24`).
+- Reservados: `www`, `app`, `api`, `login`, `admin` → ""<endereço>" é reservado. Escolha outro endereço."
+  (`loja.ts:10,25`).
+- A loja do endereço acessado: o cabeçalho Host em minúsculas, sem a porta e sem o ponto final, precisa terminar em
+  `.<DOMINIO_BASE>`; o resto precisa ser um subdomínio válido de um nível só ("LojaA.NomeDaEmpresa.com.br:443" →
+  `lojaa`; "a.b.nomedaempresa.com.br" → nenhuma) (`loja.ts:29-43`).
+- Na demonstração, as lojas são fixas: `loja-a` (subdomínio `lojaa`, "Loja A", "Rações, petiscos e acessórios") e
+  `loja-b` (`lojab`, "Loja B", "Pet shop e banho e tosa") (`legacy/web/src/demo/usuariosDemo.ts:42-44`).
+
+### 5.2 Dados da loja (nome, descrição e logo)
+
+Quem altera: `loja.configurar`; todos os logados leem (`legacy/core/src/configuracao.ts:11`).
+
+| Campo | Regra | Mensagem | Fonte |
+|---|---|---|---|
+| nome | uma linha (NFC, sem espaço sobrando); de 2 a 80 caracteres; sem caractere de controle | "Informe o nome da loja." · "O nome da loja pode ter até 80 caracteres." · "O nome contém caracteres inválidos." | `configuracao.ts:18-21,53-61` |
+| descricao | opcional; texto de até 160 caracteres; vazia = sem descrição | "A descrição deve ser um texto." · "A descrição pode ter até 160 caracteres." | `configuracao.ts:22-23,63-72` |
+| logo | opcional; PNG, JPEG ou WebP em data URL base64, até 280.000 caracteres; sem logo, a barra mostra as iniciais do nome | "O logo precisa ser uma imagem PNG, JPEG ou WebP." · "O logo é grande demais. Use uma imagem menor (até 200 KB)." | `configuracao.ts:31-32,41-42,47,74-83` |
+| outro campo | recusado | "Campo não permitido." | `configuracao.ts:94` |
+
+Mudança vazia: "Nada para alterar." (`configuracao.ts:99`). Só os campos que mudaram são gravados e vão para o
+histórico (`loja.dados_alterados` com os nomes dos campos) (`configuracao.ts:91-104`;
+`legacy/web/src/demo/apiLocal.ts:3557-3570`). Dados guardados de outra versão são completados com o padrão, nunca
+recusados (`configuracao.ts:9-10,106-118`).
+
+### 5.3 Regras da loja
+
+Estrutura e padrões (os do DaniPets V9.3.3) (`legacy/core/src/configuracao.ts:123-191`):
+
+| Parte | Campo | Padrão | Limites | Fonte |
+|---|---|---|---|---|
+| venda | `descontoSemSenhaPct`: desconto que o Vendedor dá sem senha (%) | 10 | 0 a 50, até 2 casas | `configuracao.ts:124-125,180,195`; `legacy/core/src/venda.ts:89` |
+| caixa | `toleranciaCentavos`: diferença aceita no fechamento | 1000 (R$ 10,00) | 0 a 100.000, inteiro | `configuracao.ts:126-127,181,196` |
+| fiado | `prazoDias`: prazo para pagar | 30 | 1 a 365, inteiro | `configuracao.ts:128-129,182,197`; `legacy/core/src/financeiro.ts:80` |
+| fiado | `vencidoPedeDono`: fiado vencido só sai com a liberação do Dono | sim | sim ou não | `configuracao.ts:128-129,182,325` |
+| cashback | `percentual` | 3,5 | 0 a 20, até 2 casas | `configuracao.ts:130-131,183,198` |
+| cashback | `validadeDias`: prazo para usar | 31 | 1 a 3650, inteiro | `configuracao.ts:183,199` |
+| cashback | `avisoDias`: aviso de cashback vencendo (dias antes) | 7 | 0 a 365, inteiro | `configuracao.ts:183,200` |
+| retorno | `diasSemComprar`: dias sem comprar para lembrar | 30 | 1 a 3650, inteiro | `configuracao.ts:132-133,184,201` |
+| retorno | `cupomPct`: desconto do cupom de retorno (%) | 5 | 0 a 50, até 2 casas | `configuracao.ts:184,202` |
+| retorno | `cupomValidadeDias`: validade do cupom | 7 | 1 a 365, inteiro | `configuracao.ts:184,203` |
+| mensagens | `retorno`, `cashback`, `cobranca` (WhatsApp) | os textos abaixo | até 1000 caracteres | `configuracao.ts:134-135,157-170` |
+| estoque | `motivosAjuste` | "Perda ou avaria", "Produto vencido", "Correção de contagem", "Outro" | 1 a 30 itens de 2 a 60 caracteres, sem repetir | `configuracao.ts:136,172-173,243-266` |
+| financeiro | `categoriasDespesa` | "Aluguel", "Energia e água", "Funcionários", "Impostos e taxas", "Fornecedores", "Transporte", "Outras despesas" | como a lista acima | `configuracao.ts:137-138,174-175` |
+| financeiro | `nomesContas` | `caixa`: "Caixa físico"; `banco`: "Conta bancária" | de 2 a 30 caracteres; vazio volta ao padrão; as duas não podem ter o mesmo nome (sem diferença de maiúsculas) | `configuracao.ts:277-302`; `legacy/core/src/financeiro.ts:35,39,46` |
+| produtos | `unidades`: como os produtos podem ser vendidos | `un` e `kg` | pelo menos uma, sem repetir | `configuracao.ts:139-140,268-275`; `legacy/core/src/quantidade.ts:9` |
+| clientes | `campoExtra`: `{ ativo, rotulo }` | desligado, "Pet" | rótulo de 2 a 30 caracteres | `configuracao.ts:141-142,189,304-310,330-341` |
+
+Mensagens padrão (`configuracao.ts:156-163`), com as variáveis que cada uma aceita (`:165-170`):
+- retorno (`{nome}`, `{loja}`, `{dias}`, `{desconto}`, `{validade}`): "Olá, {nome}! Aqui é da {loja}. Faz {dias} dias desde a
+  sua última compra e sentimos sua falta. Separamos {desconto}% de desconto para você, válido até {validade}. É só
+  informar seu CPF no caixa."
+- cashback (`{nome}`, `{loja}`, `{valor}`, `{validade}`): "Olá, {nome}! Aqui é da {loja}. Você tem {valor} de cashback para
+  usar até {validade}. Aproveite na sua próxima compra!"
+- cobrança (`{nome}`, `{loja}`, `{valor}`, `{vencimento}`): "Olá, {nome}, tudo bem? Aqui é da {loja}. Passando para lembrar que
+  há {valor} em aberto na sua conta, com vencimento em {vencimento}. Se já pagou, por favor desconsidere. Qualquer
+  dúvida, estamos à disposição."
+
+Validação das regras (`legacy/core/src/configuracao.ts:193-366`):
+- número fora do limite: "<rótulo>: de <min> a <max>, com até 2 casas." ou "..., sem casas decimais." (com vírgula
+  decimal no texto) (`:206-219`); com 2 casas, o valor é arredondado para 2 casas (`:218`);
+- sim ou não: "Informe sim ou não (true ou false)." (`:221-224`);
+- mensagem: NFC, quebra de linha `\r\n` vira `\n`, sem espaço nas pontas; vazia: "A mensagem não pode ficar vazia.";
+  mais de 1000: "A mensagem pode ter até 1000 caracteres."; caractere de controle (fora a quebra de linha): "A mensagem
+  contém caracteres inválidos."; variável que não existe: "Use só {nome}, {loja}, ... (não existe {x})."
+  (`:226-241`);
+- lista: "Envie uma lista." · "A lista precisa de pelo menos um item." · "A lista pode ter até 30 itens." · "Cada item
+  tem de 2 a 60 caracteres." · ""<item>" aparece mais de uma vez." (`:243-266`);
+- unidades: "Escolha pelo menos uma unidade de venda: un (unidade) ou kg (quilo)." (`:268-275`);
+- nomes das contas: "Envie { caixa, banco } com os nomes das contas." · "Conta desconhecida." · "O nome da conta tem de 2
+  a 30 caracteres." · "As duas contas precisam de nomes diferentes." (`:277-302`);
+- campo extra: "Envie { ativo, rotulo }." · "O nome do campo tem de 2 a 30 caracteres." (`:304-310,330-341`);
+- parte que não existe: "Parte das regras desconhecida."; parte que não é objeto: "Envie um objeto com o que muda nesta
+  parte."; campo que não existe na parte: "Campo não permitido."; nada: "Nada para alterar." (`:312-362`).
+
+Só as partes que mudaram de fato são gravadas e vão para o histórico (`loja.regras_alteradas` com os nomes das partes)
+(`configuracao.ts:346-366`; `legacy/web/src/demo/apiLocal.ts:3572-3585`). Regras guardadas de outra versão: cada campo
+inválido ou ausente volta ao padrão (`configuracao.ts:368-383`). As variáveis das mensagens são trocadas pelos valores;
+variável sem valor fica escrita como está (`configuracao.ts:385-388`).
+
+### 5.4 Ajustes da loja (Adm. Sup): recursos ligados e limites
+
+Regras em `legacy/core/src/recursosDaLoja.ts`. Só o Adm. Sup muda (`suporte.ferramentas`); todos da loja leem
+(`recursosDaLoja.ts:1-13`; `legacy/web/src/demo/apiLocal.ts:3528-3555`).
+
+| Recurso | Quando desligado | Fonte |
+|---|---|---|
+| Compras | a aba Compras some; a compra nova e a importação de fornecedores são recusadas | `recursosDaLoja.ts:19`; `apiLocal.ts:1287,2967` |
+| Financeiro | a aba Financeiro some; os lançamentos à mão são recusados (lançar, saldo inicial, conta a pagar avulsa, confirmar o recebimento do cartão); as vendas e o caixa continuam movimentando as contas | `recursosDaLoja.ts:20-23`; `apiLocal.ts:2631,2659,2679,2700,3096` |
+| Relatórios | a aba some; importar vendas antigas é recusado | `recursosDaLoja.ts:24`; `apiLocal.ts:1366` |
+| Fiado | a venda fiado é recusada; o fiado que já existe continua podendo ser recebido | `recursosDaLoja.ts:25`; `apiLocal.ts:1576` |
+| Fidelidade | a compra não gera cashback; os lembretes de retorno e de cashback são recusados e somem da Visão geral; o saldo e os cupons que os clientes já têm continuam valendo | `recursosDaLoja.ts:26-29`; `apiLocal.ts:1650,2432,2537` |
+| Vale-troca | a devolução como vale-troca é recusada; os vales que já existem continuam podendo ser usados | `recursosDaLoja.ts:30`; `apiLocal.ts:1770` |
+
+- Recusa: 403 "<Recurso>: este recurso está desligado nesta loja. Fale com o suporte." (`codigo: recurso_desligado`)
+  (`recursosDaLoja.ts:68`; `apiLocal.ts:1383-1386`). Sem ajustes guardados, tudo está ligado (`recursosDaLoja.ts:57-66`).
+- Limites: usuários ativos (1 a 1.000) e produtos ativos (1 a 100.000); vazio = sem limite; fora disso: "<Nome>: use um
+  número inteiro de <min> a <max>, ou deixe em branco para não ter limite." (`recursosDaLoja.ts:40-43,86-99`).
+- Acima do limite (409, `codigo: limite_da_loja`): "Esta loja pode ter até <N> usuários ativos (hoje: <ativos>). Desative
+  um usuário ou fale com o suporte para aumentar o limite."; "Esta loja pode ter até <N> produtos ativos (hoje: <ativos>).
+  Inative um produto ou fale com o suporte para aumentar o limite."; na importação: "A planilha traz <novos> produtos
+  novos, e esta loja pode ter até <N> produtos ativos (hoje: <ativos>). Fale com o suporte para aumentar o limite."
+  Os números saem com separador de milhar (`recursosDaLoja.ts:101-116`).
+- Onde o limite de produtos vale: cadastrar, reativar e importar (já na prévia) (`apiLocal.ts:1388-1392,1440,1525,
+  3284,3300`). Baixar o limite não desativa ninguém nem inativa produto (`recursosDaLoja.ts:9-10`).
+- Validação dos ajustes: "Envie os recursos desligados e os limites da loja." · "Recurso desconhecido: <x>." · "Campo
+  não permitido." · "Envie a lista dos recursos desligados." · "Envie os limites da loja." · "Limite desconhecido."
+  (`recursosDaLoja.ts:70-100`).
+- Histórico `suporte.ajustes_alterados`, com o que ligou, o que desligou e os limites novos (ex.: "desligou Fiado e
+  Vale-troca • ligou Compras • usuários: até 5 • produtos: sem limite"); salvar igual não grava (`recursosDaLoja.ts:
+  118-143`; `apiLocal.ts:3534-3550`).
+- Os ajustes não vão na cópia de segurança da loja (`recursosDaLoja.ts:11`; `apiLocal.ts:333-349`).
