@@ -492,3 +492,308 @@ Regras em `legacy/core/src/recursosDaLoja.ts`. Só o Adm. Sup muda (`suporte.fer
   Vale-troca • ligou Compras • usuários: até 5 • produtos: sem limite"); salvar igual não grava (`recursosDaLoja.ts:
   118-143`; `apiLocal.ts:3534-3550`).
 - Os ajustes não vão na cópia de segurança da loja (`recursosDaLoja.ts:11`; `apiLocal.ts:333-349`).
+
+---
+
+## 6. Dinheiro, quantidade, texto e datas (regras de base)
+
+### 6.1 Dinheiro
+
+- Sempre inteiro em centavos, nunca número quebrado (`legacy/core/src/dinheiro.ts:2`). Teto técnico: 2.147.483.647
+  centavos (o maior INTEGER do Postgres) (`dinheiro.ts:4-5`). Na reconstrução: `long` ou `int` em centavos, nunca
+  `double`/`float` nem `BigDecimal` com casas soltas.
+- Mostrar: `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })`, ou seja, "R$ 12,50" com espaço não
+  separável (U+00A0) depois do "R$"; -0 aparece "R$ 0,00" (`dinheiro.ts:7-16`). Valor não inteiro é erro de programa
+  (`dinheiro.ts:11-13`).
+- Ler o que a pessoa digitou (`reaisParaCentavos`, `dinheiro.ts:18-57`): tira "R$" e os espaços; aceita "12", "12,5",
+  "12,50", "1.234,56", "R$ 1.234,56" e "12.50"; ponto sem vírgula com 1 ou 2 dígitos depois é decimal ("12.50"), com grupos
+  de 3 é milhar ("1.234" = R$ 1.234,00); recusa vazio, negativo, mais de 2 casas, letras e valor acima do teto.
+- Percentual de cartão: `taxa = round(valor × round(pct × 100) / 10000)` (`legacy/core/src/financeiro.ts:232-235`).
+
+### 6.2 Quantidade
+
+- Inteira sempre, na unidade do produto: `un` = unidades; `kg` = gramas (1250 = 1,25 kg); o preço do produto por kg é o
+  preço do quilo (`legacy/core/src/quantidade.ts:1-9`). Dado sem unidade vale `un` (`quantidade.ts:16-17`).
+- Nomes: "Unidade (un)" e "Quilo (kg, a granel)" (`quantidade.ts:12`).
+- Máximo numa venda: 9999 un ou 999,999 kg; passo dos botões + e − da Frente de caixa: 1 un ou 0,5 kg
+  (`quantidade.ts:19-23`).
+- Mostrar: "3 un"; "1,25 kg"; "0,5 kg"; "-2 kg" (sem zeros à direita na fração) (`quantidade.ts:27-41`).
+- Ler: un só dígitos; kg com até 3 casas, vírgula ou ponto ("1,25" → 1250); aceita "un"/"kg" no fim
+  (`quantidade.ts:43-53`).
+- Valor de uma quantidade: un = preço × quantidade; kg = `round(preço × gramas / 1000)` (`quantidade.ts:55-58`).
+
+### 6.3 Texto
+
+- Texto digitado é guardado em NFC (o "ç" do Mac vira o do Windows) (`legacy/core/src/texto.ts:2-3`).
+- Busca sem acento: NFD, tira os acentos, minúsculas e `trim()` ("racao" acha "Ração") (`texto.ts:4-11`).
+- Caracteres de controle (U+0000 a U+001F e U+007F, o que inclui quebra de linha e tab) são recusados em nomes, motivos e
+  descrições (`legacy/core/src/interno.ts:4-5`). CPF, CNPJ e telefone: só os dígitos (`interno.ts:9-10`).
+- Erro de validação: lista de `{ campo, mensagem }`; a primeira mensagem vai para o topo da resposta
+  (`legacy/core/src/resultado.ts:1-10`; ex.: `legacy/web/src/demo/apiLocal.ts:1430`).
+
+### 6.4 Datas e fuso
+
+- Fuso padrão da loja: `America/Sao_Paulo` (`legacy/core/src/venda.ts:95`). "Hoje" e o dia de cada venda, movimento e
+  lançamento são calculados nesse fuso (`venda.ts:977-985`); período "de/até" é inclusivo nas duas pontas
+  (`venda.ts:987-997`).
+- Dia guardado como AAAA-MM-DD; data válida = existe no calendário (sem 30/02) (`legacy/core/src/compra.ts:119-127`); o
+  movimento de estoque com data também exige o ano 2000 em diante (`legacy/core/src/estoque.ts:159-165`). Mostrar:
+  "19/11/2026" (`compra.ts:129-130`). Somar dias em UTC (`legacy/core/src/financeiro.ts:237-241`).
+
+---
+
+## 7. Produtos e estoque
+
+### 7.1 Cadastro de produto
+
+Regras confirmadas pelo Luan em 11/11/2026, iguais ao DaniPets V9.2 (`legacy/core/src/produto.ts:5-16`).
+
+| Campo | Regra | Mensagem | Fonte |
+|---|---|---|---|
+| nome | NFC, `trim()`; 1 a 120 caracteres; sem caractere de controle | "Informe o nome do produto." · "O nome pode ter até 120 caracteres." · "O nome contém caracteres inválidos." | `produto.ts:53-54,89-99` |
+| codigoBarras | opcional; só dígitos (zeros à esquerda ficam), até 64; o `trim()` tira o `\r\n` do leitor | "O código de barras deve ser enviado como texto." · "O código de barras deve ter só números." · "O código de barras pode ter até 64 dígitos." | `produto.ts:55,70-72,101-114` |
+| precoCentavos | inteiro, maior que zero, até o teto; no kg é o preço do quilo | "O preço deve ser um número inteiro de centavos." · "O preço de venda deve ser maior que zero. Brinde é lançado na venda (100% de desconto, com autorização do Dono)." · "Preço acima do limite permitido." | `produto.ts:74-75,116-122` |
+| marca | opcional; NFC, espaços juntados; até 60 | "A marca deve ser um texto." · "A marca pode ter até 60 caracteres." · "A marca contém caracteres inválidos." | `produto.ts:60,124-134` |
+| pesoGramas | opcional (0 = sem peso); inteiro de 0 a 1.000.000 g; só descreve o produto | "O peso vai de 0 a 1.000 kg, com até 3 casas (gramas)." | `produto.ts:30-31,61-62,136-143` |
+| unidade | `un` (padrão) ou `kg`; precisa estar ligada nas regras da loja | "Escolha como o produto é vendido: por unidade (un) ou por quilo (kg)." · "Esta loja não vende por quilo. Ligue o kg em Produtos e estoque → Regras do estoque." · "Esta loja não vende por unidade." | `produto.ts:154-158`; `legacy/web/src/demo/apiLocal.ts:1003-1010` |
+| estoqueInicial | opcional; inteiro de 0 a 9.999.999 na unidade do produto | "O estoque inicial é um número inteiro de unidades, de 0 em diante." (no kg: "O estoque inicial é um peso de 0 em diante (até 3 casas).") | `produto.ts:63-64,189-198` |
+| custoInicialCentavos | opcional; inteiro ≥ 0 (0 = sem custo); só com estoque inicial; só Dono e Administrador (quem tem `produtos.alterar`) | "O custo do estoque inicial não pode ser negativo." · "Informe o custo só quando houver estoque inicial." · 403 "Custo do estoque inicial: só o Dono ou o Administrador." | `produto.ts:199-208`; `apiLocal.ts:1434-1437` |
+| fornecedorId | opcional; fornecedor da loja e ativo | "Escolha o fornecedor na lista." · "Fornecedor não encontrado ou desativado. Escolha outro na lista." | `produto.ts:145-152`; `apiLocal.ts:1014-1020` |
+| codigoInterno | nunca vem da tela | "O código interno é gerado pelo sistema." | `produto.ts:160-167` |
+| outro campo | recusado | "Campo não permitido." | `produto.ts:160-167` |
+
+Corpo que não é objeto: "Envie um objeto com os dados do produto." (`produto.ts:174`). O servidor antigo só aceitava
+nome, código de barras e preço (o cadastro completo existia só na demonstração) (`produto.ts:12-15,169-183`;
+`legacy/api/src/produtos/produtos.controller.ts:18-24`).
+
+Ao cadastrar (`legacy/web/src/demo/apiLocal.ts:1425-1473`):
+1. permissão `produtos.cadastrar` (Vendedor tem); valida; confere a unidade, o custo, o fornecedor e o limite de produtos
+   ativos da loja (§5.4);
+2. **código de barras** único na loja e diferente de qualquer código interno, porque o leitor da Frente de caixa aceita os
+   dois: 409 "Código de barras repetido: <código> já está vinculado ao produto "<nome>"." (`apiLocal.ts:1021-1028`; a
+   mesma mensagem no servidor, `legacy/api/src/produtos/produtos.service.ts:79-83`);
+3. **produto parecido** (mesmo nome, mesma marca e mesmo peso, sem diferença de maiúsculas, de espaços ou de NFC): 409
+   `produto_parecido` "Já existe produto com o mesmo nome, marca e peso: "<nome>" (código <código>)."; a tela pergunta e
+   reenvia com `mesmoAssim` (`legacy/core/src/produto.ts:230-248`; `apiLocal.ts:1443-1446`);
+4. **código interno**: o maior da loja + 1, com pelo menos 4 dígitos (0001, 0002, …, 9999, 10000), até 18 dígitos;
+   pula o número que já é código interno ou de barras de outro produto, e o código de barras do próprio produto novo
+   (`produto.ts:56-59,77-87`; `apiLocal.ts:458-472`). No servidor antigo, uma trava por loja
+   (`pg_advisory_xact_lock(hashtextextended('produtos:codigos:<lojaId>', 0))`) dentro da transação evita dois
+   cadastros com o mesmo código; colisão que escapa: 409 "Código já cadastrado nesta loja. Tente de novo."
+   (`legacy/api/src/produtos/codigos.ts:9-48`; `produtos.service.ts:72`);
+5. grava o produto ativo; se há estoque inicial, um movimento `inicial` com o custo (§7.3);
+6. histórico `produto.criado` (`codigoInterno`, e `estoqueInicial`/`unidade` quando há).
+
+Lista: em ordem de nome (pt-BR), com `temHistorico` (§7.4) (`apiLocal.ts:1416-1423`).
+
+### 7.2 Alterar, inativar, reativar e excluir (`produtos.alterar`)
+
+- **Alterar** (`legacy/core/src/produto.ts:42-51,213-228`; `legacy/web/src/demo/apiLocal.ts:1475-1514`): só os campos
+  enviados (nome, código de barras, preço, marca, peso, unidade, fornecedor); o código interno nunca muda. Sem campo:
+  "Nada para alterar."; corpo que não é objeto: "Envie um objeto com o que muda.". O que ficou igual não grava. Confere
+  o fornecedor (se mudou), o código de barras (se mudou), a unidade (se mudou: precisa estar ligada e o produto não pode ter
+  história, senão 409 "<nome> já tem vendas ou movimentos de estoque: a unidade não pode mudar (o saldo e as vendas estão
+  em <kg|unidades>). Para vender de outro jeito, cadastre um produto novo e inative este.") e o produto parecido (se mudou
+  nome, marca ou peso). Histórico: `produto.preco_alterado` (`de`, `para`) e/ou `produto.alterado` (`campos`).
+- **Inativar/reativar** (`apiLocal.ts:1516-1532`): o inativo sai da Frente de caixa; reativar confere o limite de produtos
+  ativos (§5.4); pedir o estado que já está não grava. Histórico `produto.inativado` / `produto.reativado`.
+- **Excluir** (`apiLocal.ts:1534-1549`): só sem história; com história: 409 "<nome> tem vendas ou movimentos de estoque e
+  não pode ser excluído. Use “Inativar”." (com as aspas curvas). Apaga junto o estoque inicial e o estoque mínimo.
+  Histórico `produto.excluido` (`nome`, `codigo` = código de barras ou interno), sem alvo.
+- Produto que não existe: 404 "Produto não encontrado." (`apiLocal.ts:998-1002,1483`).
+
+### 7.3 Estoque por movimentos
+
+O saldo é a soma dos movimentos; nada se apaga, corrige-se com ajuste (`legacy/core/src/estoque.ts:1-11,62-66`).
+
+| Tipo | Nome na tela | Sinal | Quando | Fonte |
+|---|---|---|---|---|
+| `inicial` | Estoque inicial | + | cadastro com estoque inicial (motivo "Estoque inicial", com o custo) | `estoque.ts:184-200` |
+| `entrada` | Entrada | + | lançada à mão | `estoque.ts:113-182` |
+| `compra` | Compra | + | compra registrada (motivo "NF <nº>" ou "Compra", com o custo e o dia da compra) | `legacy/core/src/compra.ts:279-292` |
+| `estorno_compra` | Compra estornada | − | estorno de item da compra | `compra.ts:358-369` |
+| `ajuste` | Ajuste | ± | lançado à mão, ou baixa de lote vencido (motivo "Produto vencido") | `estoque.ts:113-182`; `compra.ts:597-611` |
+| `venda` | Venda | − | cada item vendido, por quem vendeu | `estoque.ts:96-99` |
+| `cancelamento` | Venda cancelada | + | volta tudo o que a venda tirou | `estoque.ts:101-104` |
+| `devolucao` | Devolução | + | volta o item marcado "volta para a prateleira" (sem a marcação, volta) | `estoque.ts:106-111` |
+
+Nomes em `estoque.ts:17-28`. Limites: quantidade e mínimo até 9.999.999; motivo até 200; observação até 300
+(`estoque.ts:59-60`).
+
+**Situação** (`estoque.ts:68-74`): negativo (< 0), zerado (= 0), baixo (no mínimo ou abaixo, com mínimo > 0), ok. Sem
+mínimo, só zerado e negativo avisam.
+
+**Venda sem estoque** (`estoque.ts:76-92`): soma as quantidades do mesmo produto na venda; faltando: "Estoque insuficiente
+para <nome>. Disponível: <saldo, nunca abaixo de 0, com a unidade>.".
+
+**Entrada e ajuste à mão** (`estoque.estoque.lancar`: Dono e Administrador) (`estoque.ts:113-157`;
+`legacy/web/src/demo/apiLocal.ts:1874-1904`):
+- campos: `produtoId`, `tipo` (`entrada` | `ajuste`), `quantidade`, `motivo`, `observacao`, `dia`; outro campo: "Campo não
+  permitido."; corpo que não é objeto: "Envie um objeto com o movimento.";
+- "Escolha o produto." · "Escolha entrada ou ajuste." · quantidade inteira, diferente de zero, até 9.999.999 em valor
+  absoluto: "Informe uma quantidade inteira diferente de zero." · entrada negativa: "Entrada é sempre positiva. Para tirar
+  do estoque, use ajuste.";
+- ajuste exige motivo: "Informe o motivo do ajuste (ex.: perda, avaria, contagem)."; e o motivo tem de estar na lista da
+  loja (§5.3): "Escolha o motivo do ajuste: <motivos separados por vírgula>." (`apiLocal.ts:1886-1888`); motivo até 200,
+  sem controle: "O motivo pode ter até 200 caracteres." · "O motivo contém caracteres inválidos.";
+- observação: texto, espaços juntados, até 300: "A observação deve ser um texto." · "A observação pode ter até 300
+  caracteres." · "A observação contém caracteres inválidos.";
+- dia: hoje ou antes: "Data inválida." · "Data no futuro não é permitida."; dia com o caixa já fechado pede a liberação de
+  um Dono (§11); só grava o `dia` quando não é hoje (`estoque.ts:167-182`);
+- o resultado não pode deixar o saldo negativo: 409 "O ajuste deixaria o saldo de <nome> negativo (saldo atual <saldo>)."
+  (vale também para entrada, que nunca deixa);
+- histórico `estoque.entrada` ou `estoque.ajuste` (`quantidade`, `unidade`, `motivo`, `observacao`, `dia` quando não é
+  hoje); devolve o saldo novo.
+
+**Estoque mínimo** (`estoque.lancar`) (`estoque.ts:243-250`; `apiLocal.ts:1906-1919`): inteiro de 0 a 9.999.999 na
+unidade do produto; 0 ou vazio = sem aviso; fora disso: "O estoque mínimo deve ser um número de 0 em diante.". Histórico
+`estoque.minimo` (`minimo`, `unidade`).
+
+**Composição do saldo** ("Como o saldo é calculado", DaniPets PRD-09) (`estoque.ts:202-233`): inicial + compras (menos as
+estornadas) + entradas − vendas + cancelamentos + devoluções ± ajustes.
+
+**Lista do estoque** (`apiLocal.ts:1846-1866`): saldo, mínimo e situação de cada produto; o **custo médio** só vai para
+quem tem a permissão `compras` (o Vendedor não vê custo), arredondado para centavos inteiros.
+
+**Movimentos** (`apiLocal.ts:1868-1872`): qualquer logado; filtro por produto e período (pelo `dia`, ou pelo dia de
+`criadoEm` no fuso); mais novos primeiro.
+
+### 7.4 Produto com história
+
+Tem história quem tem qualquer movimento que não seja o `inicial`, ou aparece em alguma venda. Com história: não exclui
+(só inativa) e não muda de unidade (`legacy/core/src/estoque.ts:235-241`).
+
+### 7.5 Custo médio móvel (DaniPets replayCosts)
+
+Refaz os movimentos em ordem de `criadoEm`: compra e estoque inicial com custo > 0 e quantidade > 0 mexem na média
+(`(q × média + quantidade × custo) / (q + quantidade)`; sem média ou com q ≤ 0, a média vira o custo); os outros
+movimentos só mexem na quantidade; o item de compra estornado sai da conta (a compra e o estorno dela são ignorados).
+Resultado em centavos com fração por unidade ou por kg; null = nunca teve custo (`legacy/core/src/compra.ts:511-531`).
+
+---
+
+## 8. Fornecedores
+
+Cadastro simples por loja (decisão P9 do Luan; no DaniPets era texto livre) (`legacy/core/src/fornecedor.ts:1-8`).
+Quem cuida: permissão `compras` (Dono e Administrador) (`fornecedor.ts:8`;
+`legacy/web/src/demo/apiLocal.ts:3164-3223`).
+
+| Campo | Regra | Mensagem | Fonte |
+|---|---|---|---|
+| nome | NFC, espaços juntados; 2 a 120; sem controle | "Informe o nome do fornecedor." · "O nome pode ter até 120 caracteres." · "O nome contém caracteres inválidos." | `fornecedor.ts:31,54,72-75` |
+| documento | opcional; CNPJ (14 dígitos) ou CPF (11), dígitos verificadores certos, não todos iguais; guardado só com os dígitos | "Documento inválido: confira o CNPJ (14 números) ou o CPF (11 números)." | `fornecedor.ts:33-44,77-83` |
+| telefone | opcional; com DDD, 10 ou 11 dígitos (§12) | "Telefone com DDD: 10 ou 11 números." | `fornecedor.ts:84-89` |
+| contato | opcional; até 80 | "Envie um texto." · "Use até 80 caracteres." · "O texto contém caracteres inválidos." | `fornecedor.ts:56-66,90` |
+| observacao | opcional; até 300 | as mesmas | `fornecedor.ts:91` |
+| outro campo | recusado | "Campo não permitido." | `fornecedor.ts:71` |
+
+- Corpo que não é objeto: "Envie um objeto com os dados do fornecedor." (`fornecedor.ts:69`).
+- O mesmo documento não se repete na loja: 409 "Este documento já é do fornecedor "<nome>"." (`fornecedor.ts:95-102`).
+- CNPJ: pesos 5,4,3,2,9,8,7,6,5,4,3,2 e 6,5,4,3,2,9,8,7,6,5,4,3,2; resto < 2 → 0, senão 11 − resto
+  (`fornecedor.ts:37-43`). Mostrar: "12.345.678/0001-95" ou "529.982.247-25" (`fornecedor.ts:46-52`).
+- Alterar envia o cadastro inteiro (a mesma validação); só grava se algo mudou; histórico `fornecedor.alterado`
+  (`campos`). Cadastrar: `fornecedor.cadastrado`. Desativar/reativar: `fornecedor.desativado` / `fornecedor.reativado`;
+  o desativado some das listas de escolha (compra e produto), e o que já aponta para ele continua
+  (`fornecedor.ts:7`; `apiLocal.ts:3170-3223`). Não existe: 404 "Fornecedor não encontrado.".
+- Lista: ativos primeiro, depois por nome (pt-BR) (`apiLocal.ts:3164-3168`).
+
+---
+
+## 9. Compras e contas a pagar
+
+Regras do DaniPets V9.3.3, CMP-01 a 09, PRD-10 e 11 (`legacy/core/src/compra.ts:1-18`). Quem: permissão `compras`; a
+compra nova exige o recurso Compras ligado (§5.4) (`legacy/web/src/demo/apiLocal.ts:2963-2967`).
+
+### 9.1 Registrar a compra (por nota fiscal)
+
+Campos (`compra.ts:134-200`):
+
+| Campo | Regra | Mensagem |
+|---|---|---|
+| fornecedorId | opcional; fornecedor da loja e ativo | "Fornecedor não encontrado ou desativado. Escolha outro na lista." (`apiLocal.ts:2972-2976`) |
+| notaFiscal | opcional; espaços juntados; até 60, sem controle | "O número da nota pode ter até 60 caracteres." · "O número da nota contém caracteres inválidos." |
+| data | AAAA-MM-DD válida, hoje ou antes | "Informe a data da compra." · "A data da compra não pode ser depois de hoje." |
+| itens | 1 a 200 | "Inclua pelo menos um produto na compra." · "Uma nota pode ter até 200 itens." · "Item inválido." |
+| itens.N.produtoId | obrigatório; produto ativo da loja | "Item N: escolha o produto." · "Item N: produto não encontrado ou inativo." |
+| itens.N.quantidade | inteira, > 0, até 10 × o máximo da venda na unidade (99.990 un ou 9.999,99 kg) | "Item N: informe a quantidade." · "<nome>: quantidade acima do limite (<máximo>)." |
+| itens.N.custoCentavos | inteiro > 0 por unidade ou por kg | "Item N: informe o custo unitário (maior que zero). Mercadoria de bonificação: lance como entrada de estoque (Produtos e estoque)." |
+| itens.N.validade | opcional; data válida | "Item N: validade inválida." |
+| pagamento | `{ tipo: 'avista', conta: 'caixa' \| 'banco' }` ou `{ tipo: 'aprazo', vencimento }` | "Escolha à vista ou a prazo." · "Escolha a conta de pagamento." · "Informe o vencimento da compra a prazo." |
+| precos | opcional; `{ produtoId: novo preço }`, só de produto da compra, > 0 | "Envie os preços novos por produto." · "Só muda o preço de produto que está na compra." · "Informe o novo preço de venda (maior que zero)." |
+| outro campo | recusado | "Campo não permitido." (também dentro do item) |
+
+Corpo que não é objeto: "Envie um objeto com a compra.". Total do item = valor da quantidade ao custo (§6.2); total da
+nota acima do teto: "Total da compra acima do limite permitido." (`compra.ts:202-232`). "Item N" numera a partir de 1.
+
+Passos (`apiLocal.ts:2963-3037`):
+1. valida; monta os itens; data de um dia com o caixa já fechado pede a liberação de um Dono (§11), com a frase "compra de
+   <nome>" (1 item) ou "compra de <n> itens"; à vista com a data de hoje exige o caixa de hoje não fechado (§11);
+2. **nota repetida**: a mesma nota (sem diferença de maiúsculas) do mesmo fornecedor (ou das duas sem fornecedor), com
+   algum item ainda valendo: 409 `nf_repetida` "Já existe a NF <nº> de <fornecedor> (compra nº <n>)." (sem fornecedor, sem
+   o " de ..."); a tela pergunta e reenvia com `mesmoAssim` (`compra.ts:240-245`);
+3. número sequencial da loja (o maior + 1);
+4. efeitos (`compra.ts:273-334`): cada item entra no estoque como `compra` (dia = data da compra, motivo "NF <nº>" ou
+   "Compra", custo, compra e linha); **à vista**: lançamento `pagamento_compra` negativo na conta escolhida, no dia da
+   compra; **a prazo**: uma conta a pagar aberta com o total e o vencimento;
+5. à vista: a saída não pode passar do saldo da conta, e, com a data de hoje pelo Caixa físico com o caixa aberto, não pode
+   passar do dinheiro esperado na gaveta (§15) (`apiLocal.ts:3004-3009`);
+6. **preço novo junto** (custo mudou, DaniPets CMP-04): exige também `produtos.alterar`; muda o preço dos produtos
+   indicados (se diferente) e registra `produto.preco_alterado` (`de`, `para`, `compra`) para cada um
+   (`apiLocal.ts:3013-3026`). A tela mostra custo, preço e margem; o preço sugerido mantém a margem: `max(1, round(preço ×
+   custo novo / custo antigo))`; margem = (preço − custo) / preço × 100 (`compra.ts:260-265`); custo antigo = o da última
+   compra valendo do produto (`compra.ts:247-258`);
+7. histórico `compra.registrada` (`numero`, `notaFiscal`, `totalCentavos`, `pagamento`, `dia` quando não é hoje) e, com
+   liberação, `dia_fechado.liberado`.
+
+Descrição usada no lançamento e na conta a pagar (até 120 caracteres): 1 item = "Compra <produto> • NF <nº> •
+<fornecedor>" (sem nota, sem o trecho da NF); vários = "Compra NF <nº ou 'sem número'> • <n> itens • <fornecedor>"; sem
+fornecedor = "sem fornecedor" (`compra.ts:267-271`).
+
+Lista: filtro de/até pela data; mais nova primeiro, depois maior número (`apiLocal.ts:2955-2961`).
+
+### 9.2 Estornar um item (compra lançada errada)
+
+(`legacy/core/src/compra.ts:336-403`; `legacy/web/src/demo/apiLocal.ts:3039-3069`)
+- "Compra não encontrada." (404) · "Item da compra não encontrado." · "Este item já foi estornado." · motivo obrigatório
+  ("Informe o motivo do estorno."), até 200 sem controle ("O motivo pode ter até 200 caracteres.").
+- Não pode deixar o estoque negativo: "O estorno deixaria o estoque de <nome> negativo (saldo atual <saldo>). Se parte da
+  mercadoria já foi vendida, corrija com um ajuste de estoque.".
+- Efeitos: movimento `estorno_compra` com a quantidade do item; o dinheiro: à vista → volta para a conta de onde saiu
+  (lançamento `estorno_compra`, "Estorno da compra <produto> • NF <nº>"); a prazo já paga → volta para a conta do
+  pagamento; a prazo aberta → a conta a pagar diminui o total do item (com o ajuste "Estorno do item <produto> •
+  <motivo>") e fica cancelada se zerar; a prazo cancelada → nada.
+- Se o dinheiro volta (há lançamento), o caixa de hoje não pode estar fechado (§11).
+- Histórico `compra.estornada` (alvo: o produto; `numero`, `valorCentavos`).
+
+### 9.3 Lotes e validade
+
+- Regra "o mais antigo sai primeiro": o saldo de hoje pertence às compras mais novas; o saldo é repartido da compra mais
+  recente para a mais antiga (por data, depois `criadaEm`, depois linha), só itens valendo (`compra.ts:533-551`).
+- Vencendo = validade até hoje + 30 dias (`DIAS_AVISO_VALIDADE`, DaniPets: 30), sem baixa e com algo do lote ainda no
+  estoque; vencido = validade antes de hoje; em ordem de validade (`compra.ts:29-30,553-575`;
+  `apiLocal.ts:3130-3135`).
+- **Dar baixa no lote** (`compra.ts:577-615`; `apiLocal.ts:3137-3161`): "Lote não encontrado." · "Este lote já teve
+  baixa." · quantidade inteira ≥ 0 ("Quantidade inválida."), até o saldo do produto ("O saldo de <nome> é <saldo>: não dá
+  para baixar <quantidade>.") · observação até 300 ("A observação pode ter até 300 caracteres."). Com quantidade > 0, sai
+  do estoque como `ajuste` "Produto vencido", observação "baixa do lote de <dd/mm/aaaa> (validade <dd/mm/aaaa>) •
+  <observação>". Quantidade 0 marca a baixa sem movimento. Histórico `compra.lote_baixado` (`quantidade`, `unidade`).
+
+### 9.4 Contas a pagar
+
+- Situações: `aberta`, `paga`, `cancelada` (`compra.ts:99-117`). Vêm da compra a prazo ou são avulsas.
+- **Conta avulsa** (Financeiro: aluguel, energia, boleto) — permissão `financeiro` e recurso Financeiro ligado
+  (`compra.ts:449-496`; `apiLocal.ts:3091-3104`): descrição de 2 a 120 ("Descreva a conta (ex.: Aluguel de dezembro)." ·
+  "Use até 120 caracteres."); valor > 0 ("Informe um valor maior que zero."); vencimento válido ("Informe o
+  vencimento.") de um ano atrás a dez anos à frente ("Vencimento fora do prazo aceito (de um ano atrás a dez anos à
+  frente)."); categoria opcional, até o limite das categorias (§15) ("Use até <n> caracteres."); outro campo: "Campo não
+  permitido."; corpo que não é objeto: "Envie um objeto com a conta a pagar.". Histórico `conta_pagar.criada`
+  (`valorCentavos`, `vencimento`, `categoria`).
+- **Pagar** — permissão `financeiro`; o caixa de hoje não pode estar fechado (§11) (`compra.ts:405-447`;
+  `apiLocal.ts:3106-3128`): "Conta a pagar não encontrada." (404) · "Esta conta já foi paga." · "Esta conta foi cancelada
+  (compra estornada)." · "Escolha a conta de pagamento."; pelo Caixa físico com o caixa aberto, não passa do esperado na
+  gaveta (mensagem da gaveta, §15); sem caixa aberto, não passa do saldo do Caixa físico: "O valor (<valor>) é maior que o
+  saldo do <nome do caixa> (<saldo, nunca abaixo de 0>)." (com o nome que a loja deu à conta). Lançamento
+  `pagamento_conta` negativo com a descrição e a categoria da conta. Histórico `conta_pagar.paga` (`valorCentavos`,
+  `conta`).
+- Resumo: total em aberto, quantas, total e quantidade das vencidas (vencimento antes de hoje) (`compra.ts:498-508`).
+- Lista: filtro por situação; ordem de vencimento, depois `criadoEm` (`apiLocal.ts:3071-3077`).
