@@ -1694,3 +1694,141 @@ fornecedor e da visão são buscados na hora de mostrar, e a exclusão da LGPD v
 | `financeiro.taxas` | Taxas de cartão alteradas | "débito <pct>" • "crédito <pct>" • "baixa automática"/"baixa manual" |
 
   "venda nº 00012" leva 5 dígitos; os nomes das contas saem com o nome que a loja deu (`auditoria.ts:170-200`).
+
+---
+
+## 18. Dados e backup
+
+Módulo 13 (DaniPets DAT-01, 05, 06 e 07; pedidos do Luan de 25/11/2026). Aba Dados e backup: permissão `dados` (Dono e
+Administrador). Só na demonstração.
+
+### 18.1 Cópia de segurança da loja
+
+(`legacy/core/src/copiaDaLoja.ts:1-222`; `legacy/web/src/demo/apiLocal.ts:3225-3266`)
+- Um arquivo JSON com todos os dados de UMA loja. Formato `sistema-padrao/copia-da-loja`, versão 1; máximo 50 MB
+  (`copiaDaLoja.ts:19-22`). Campos: `formato`, `versao`, `loja { id, nome }`, `geradaEm` (ISO), `geradaPor { id, nome }`,
+  `contagem` (registros por assunto), `dados`, `equipe` (sem senha) e `historico` (só para consulta), `conferencia`
+  (`copiaDaLoja.ts:56-71`).
+- Assuntos, na ordem da prévia (`copiaDaLoja.ts:24-49`): Dados e regras da loja (objeto), Produtos, Movimentos de estoque,
+  Estoques mínimos (mapa por produto), Fornecedores, Compras, Contas a pagar, Clientes, Vendas, Lançamentos do financeiro,
+  A receber, Taxas do cartão (objeto), Caixas do dia, Avisos de clientes excluídos, Cashback, Usos do cashback, Cupons de
+  retorno, Contatos com clientes, Vales-troca, Vendas antigas (importadas). Objeto null = a loja usa o padrão. Os ajustes
+  do suporte, os comunicados, as visões e o registro de erros não vão na cópia (`apiLocal.ts:333-349`).
+- **Baixar**: `dados` e `clientes.cpf` (a cópia leva o CPF completo); sem a segunda: 403 "A cópia de segurança leva o CPF
+  completo dos clientes: precisa também da função "Ver o CPF completo do cliente"." (`copiaDaLoja.ts:80,85-86`). Histórico
+  `dados.copia_gerada` (`registros`).
+- **Conferência**: SHA-256 (hexadecimal minúsculo) do JSON canônico (chaves em ordem, sem as `undefined`) de tudo menos a
+  própria conferência (`copiaDaLoja.ts:88-101,138-142`). Pega arquivo corrompido ou mexido à mão; não é assinatura. O próprio
+  core prevê que, no servidor, a conferência ganhe uma chave que só o servidor tem (`copiaDaLoja.ts:10-12`) — decisão em
+  `06-RISCOS-E-DECISOES.md`.
+- **Conferir e restaurar** (só `dados.restaurar`, o Adm. Sup): a tela baixa antes uma cópia dos dados de agora (DAT-05)
+  (`copiaDaLoja.ts:7`). Leitura (`copiaDaLoja.ts:158-222`), ignorando o BOM: vazio, JSON inválido ou outro formato → "Este
+  arquivo não é uma cópia de segurança do sistema."; maior que 50 MB → "O arquivo passa do tamanho máximo de uma cópia de
+  segurança (50 MB)."; versão maior → "Esta cópia foi feita por uma versão mais nova do sistema. Atualize o sistema antes de
+  restaurar."; outra loja → "Esta cópia é da loja "<nome>". Só dá para restaurar a cópia na mesma loja."; qualquer campo
+  fora do jeito, contagem que não bate ou conferência diferente → "O arquivo foi alterado depois de gerado (ou está
+  corrompido). Por segurança, ele não pode ser restaurado." (todas 400). Assunto que não existia quando a cópia foi feita
+  volta vazio.
+- A prévia mostra a loja, quando e por quem foi gerada, o total de registros e cada assunto com a quantidade
+  (`apiLocal.ts:474-480`). Restaurar troca todos os assuntos da loja pelos da cópia (null volta ao padrão); a equipe e o
+  histórico **não** voltam (as pessoas ficam com as senhas de hoje; o histórico só acrescenta e registra a própria
+  restauração); a loja restaurada não ganha os exemplos de novo (`apiLocal.ts:397-411,3253-3266`). Histórico
+  `dados.copia_restaurada` (`dia` da cópia, `registros`).
+
+### 18.2 Exportar planilhas de cadastro
+
+(`legacy/core/src/modelosDePlanilha.ts:1-65`; `legacy/web/src/painel/dados/planilhasDeCadastro.ts:1-152`)
+- As colunas da exportação são as mesmas do modelo de importação (o que se exporta de uma loja se importa em outra); a
+  importação acha a coluna pelo título, sem diferenciar maiúsculas e acentos; coluna "só consulta" vai na exportação e a
+  importação não lê.
+- **Produtos** (por nome): Código interno (só consulta), Nome*, Código de barras, Marca, Unidade, Peso da embalagem (kg),
+  Preço de venda*, Estoque, Custo (o custo médio; vazio para quem não vê custo), Estoque mínimo, Fornecedor, Situação (só
+  consulta: Ativo/Inativo); no kg, estoque e mínimo em quilos (`modelosDePlanilha.ts:24-37`; `planilhasDeCadastro.ts:36-65`).
+- **Clientes** (ativos e não excluídos, por nome): Nome*, Telefone*, CPF* (vazio, nunca mascarado, para quem não vê o CPF
+  completo), WhatsApp, Nascimento, Endereço, o campo extra da loja (quando ligado), Limite de fiado, Aceita mensagens,
+  Observações (`modelosDePlanilha.ts:39-53`; `planilhasDeCadastro.ts:67-90`).
+- **Fornecedores** (por nome): Nome*, CNPJ ou CPF, Telefone, Contato, Observação, Situação (só consulta:
+  Ativo/Desativado) (`modelosDePlanilha.ts:55-62`; `planilhasDeCadastro.ts:92-105`).
+- "Sim"/"Não" nas colunas de marcar (`modelosDePlanilha.ts:64-65`). Arquivo com o nome da loja sem acento e com hífens e o
+  momento "AAAA-MM-DD-HHMM" da loja (`planilhasDeCadastro.ts:131-152`).
+- **Modelo para importar**: a aba do cadastro só com os títulos (sem as colunas de consulta, sem linha de exemplo) e a aba
+  "Como preencher" (Coluna, Obrigatória, Como preencher), com as linhas finais "(cada linha) … Um cadastro por linha, a
+  partir da linha 2. Não mude os títulos da linha 1." e "(o que já existe) … O que já está cadastrado na loja fica como
+  está: a importação só acrescenta." (nas vendas antigas: "(histórico) … As vendas antigas entram só como histórico
+  (Relatórios → Vendas antigas): não mexem em estoque, caixa nem financeiro.") (`planilhasDeCadastro.ts:107-129`).
+- Exportar registra `dados.planilha_exportada` (`assunto` até 40, `linhas`); sem assunto: 400 "Diga qual planilha foi
+  exportada." (`apiLocal.ts:3268-3278`).
+
+### 18.3 Importar planilhas de cadastro
+
+(`legacy/core/src/importacao.ts:1-435`; `legacy/web/src/demo/apiLocal.ts:1280-1379,3280-3308`;
+`legacy/web/src/relatorios/lerPlanilha.ts:1-30`)
+- **Quem**: `dados` e o acesso ao cadastro (produtos: `produtos.cadastrar`; clientes: `clientes`; fornecedores: `compras`
+  e o recurso Compras ligado). Cadastro desconhecido: 400 "Escolha o que vai importar: produtos, clientes ou
+  fornecedores.".
+- **Arquivo**: .xlsx (primeira aba, com os textos compartilhados) ou .csv (separado por ponto e vírgula, vírgula ou tab,
+  com aspas; UTF-8 ou o padrão do Windows); até 20 MB de arquivo e 80 MB descompactado; corrompido: "Não foi possível ler a
+  planilha: o arquivo parece corrompido. Abra no Excel e salve de novo como .xlsx ou .csv." (`lerPlanilha.ts:1-30`). Tabela
+  que não chegou inteira (mais de 5002 linhas, mais de 200 colunas, célula com mais de 5000 caracteres): 400 "A planilha não
+  chegou inteira. Escolha o arquivo de novo." (`apiLocal.ts:413-425`).
+- **Títulos** (`importacao.ts:133-167`): planilha vazia → "A planilha está vazia: a primeira linha precisa ter os títulos
+  das colunas."; mais de 5000 linhas → "A planilha tem mais de 5.000 linhas. Divida em arquivos menores."; até 60 colunas;
+  coluna achada pelo título sem acento, minúsculo e com um espaço só; coluna fora do modelo ou só de consulta é ignorada
+  (e listada); falta obrigatória → "A planilha não tem a coluna "X" (ou "as colunas "X", "Y" e "Z"). Baixe o modelo para
+  conferir os títulos.".
+- **Células** (`importacao.ts:63-131`): texto (número vira texto como está; sim/não vira "Sim"/"Não"); dinheiro (número da
+  planilha × 100 arredondado, ou o texto lido como §6.1); número ("2,5", "1.234,5", "2.5"); data (número de data do Excel,
+  dias desde 30/12/1899, "dd/mm/aaaa" com / . ou -, ou "aaaa-mm-dd"); sim/não (sim, s, yes, y, x, 1, true, verdadeiro, v /
+  nao, n, no, 0, false, falso, f).
+- **Situação de cada linha** (a dos títulos é a 1): "Entra" (nova), "Já cadastrado" (existe), "Repetida na planilha",
+  "Com erro" (`importacao.ts:32-34`). Linhas totalmente vazias são puladas.
+- **Produtos** (`importacao.ts:191-307`): unidade un/und/unid/unidade/u ou kg/quilo/kilo/quilograma/granel (vazio = un;
+  outra: "Unidade "<x>": use un (por unidade) ou kg (por quilo)."; desligada nas regras: a mensagem da loja); peso em kg ≥ 0
+  ("Peso da embalagem: use um número em quilos (15, ou 0,5 para 500 g)."); preço ("Preço de venda: use um valor em reais,
+  como 24,90." · "Informe o preço de venda."); estoque ≥ 0, inteiro no un, quilos no kg ("Estoque: use um número de 0 em
+  diante." · "Estoque: no produto por unidade, use um número inteiro."); custo ("Custo: use um valor em reais, como
+  12,50."; sem `produtos.alterar` ou sem estoque, entra com o aviso "O custo fica de fora: …"); estoque mínimo (sem
+  `estoque.lancar`: aviso); fornecedor pelo nome (desativado ou não cadastrado: aviso, entra sem fornecedor); depois as
+  regras do cadastro (§7.1). Código de barras que é código interno de outro produto: erro; o mesmo código de barras ou
+  produto parecido: "Já cadastrado …"; repetido na planilha: "Repetida: igual à linha N.".
+- **Clientes** (`importacao.ts:309-388`): telefone e CPF podem faltar (aviso "Cadastro incompleto (sem CPF e sem telefone):
+  só compra no fiado depois de completar."); WhatsApp e "Aceita mensagens" sim/não; nascimento; limite (sem
+  `clientes.limite`: aviso); o mesmo cliente = mesmo CPF, ou sem CPF o mesmo nome e telefone ("Já cadastrado com o CPF
+  ***.456.789-**: "<nome>" (desativado)." / "… com o mesmo nome e telefone …"); repetido: "Repetida: o mesmo cliente da linha
+  N.".
+- **Fornecedores** (`importacao.ts:390-424`): regras do cadastro (§8); o mesmo = mesmo documento, ou sem documento o mesmo
+  nome.
+- **Prévia** (`apiLocal.ts:427-437,3280-3286`): colunas achadas, ignoradas, contagem e até 500 linhas (as que não entram e
+  as que entram com aviso); produtos: o limite de produtos ativos já na prévia (§5.4). Resumo "95 linhas entram, 20 já
+  cadastradas, 2 repetidas e 3 com erro." (`importacao.ts:426-435`).
+- **Importar** (`apiLocal.ts:3288-3308`): confere de novo dentro da trava; com erro e sem confirmar "só as linhas certas":
+  409 `linhas_com_erro` "A planilha tem N linha(s) com erro. Corrija a planilha ou importe só as linhas certas."; nada novo:
+  409 "Nada a importar: as linhas da planilha já estão cadastradas, repetidas ou com erro."; grava tudo ou nada (produtos com
+  código interno novo, estoque inicial e mínimo; clientes e fornecedores ativos); histórico `dados.importados`
+  (`assunto`, `linhas`, `existentes`); devolve importadas, existentes, repetidas e com erro.
+
+### 18.4 Vendas antigas (só histórico)
+
+(`legacy/core/src/vendasAntigas.ts:1-216`; `legacy/web/src/demo/apiLocal.ts:1361-1374,3310-3343`)
+- Vendas de outro sistema, importadas só como histórico: não mexem em estoque, caixa nem financeiro e não entram nos números
+  do dia a dia; aparecem só em Relatórios → Vendas antigas.
+- Quem: `dados`, `relatorios` e o recurso Relatórios ligado. Listar: `relatorios`; do dia mais novo para o mais antigo.
+- Colunas: Data*, Número, Cliente, Produto, Quantidade, Preço unitário, Total, Forma de pagamento, Vendedor
+  (`vendasAntigas.ts:52-62`).
+- Dois formatos na mesma planilha: com Produto, cada linha é um item (quantidade em branco = 1; total = Total ou
+  `round(quantidade × preço)`), e as linhas com o mesmo Número no mesmo dia são uma venda; sem Produto, a linha é a venda
+  inteira (precisa do Total). Sem Número, cada linha é uma venda.
+- Mensagens: "Data: use dia, mês e ano (dd/mm/aaaa)." · "Informe a data da venda." · "A data é depois de hoje." · "A data é
+  de antes de 2000." · "Quantidade: use um número maior que zero." · "Preço unitário: use um valor em reais, como 24,90." ·
+  "Total: use um valor em reais, como 24,90." · "Informe o total do item, ou o preço unitário." · "Informe o total da
+  venda." · venda com uma linha com erro fica de fora inteira: "A venda tem uma linha com erro (linha N): fica de fora
+  inteira." · "O total da venda precisa ser maior que zero.".
+- Forma de pagamento conhecida vira o nome padrão (dinheiro/espécie → Dinheiro; pix → Pix; débito/cartão de débito →
+  Débito; crédito/cartão de crédito → Crédito; fiado/crediário → Fiado); outra fica como veio (`vendasAntigas.ts:64-78`).
+- Já importada (o mesmo dia e número; sem número, o mesmo dia, total, cliente e itens) fica de fora: "Já importada: a venda
+  <nº> de dd/mm/aaaa." / "Já importada: uma venda igual (mesmo dia, total, cliente e itens)." (`vendasAntigas.ts:91-96,
+  188-197`).
+- Importar: com erro e sem confirmar: 409 `linhas_com_erro` "A planilha tem N linha(s) com erro. Corrija a planilha ou
+  importe só as vendas certas."; nada novo: 409 "Nada a importar: as vendas da planilha já foram importadas ou têm erro.";
+  guarda quem importou e quando; histórico `dados.vendas_importadas` (`vendas`, `totalCentavos`, `de`, `ate`).
+- Resumo da aba: quantas, total, ticket médio (`round`) e itens com produto (`vendasAntigas.ts:207-216`).
