@@ -1914,3 +1914,72 @@ demonstração.
   máximo ("Envie a mensagem do erro."); o mesmo erro (mensagem, onde, aba e pessoa) em até 60 segundos vira "mais uma vez"
   na mesma linha; guarda os 100 mais novos por loja. Listar: só o Adm. Sup, do mais novo para o mais antigo, com o nome de
   quem. Limpar: histórico `suporte.erros_limpos` (`erros`).
+
+---
+
+## 20. Como as operações gravam (da demonstração para o servidor)
+
+A demonstração imita no navegador o que o banco faz no servidor (`legacy/web/src/demo/armazenamento.ts:1-11`). A
+reconstrução troca cada peça pelo equivalente no PostgreSQL:
+
+| Na demonstração | O que garante | Na reconstrução | Fonte |
+|---|---|---|---|
+| `transacao`: as gravações de uma operação vão juntas no fim; se uma falhar, as anteriores são desfeitas | tudo ou nada (venda + estoque + financeiro + histórico) | uma transação do banco por operação (`@Transactional`), com o `SET LOCAL app.tenant_id` (§2) | `armazenamento.ts:184-202` |
+| `comTrava` (Web Locks): uma operação por vez entre as abas | duas abas vendendo ao mesmo tempo não sobrescrevem uma à outra | travas por loja no banco para o que é sequencial (número da venda, compra, devolução e vale; código interno) e `SELECT … FOR UPDATE` no que muda saldo; o servidor antigo já usava `pg_advisory_xact_lock` por loja | `armazenamento.ts:204-228`; `legacy/api/src/produtos/codigos.ts:9-22` |
+| `gravarOperacao` fecha os caixas de dias passados antes de qualquer gravação | o caixa que passou da meia-noite fecha sozinho antes de qualquer lançamento | o mesmo passo no começo de cada operação que grava e nas leituras do caixa (§11.6) | `legacy/web/src/demo/apiLocal.ts:925-933,1040-1053` |
+| `exigirOperador` relê a pessoa a cada pedido | desativado perde o acesso na hora (401 "Seu acesso a esta loja foi desativado. Fale com o Dono da loja.", `sessao_encerrada`); papel mudado vale na hora | a guarda da sessão relê o usuário a cada requisição (§1.5) | `apiLocal.ts:934-947` |
+| navegador recusou gravar (cheio): 507 `gravacao_recusada` "<mensagem> Veja o aviso vermelho no alto da tela." | nada fica pela metade | erro do banco desfaz a transação; a tela recebe o erro padrão | `armazenamento.ts:16-32,206-219` |
+| aviso às outras abas (evento "storage"); `avisarQueOsDadosMudaram` depois de cada ação | as telas recarregam sozinhas, mantendo o que a pessoa digita | depois de cada ação HTMX, as partes da tela que mostram aqueles dados são recarregadas | `armazenamento.ts:233-257`; `legacy/web/src/sincronizacao.ts:1-17` |
+| autorizações dadas com senha guardadas na memória da aba | uso único, 4 horas, por loja | guardadas no banco, com a loja, a expiração e o uso único (§10.5) | `apiLocal.ts:568-570` |
+| `preparar`: espera artificial (`atrasoMs`) e, na primeira vez, monta os exemplos da loja | parecer um servidor; ter dados para mostrar | não existe na reconstrução: sem atraso artificial e sem dados de exemplo em produção (decisão em `06-RISCOS-E-DECISOES.md`) | `apiLocal.ts:905-924` |
+
+Toda mensagem de erro de regra chega à tela como `{ mensagem, erros: [{ campo, mensagem }], codigo? }` com o status
+(400 validação, 401 sessão, 403 permissão ou recurso desligado, 404 não encontrado, 409 conflito de regra, 429 bloqueio)
+(§1.7; `legacy/web/src/api.ts`).
+
+---
+
+## 21. Casos-limite conhecidos
+
+Comportamentos do sistema antigo que a reconstrução precisa repetir (ou decidir de forma registrada em
+`06-RISCOS-E-DECISOES.md`):
+
+1. **Personalizado como autorizador**: aparece na lista de quem autoriza quem tem `desconto.acima_do_limite`
+   (`legacy/web/src/demo/usuariosDemo.ts:334-339`), mas a autorização de desconto acima do limite só vale de quem tem também
+   `estorno` (`legacy/core/src/venda.ts:367-368`). Um Personalizado com só a primeira aparece na lista e a senha dele
+   certa é recusada na venda ("… precisa da autorização do Dono ou do Administrador. Aplique o desconto de novo.").
+2. **Relatórios sem `usuarios`**: a aba Histórico dos Relatórios lê o histórico, que exige `usuarios`; um Personalizado com
+   `relatorios` e sem `usuarios` vê a aba sem dados (a parte falha e a aba avisa) (`legacy/web/src/relatorios/planilhas.ts:
+   94-118`; `usuariosDemo.ts:401-405,534-535`).
+3. **Custo só com `compras`**: a lista do estoque só traz o custo médio para quem tem `compras`
+   (`legacy/web/src/demo/apiLocal.ts:1852-1853`); quem tem `relatorios` sem `compras` vê a posição de estoque sem custo,
+   mas o lucro dos Relatórios usa o custo guardado em cada venda (`planilhas.ts:286-304`).
+4. **Vencido: cartão × fiado**: o recebível de cartão conta como vencido já no dia em que deveria cair (`venceEm <= hoje`)
+   (`legacy/core/src/financeiro.ts:341-346,361-364`); o fiado só no dia seguinte ao vencimento (`venceEm < hoje`)
+   (`legacy/core/src/fiado.ts:48`; `apiLocal.ts:2594-2595`).
+5. **Texto da pendência 6/7 (desligadas)** usa "un" mesmo no produto por kg (`legacy/web/src/painel/regrasPendencias.ts:37,
+   45`). Se o Luan ligar essas pendências, decidir o texto antes.
+6. **Saldo negativo**: as regras impedem venda sem estoque, ajuste e estorno de compra que deixem o saldo negativo
+   (§7.3, §9.2); saldo negativo só aparece em dados antigos ou restaurados, e a manutenção do Adm. Sup zera com um ajuste
+   (§19.3).
+7. **CPF único só entre ativos** (`legacy/core/src/cliente.ts:202-206`): dois clientes inativos podem ter o mesmo CPF;
+   reativar confere (`apiLocal.ts:2043-2046`). Na importação, "já cadastrado" olha todos, ativos ou não
+   (`legacy/core/src/importacao.ts:321-327`).
+8. **Cancelamento de venda sem caixa**: venda gravada antes do Caixa do dia (sem `caixaId`) cancela com qualquer caixa de
+   hoje aberto (`venda.ts:771-774`).
+9. **Histórico da demonstração** guarda só as últimas 2000 linhas por loja (`usuariosDemo.ts:65,232`), mas a regra do core
+   é nunca apagar (`legacy/core/src/auditoria.ts:4`); o servidor antigo guardava tudo.
+10. **Autorização perdida ao recarregar**: na demonstração, recarregar a página entre "autorizar" e "confirmar" perde a
+    autorização (`apiLocal.ts:568-570`); no servidor, a autorização vive 4 horas.
+11. **Arredondamentos**: todas as contas usam `Math.round` do JavaScript (meio para cima, em direção a +∞) sobre números
+    exatos em centavos ou em centésimos de %; o desconto compara o % com folga de 1e-9 (`venda.ts:343-354`). Em Java,
+    `Math.round(double)` tem o mesmo comportamento; não usar `BigDecimal` com HALF_EVEN.
+12. **Ordem alfabética e moeda**: listas por nome usam `localeCompare('pt-BR')` e o dinheiro sai de
+    `Intl.NumberFormat('pt-BR', BRL)` (U+00A0 depois de "R$"); a reconstrução usa `Collator` e `NumberFormat` do Java para
+    pt-BR, conferidos por testes contra os textos do sistema antigo (risco em `06-RISCOS-E-DECISOES.md`).
+13. **Vendedor só hoje**: o Vendedor (quem não tem `relatorios`) só lista vendas e devoluções de hoje (403 "Vendas de outros
+    dias: só o Dono ou o Administrador (Relatórios).") (`apiLocal.ts:962-968`).
+14. **"Não incomodar" não bloqueia o envio manual**: tira o cliente das listas de lembrete, mas a mensagem pela conta do
+    cliente continua possível (decisão do Luan de 23/11/2026) (`apiLocal.ts:2539-2542`; `legacy/core/src/fidelidade.ts:
+    404-408`).
+15. **Vale-troca de cliente excluído pela LGPD** continua valendo para quem tem o código (`legacy/core/src/vale.ts:11`).
