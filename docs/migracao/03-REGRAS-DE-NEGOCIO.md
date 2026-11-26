@@ -981,3 +981,144 @@ hoje: 403 "Vendas de outros dias: só o Dono ou o Administrador (Relatórios).";
   por forma. Por vendedor: do maior total para o menor, empate por nome (pt-BR).
 - Devoluções de um período: pela data da devolução, com o número da venda, quem vendeu, o cliente e as formas da venda
   (`apiLocal.ts:1839-1843`, mesma regra do Vendedor só hoje).
+
+---
+
+## 11. Caixa do dia
+
+Regras do DaniPets V9.3.3, CX-01 a 08, PDV-12 e DEV-05 (`legacy/core/src/caixa.ts:1-24`). Só na demonstração (o servidor
+antigo não tinha caixa).
+
+### 11.1 Situação
+
+- Um caixa por loja por dia (no fuso da loja); estados do dia de hoje: `nao_aberto`, `aberto`, `fechado`; "atrasado" = o
+  dia mais antigo antes de hoje ainda aberto; "último dia fechado" = o maior dia com fechamento (`caixa.ts:123-146,
+  170-179`).
+- **Dia travado** (DaniPets lockedDay): antes de hoje e até o último dia fechado (`caixa.ts:181-185`).
+- Travas usadas pelas outras operações:
+  - vender (PDV-12) — fechado: "O caixa de hoje já foi fechado. Para vender hoje, o Dono ou o Administrador pode desfazer
+    o fechamento em Caixa do dia."; não aberto: "Abra o caixa de hoje (Caixa do dia) antes de vender." (`caixa.ts:187-192`);
+  - lançar hoje (pagar conta, devolver, lançamento do Financeiro, estorno de compra que devolve dinheiro, compra à vista com
+    a data de hoje, receber fiado) — fechado: "O caixa de hoje já foi fechado: não é possível lançar hoje. O Dono ou o
+    Administrador pode desfazer o fechamento em Caixa do dia." (DaniPets assertOpen) (`caixa.ts:194-200`);
+  - dinheiro que entra ou sai da gaveta pela tela (devolver em dinheiro, receber em dinheiro): a trava acima e, sem caixa
+    aberto, "<O que>: abra o caixa de hoje (Caixa do dia) primeiro." (ex.: "Devolução em dinheiro: …") (`caixa.ts:202-208`).
+  Todas saem como 409 com `codigo: caixa` (`legacy/web/src/demo/apiLocal.ts:1054-1059,1571`).
+
+### 11.2 Abrir (`caixa`)
+
+(`caixa.ts:210-233`; `apiLocal.ts:2814-2827`)
+- Campos `fundoCentavos` (inteiro ≥ 0: todo o dinheiro que está na gaveta agora) e `observacao` (opcional, até 200,
+  espaços juntados); outro campo: "Campo não permitido."; corpo que não é objeto: "Envie um objeto com a abertura.".
+- "O caixa de hoje já está aberto." · "O caixa de hoje já foi fechado. O Dono ou o Administrador pode desfazer o
+  fechamento." · "Feche o caixa de <dd/mm/aaaa> antes de abrir o de hoje." (409) · "Informe o fundo de troco (todo o
+  dinheiro que está na gaveta agora)." · "A observação deve ser um texto." / "A observação pode ter até 200
+  caracteres." / "A observação contém caracteres inválidos." (400).
+- Quem abre é o responsável. Histórico `caixa.aberto` (`dia`, `fundoCentavos`).
+
+### 11.3 Gaveta e resumo do dia
+
+- **Esperado na gaveta** = fundo + entradas − saídas do Caixa físico no dia do caixa, lançadas depois da abertura; ficam
+  fora o saldo inicial de implantação (`saldo_inicial`) e o ajuste do fechamento (`ajuste_caixa`) (`caixa.ts:235-260`).
+- Resumo guardado no fechamento: vendas do dia por forma (sem as canceladas), entradas, saídas, sangrias, retiradas,
+  suprimentos e dinheiro devolvido a clientes (`estorno_venda`) (`caixa.ts:57-69,262-286`).
+- **Ninguém tira da gaveta mais do que o esperado** (DaniPets CX-07): "O valor (<valor>) é maior que o dinheiro esperado na
+  gaveta (<esperado, nunca abaixo de 0>). Confira o valor digitado. Se entrou dinheiro sem registro, lance um suprimento
+  antes."; sem caixa aberto, a saída do Caixa físico não passa do saldo dele: "O valor (<valor>) é maior que o saldo do
+  <nome do caixa> (<saldo>). Confira o valor digitado." (o Banco pode ficar negativo) (`legacy/core/src/financeiro.ts:
+  614-642`).
+
+### 11.4 Sangria, retirada do dono e suprimento (`caixa`)
+
+(`caixa.ts:288-344`; `apiLocal.ts:2829-2858`)
+
+| Tipo | Nome | Lançamentos | Descrição |
+|---|---|---|---|
+| `sangria` | Sangria (depositar no banco) | − no Caixa físico (`sangria`) e + na Conta bancária (`deposito_sangria`) | "Sangria • <descrição>" / "Sangria do caixa • <descrição>" |
+| `retirada` | Retirada do dono (levou para casa) | − no Caixa físico (`retirada`), com quem autorizou | "Retirada do dono (gaveta) • <descrição>" |
+| `suprimento` | Suprimento (pôr na gaveta) | + no Caixa físico (`suprimento`) | "Suprimento • <descrição>" |
+
+- Campos `tipo`, `valorCentavos` (> 0), `descricao` (obrigatória, até 120), `autorizacao`: "Escolha sangria, retirada do
+  dono ou suprimento." · "Informe o valor." · "Descreva a operação (ex.: levou ao banco)." · "Autorização inválida." ·
+  "Envie um objeto com a operação.".
+- Exige o caixa de hoje aberto: fechado → a trava de 11.1; não aberto → 409 "Abra o caixa de hoje primeiro.".
+- Retirada por quem não tem `caixa.retirada` (o Vendedor): precisa da autorização do Dono ou do Administrador para
+  `retirada` deste mesmo valor: 403 `precisa_autorizacao` "Retirada do dono: precisa da senha do Dono ou do
+  Administrador.".
+- Não passa do esperado na gaveta (11.3). Lançamentos no dia do caixa, com o caixa. Histórico `caixa.sangria`,
+  `caixa.retirada` (com `autorizadoPor`) ou `caixa.suprimento` (`valorCentavos`).
+
+### 11.5 Fechar (`caixa`)
+
+(`caixa.ts:346-473`; `apiLocal.ts:2860-2906`)
+- Campos `dia`, `contadoCentavos` (≥ 0), `justificativa` (opcional, até 300), `autorizacao`: "Dia do caixa inválido." ·
+  "Informe o dinheiro contado na gaveta." · "Envie um objeto com o fechamento.".
+- "Este dia não tem caixa aberto." · "Este dia já foi fechado." · "Data no futuro não é permitida." · fecha sempre o dia
+  mais antigo em aberto: "Feche primeiro o caixa de <dd/mm/aaaa>." (409).
+- Diferença = contado − esperado; diferente de zero exige justificativa: 400 "Há <falta|sobra> de <valor> na gaveta.
+  Escreva a justificativa (por exemplo: troco errado, pagamento sem registro).".
+- Acima da tolerância da loja (§5.3, padrão R$ 10,00), quem não tem `caixa.diferenca` precisa da autorização do Dono ou do
+  Administrador para `fechamento` deste dia e deste valor contado: 403 `precisa_autorizacao` "Diferença acima de <tolerância>:
+  o fechamento precisa da autorização do Dono ou do Administrador.".
+- Grava o fechamento (quem, quando, fundo, esperado, contado, diferença, ajuste = diferença, justificativa, quem autorizou,
+  resumo e a tolerância daquele momento). Diferença ≠ 0 vira lançamento `ajuste_caixa` no Caixa físico, no dia do caixa:
+  "<Falta|Sobra> no fechamento de <dd/mm/aaaa> • <justificativa>".
+- Se quem fechou ou quem autorizou tem `caixa.ciencia` (o Dono), a diferença acima da tolerância já entra com a ciência
+  dele. Histórico `caixa.fechado` (`dia`, `esperadoCentavos`, `contadoCentavos`, `diferencaCentavos`, `autorizadoPor`).
+
+### 11.6 Fechamento automático à meia-noite (DaniPets CX-06)
+
+- O caixa de um dia anterior ainda aberto fecha sozinho, sem contagem e sem ajuste: `por` = Sistema (null), contado e
+  diferença null, ajuste 0, justificativa "Fechamento automático à meia-noite: sem valor contado e sem ajuste no saldo."
+  (`caixa.ts:44-45,475-513`).
+- Exceção: o dia reaberto HOJE com "Desfazer fechamento" fica aberto até a próxima meia-noite (`caixa.ts:475-482`).
+- Quando: antes de toda operação que grava e nas leituras do caixa e da situação (`apiLocal.ts:925-933,1040-1053,2755,
+  2784`); a tela confere a virada do dia a cada 10 segundos e quando volta a ficar visível, mas o fechamento não depende
+  dela (`legacy/web/src/painel/usarViradaDoDia.ts:1-30`). Histórico `caixa.fechamento_automatico` (`dia`,
+  `esperadoCentavos`), sem autor.
+- Fica como pendência "Deseja verificar?" para quem tem `caixa.desfazer`, do mais antigo (`caixa.ts:515-519`;
+  `apiLocal.ts:2793-2796`). **Verificar** (`caixa.desfazer`): observação opcional (até 300); "Caixa não encontrado." (404) ·
+  "Este caixa não está fechado." · "Só o fechamento automático precisa ser verificado." · "Este fechamento já foi verificado
+  por <nome>." (409); nada mais muda; histórico `caixa.fechamento_verificado` (`dia`, `esperadoCentavos`, `comObservacao`)
+  (`caixa.ts:521-544`; `apiLocal.ts:2908-2921`).
+
+### 11.7 Diferença acima da tolerância (pendência 3)
+
+- Fechamento contado (não automático) com |diferença| acima da tolerância guardada nele (o antigo, sem ela, usa a de agora)
+  fica como pendência do Dono (`caixa.ciencia`) até ele dar ciência (`caixa.ts:546-573`; `apiLocal.ts:2797-2810`).
+- **Dar ciência**: "Caixa não encontrado." (404) · "Este caixa não está fechado." · "Este fechamento não tem diferença acima
+  da tolerância." · "<nome> já está ciente deste fechamento." (409); histórico `caixa.diferenca_ciente` (`dia`,
+  `diferencaCentavos`) (`apiLocal.ts:2923-2935`).
+
+### 11.8 Desfazer o fechamento (`caixa.desfazer`)
+
+(`caixa.ts:575-627`; `apiLocal.ts:2937-2952`)
+- Campos `motivo` (obrigatório, até 200: "Informe o motivo.") e `explicacao` (até 300); "Envie um objeto com o motivo.".
+- "Caixa não encontrado." (404) · "Este caixa não está fechado." · "Só é possível desfazer o último fechamento." · "Há caixa
+  aberto depois deste dia. Não é possível desfazer." (409) · fechamento automático exige a explicação: 400 "Explique por que
+  o fechamento automático precisa ser ajustado.".
+- Reabre o dia; o fechamento fica guardado como desfeito (quando, quem, motivo, explicação); o ajuste, se houve, é
+  estornado com um `ajuste_caixa` contrário: "Estorno do ajuste do fechamento de <dd/mm/aaaa> (fechamento desfeito)".
+  Histórico `caixa.fechamento_desfeito` (`dia`, `automatico`).
+
+### 11.9 Liberação do Dono para um dia travado (DaniPets assertRetro)
+
+(`caixa.ts:629-684`; `apiLocal.ts:1060-1075`)
+- Compra com data, entrada ou ajuste de estoque com data e lançamento do Financeiro com data num dia travado só passam com
+  `liberacao: { autorizacao, motivo }`: a autorização de quem tem `dia_fechado.liberar` (o Dono), do tipo `dia_fechado`
+  para aquele dia, dentro de 4 horas, e um motivo (até 200).
+- "Liberação inválida." · "Informe o motivo da liberação." (400); sem liberação válida: 409 `dia_fechado` "<motivo da
+  trava>: <o que> nesse dia precisa da liberação de um Dono.", com o motivo "O caixa de <dd/mm/aaaa> já foi fechado" ou
+  "<dd/mm/aaaa> fica antes do último caixa fechado (<dd/mm/aaaa>)".
+- A operação guarda a liberação (quem, motivo, quando); a autorização é gasta no fim; histórico `dia_fechado.liberado`
+  (`oque`: compra | ajuste | entrada | financeiro, `dia`, `autorizadoPor`).
+
+### 11.10 Leituras
+
+- **Caixa do dia** (`caixa`) (`apiLocal.ts:2752-2779`): hoje, estado, o caixa de hoje, o atrasado, o dia a fechar (o mais
+  antigo em aberto) com a gaveta, as vendas de hoje por forma, os movimentos do Caixa físico (com o caixa aberto: os da
+  gaveta; senão, os de hoje), o histórico de caixas (mais novo primeiro), o saldo do Caixa físico só para quem tem
+  `financeiro`, a tolerância e o último dia fechado.
+- **Situação** (qualquer logado, para o cabeçalho e a Frente de caixa) (`apiLocal.ts:2781-2812`): hoje, estado, aberto em,
+  fechado em, responsável, dia atrasado, e as pendências (a verificar, para `caixa.desfazer`; diferenças, para
+  `caixa.ciencia`).
