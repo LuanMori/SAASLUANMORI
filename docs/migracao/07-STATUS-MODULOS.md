@@ -2,7 +2,8 @@
 
 ## Fase atual
 
-**Fase 0 — Preparação: concluída em 26/11/2026, aguardando aprovação** (branch `migration/rebuild`).
+**Fase 0 — Preparação: concluída em 26/11/2026, aguardando aprovação** (branch `migration/rebuild`, PR #3 para o
+`teste-local-windows`).
 Falta só um item do critério de aceite, que depende do dono: a tag `pre-demolicao` no GitHub (ver Pendências abertas).
 Próxima: **Fase 1 — Especificação** (branch `migration/fase-1-especificacao`, depois do merge da Fase 0).
 
@@ -35,7 +36,7 @@ definitiva, com a ordem de dependência e o módulo de referência, sai na Fase 
 
 | Módulo | Status | PR | Testes | Isolamento | RLS | Design |
 |---|---|---|---|---|---|---|
-| Preparação (Fase 0) | ✅ aguardando aprovação | — | — | — | — | — |
+| Preparação (Fase 0) | ✅ aguardando aprovação | #3 | — | — | — | — |
 | Especificação (Fase 1) | ⏳ pendente | — | — | — | — | — |
 | Fundação (Fase 2) | ⏳ pendente | — | — | — | — | — |
 | Entrada (login, primeiro acesso, trocar a senha) | ⏳ pendente | — | — | — | — | — |
@@ -66,7 +67,7 @@ definitiva, com a ordem de dependência e o módulo de referência, sai na Fase 
   `docs/MIGRACAO-JAVA.md` e `.github/workflows/validar-migracao.yml`. A `main` segue um caminho separado do
   `teste-local-windows` desde 12/11/2026 (`c541411`), e esse ensaio usa Auth0, o contrário da decisão 2.4. No merge da
   Fase 6 ele vai conflitar com a reconstrução.
-- [ ] **Aprovação da Fase 0** (PR para o `teste-local-windows`) para começar a Fase 1.
+- [ ] **Aprovação da Fase 0** (PR #3 para o `teste-local-windows`) para começar a Fase 1.
 
 ## Decisões tomadas
 
