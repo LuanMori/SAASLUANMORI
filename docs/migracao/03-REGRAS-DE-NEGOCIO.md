@@ -1535,3 +1535,162 @@ dia e quem autorizou (`financeiro.ts:121-155`). Dia do lançamento = `dia` grava
   "Escolha o período do extrato (de e até)." · "A data inicial é depois da final." · período de até um ano ("Escolha um
   período de até um ano."). Saldo anterior (até o dia antes de "de"), cada lançamento do período na ordem do dia e da hora
   gravada com o saldo depois dele, entradas, saídas e saldo final; lançamento com data de um dia anterior entra naquele dia.
+
+---
+
+## 16. Visão geral e Relatórios
+
+### 16.1 Visão geral
+
+(`legacy/web/src/painel/TelaVisaoGeral.tsx:1-15`)
+- Só o essencial, no formato do DaniPets: **Vendas de hoje** (cartão grande; ao clicar, abre embaixo o relatório do dia:
+  por forma de pagamento, por quem vendeu e venda por venda), **Produtos ativos** (leva a Produtos e estoque) e **Saldo das
+  contas** (Caixa físico + Conta bancária e o que ainda cai de cartão; só para quem tem `financeiro`; leva ao Financeiro).
+  "Hoje" é o dia no fuso da loja: à meia-noite os números voltam a zero sozinhos, sem apagar nada.
+- **Card Pendências** (`legacy/web/src/painel/pendencias.ts:1-43`; `docs/PENDENCIAS.md`): urgentes primeiro (alta, ícone
+  vermelho), depois atenção (média, ícone amarelo), na ordem de chegada dentro de cada grupo; botão opcional que leva à aba
+  onde se resolve (some para quem não pode abrir a aba) ou abre uma janela na própria Visão geral; "só gestor" some para
+  quem não é Dono, Administrador ou Adm. Sup; "só Dono" some para quem não é Dono ou Adm. Sup.
+- **Status das pendências: A DEFINIR** (`docs/PENDENCIAS.md:3-11`). Ligadas pelo Luan:
+
+| Nº | Pendência | Quem vê | Gravidade | Texto | Botão | Fonte |
+|---|---|---|---|---|---|---|
+| 3 | fechamento com diferença acima da tolerância, até o Dono dar ciência | só Dono | alta | "Fechamento de dd/mm/aaaa com <falta\|sobra> de <valor>, acima da tolerância de <valor> (fechou: <nome> • autorizou: <nome>)." | Conferir (Caixa do dia) | `legacy/web/src/painel/regrasPendencias.ts:113-121` |
+| 16 | caixa fechado sozinho à meia-noite | só gestor | média | "O caixa de dd/mm/aaaa fechou sozinho à meia-noite, sem contagem da gaveta (esperado <valor>). Deseja verificar?" | Verificar (Caixa do dia) | `regrasPendencias.ts:122-130` |
+| 2 | dia anterior com caixa aberto | todos | média | "Dia com caixa aberto e sem fechamento: dd/mm/aaaa. Feche esse dia para abrir o caixa de hoje." | Ir ao caixa | `regrasPendencias.ts:131-137` |
+| 1 | caixa de hoje não aberto (só quando não há o 2) | todos | média | "O caixa de hoje não foi aberto: vendas ficam bloqueadas." | Abrir caixa | `regrasPendencias.ts:138-145` |
+| 17 | fiado a vencer (hoje a 7 dias) | `clientes.fiado` | — | "Fiado a vencer · N" | Ver lista | `legacy/web/src/painel/PendenciasDoInicio.tsx:1-60` |
+| 18 | cashback a vencer | `clientes` e Fidelidade ligada | — | "Cashback a vencer · N" | Ver lista | idem |
+| 19 | promoções exclusivas (sumidos com o cupom) | `clientes`, Fidelidade e cupom ligados | — | "Promoções exclusivas · N" | Ver lista | idem |
+
+  Prontas e **desligadas** (não aparecem até o Luan escolher): 6 estoque baixo, 7 estoque negativo, 10 cartão vencido sem
+  confirmar, 11 fiado vencido, 12 clientes para lembrar hoje (`regrasPendencias.ts:1-19,25-101`). Sem nenhuma pendência, o
+  card diz "Nada pendente. Tudo em ordem." e a nota "Por enquanto, estão ligados os avisos do caixa e dos clientes (fiado a
+  vencer, cashback a vencer e promoções). Os outros (estoque, validade, contas…) ainda vamos escolher."
+  (`pendencias.ts:41-43`; `docs/PENDENCIAS.md:10-11`). A reconstrução liga e desliga exatamente as mesmas.
+
+### 16.2 Relatórios (`relatorios`; recurso Relatórios ligado)
+
+(`legacy/web/src/painel/TelaRelatorios.tsx:1-60`; `legacy/web/src/relatorios/planilhas.ts:1-12`)
+- Período no topo, para todas as abas; atalhos "Todas" (sem período), "Hoje", "Ontem", "Últimos 7 dias" (hoje − 6 até
+  hoje), "Este mês" (dia 1 até hoje) e as datas (`TelaRelatorios.tsx:38-60`).
+- Abas: Tudo (resumo de cada assunto), Vendas, Produtos, Estoque, Clientes, Financeiro, Caixa, Compras, Histórico; "Vendas
+  antigas" só quando a loja importou (§18.4); "Visões" só quando o suporte montou alguma (§19.3). Cada aba tem os filtros
+  dela e "Exportar esta aba (Excel)" (leva o que a tabela mostra); "Exportar tudo (Excel)" gera um arquivo com uma aba
+  "Resumo" e uma aba por assunto. Parte que falha ao carregar fica vazia e a aba avisa; o resto continua
+  (`planilhas.ts:94-137`). As colunas de cada planilha estão em `planilhas.ts:149-813` (ver `02-MAPA-DE-FUNCIONALIDADES.md`).
+- **Produtos e lucro estimado** (`planilhas.ts:273-369`): por produto, nas vendas finalizadas, quantidade e valor sem o
+  devolvido e custo = custo médio guardado no item × quantidade (um item vendido sem custo deixa o custo do produto vazio);
+  ordem do maior valor, empate por nome. Lucro estimado = vendas dos produtos com custo − custo − taxas de cartão das vendas
+  − cashback usado; os produtos sem custo ficam de fora (e são contados). Margem = lucro / vendas, com 1 casa.
+- **Posição de estoque** (DaniPets REL-08) (`planilhas.ts:371-414`): no início (movimentos antes de "de"), entradas
+  (inicial, entrada, compra), ajustes (ajuste e estorno de compra), vendido, devolvido (devolução e cancelamento) e no fim;
+  situação "Negativo", "Zerado", "Baixo" (no mínimo ou abaixo) ou "Normal"; por nome.
+- **Resumo do "Exportar tudo"** (`planilhas.ts:814-862`): Período ("dd/mm/aaaa a dd/mm/aaaa", "início"/"hoje" nas pontas
+  abertas, ou "todo o período"), Gerado em, Total vendido, Devoluções, Vendas líquidas, Ticket médio, Custo das mercadorias
+  ("custo médio guardado em cada venda"), Taxas de cartão, Cashback usado, Lucro estimado (sem custo: "sem custo registrado
+  (registre as compras para ter o custo)"; com produtos sem custo: "<n> produto(s) sem custo ficam de fora"), Entradas e
+  Saídas no financeiro.
+- **Arquivo**: `relatorio-<assunto sem acento, minúsculo, com hífens>-<de>-a-<até>.xlsx` (sem "de":
+  `relatorio-<assunto>-ate-<até ou hoje>.xlsx`) (`planilhas.ts:864-873`). Dinheiro como número com formato "R$ #.##0,00",
+  data como data (dd/mm/aaaa), quantidade com até 3 casas, percentual como %; texto sempre como texto (um "=SOMA(...)"
+  digitado nunca vira fórmula, DaniPets REL-10); primeira linha em negrito, congelada e com filtro; nome da aba até 31
+  caracteres (`legacy/web/src/relatorios/xlsx.ts:1-31`). LGPD: CPF mascarado nas planilhas (`planilhas.ts:12`).
+- Exportar registra no histórico `relatorios.exportado` (`assunto` até 40, `de`, `ate`, `abas`) — permissão
+  `relatorios`; sem assunto: 400 "Diga o que foi exportado." (`legacy/web/src/demo/apiLocal.ts:3079-3089`).
+- A aba Histórico lê até 2000 linhas (`planilhas.ts:91-92`) pela leitura do histórico, que exige `usuarios` (§17).
+
+---
+
+## 17. Histórico (auditoria)
+
+(`legacy/core/src/auditoria.ts:1-7`) Só acrescenta (nada é alterado nem apagado), gravado junto com a operação (tudo ou
+nada); **sem dado pessoal nos detalhes** (só números, valores e ids): os nomes de quem fez, do cliente, do produto, do
+fornecedor e da visão são buscados na hora de mostrar, e a exclusão da LGPD vale também para o histórico.
+
+- Registro: `id`, `acao`, `usuarioId` (null = sistema ou tentativa sem login), `alvoTipo`/`alvoId`, `detalhes`, `criadoEm`
+  (`legacy/web/src/demo/usuariosDemo.ts:221-233`; `legacy/api/src/auditoria/auditoria.ts:10-15`).
+- Leitura (`usuarios`: Dono, Administrador e Adm. Sup): do mais novo para o mais antigo (desempate pelo id); no servidor
+  antigo, `limite` de 1 a 200 (padrão 40; fora: 400 "limite deve ser um número de 1 a 200.") (`legacy/api/src/auditoria/
+  auditoria.controller.ts:1-82`); na demonstração, padrão 40 e os Relatórios pedem 2000 (`usuariosDemo.ts:534-555`). Cada
+  item: texto da ação, quem (o Adm. Sup aparece como "Suporte", `legacy/core/src/papeis.ts:29`), alvo com o nome de hoje,
+  detalhes e o resumo. A demonstração guarda só as últimas 2000 linhas por loja (`usuariosDemo.ts:65,232`); o servidor
+  guarda tudo (decisão em `06-RISCOS-E-DECISOES.md`).
+- **Textos das ações** (`auditoria.ts:16-119`) e **resumo** (partes separadas por " • ", sem as vazias; com quem autorizou,
+  " • autorizado por <nome>" no fim, menos onde diz "liberado por") (`auditoria.ts:184-471`):
+
+| Ação | Texto | Resumo |
+|---|---|---|
+| `sessao.entrou` | Entrou no sistema | — |
+| `sessao.saiu` | Saiu do sistema | "por falta de uso" (motivo inatividade) |
+| `sessao.senha_errada` | Senha errada | — |
+| `sessao.bloqueado` | Bloqueado por senhas erradas | — |
+| `usuario.criado` | Usuário criado | papel • "<n> função(ões)" (Personalizado) |
+| `usuario.alterado` | Usuário alterado | "papel: A → B" • "funções do Personalizado: <n>" |
+| `usuario.desativado` / `usuario.reativado` | Usuário desativado / Usuário reativado | — |
+| `usuario.senha_redefinida` | Senha redefinida pelo Dono ou Administrador | — |
+| `usuario.senha_trocada` | Trocou a própria senha | — |
+| `usuario.dados_excluidos` | Dados do usuário excluídos (LGPD) | — |
+| `usuario.foto_alterada` | Foto do perfil alterada | "tirou a foto" |
+| `loja.dados_alterados` | Dados da loja alterados | campos (nome, descrição, logo) |
+| `loja.regras_alteradas` | Regras da loja alteradas | partes (desconto sem senha, caixa, fiado, cashback, cupom de retorno, mensagens, motivos de ajuste, categorias de despesa e nomes das contas, unidades de venda, campo extra do cliente) |
+| `venda.desconto` | Desconto na venda | "venda nº 00012" • "<valor> de desconto" • "com brinde" |
+| `venda.cancelada` / `venda.devolucao` | Venda cancelada / Devolução de venda | "venda nº 00012" • valor |
+| `venda.fiado_liberado` | Fiado liberado pelo Dono | "venda nº 00012" • "<valor> no fiado" • "liberado por <nome>" |
+| `produto.criado` | Produto cadastrado | "código 0001" |
+| `produto.alterado` | Produto alterado | campos (nome, código de barras, preço, marca, peso, unidade, fornecedor) |
+| `produto.preco_alterado` | Preço alterado | "R$ A → R$ B" |
+| `produto.inativado` / `produto.reativado` | Produto inativado / Produto reativado | — |
+| `produto.excluido` | Produto excluído | nome • "código <código>" |
+| `estoque.entrada` / `estoque.ajuste` | Entrada de estoque / Ajuste de estoque | "+3 un" ou "-1,5 kg" • motivo • observação |
+| `estoque.minimo` | Estoque mínimo alterado | "mínimo <quantidade>" ou "sem aviso de estoque baixo" |
+| `compra.registrada` | Compra registrada | "compra nº N" • "NF <nº>" • valor • "à vista"/"a prazo" |
+| `compra.estornada` | Compra estornada | "compra nº N" • valor |
+| `compra.lote_baixado` | Baixa de lote (validade) | "-<quantidade> vencido" ou "o lote já tinha acabado" |
+| `conta_pagar.criada` | Conta a pagar lançada | valor • "vence dd/mm/aaaa" • categoria |
+| `conta_pagar.paga` | Conta paga | valor • nome da conta |
+| `relatorios.exportado` | Relatório exportado para Excel | assunto • período ("dd/mm/aaaa a dd/mm/aaaa", "início"/"hoje", ou "todo o período") • "<n> aba(s)" |
+| `dados.planilha_exportada` | Planilha exportada (Dados e backup) | assunto • "<n> linha(s)" |
+| `dados.importados` | Planilha importada (Dados e backup) | assunto • "<n> cadastro(s) novo(s)" • "<n> já existia(m)" |
+| `dados.vendas_importadas` | Vendas antigas importadas | "<n> venda(s)" • total • período |
+| `dados.copia_gerada` | Cópia de segurança baixada | "<n> registro(s)" |
+| `dados.copia_restaurada` | Cópia de segurança restaurada | "cópia de dd/mm/aaaa" • "<n> registro(s)" |
+| `suporte.atualizacao_publicada` | Atualização do sistema publicada | versão • "<n> novidade(s)" |
+| `suporte.aviso_publicado` | Aviso para a equipe publicado | "atenção"/"informação" • "até dd/mm/aaaa" |
+| `suporte.aviso_encerrado` | Aviso para a equipe encerrado | — |
+| `suporte.ajustes_alterados` | Ajustes da loja alterados (recursos e limites) | o resumo dos ajustes (§5.4) |
+| `suporte.visao_salva` / `suporte.visao_excluida` | Visão sob medida salva (Relatórios) / Visão sob medida excluída (Relatórios) | base da visão • "nova"/"alterada" (salva) |
+| `suporte.estoque_zerado` | Saldo negativo zerado (manutenção do suporte) | "+<quantidade>" |
+| `suporte.erros_limpos` | Registro de erros limpo | "<n> erro(s)" |
+| `caixa.aberto` | Abertura de caixa | dd/mm/aaaa • "fundo de troco <valor>" |
+| `caixa.sangria` | Sangria | "<valor> da gaveta para a Conta bancária" (com o nome da conta) |
+| `caixa.retirada` | Retirada do dono (gaveta) | "<valor> da gaveta" |
+| `caixa.suprimento` | Suprimento | "<valor> na gaveta" |
+| `caixa.fechado` | Fechamento de caixa | dd/mm/aaaa • "esperado <valor>" • "contado <valor>" • "sem diferença" ou "<falta\|sobra> de <valor> (ajuste no Caixa físico)" |
+| `caixa.fechamento_automatico` | Fechamento automático | dd/mm/aaaa • "sem contagem e sem ajuste" |
+| `caixa.fechamento_verificado` | Fechamento automático verificado | dd/mm/aaaa • "esperado <valor>" • "com observação" |
+| `caixa.diferenca_ciente` | Ciência de diferença no fechamento | dd/mm/aaaa • "<falta\|sobra> de <valor>" |
+| `caixa.fechamento_desfeito` | Fechamento desfeito | dd/mm/aaaa • "era automático" |
+| `dia_fechado.liberado` | Lançamento retroativo liberado | compra / ajuste de estoque / entrada de estoque / lançamento financeiro • "data dd/mm/aaaa" • "liberado por <nome>" |
+| `fornecedor.cadastrado` / `.alterado` / `.desativado` / `.reativado` | Fornecedor cadastrado / alterado / desativado / reativado | alterado: campos (nome, documento, telefone, contato, observação) |
+| `cliente.cadastrado` | Cliente cadastrado | — |
+| `cliente.alterado` | Cadastro do cliente alterado | campos (nome, telefone, CPF, campo extra, nascimento, endereço, observações, WhatsApp) |
+| `cliente.desativado` / `cliente.reativado` | Cliente desativado / Cliente reativado | — |
+| `cliente.dados_excluidos` | Dados do cliente excluídos (LGPD) | — |
+| `cliente.excluido` | Cliente excluído | — |
+| `cliente.aviso_conferido` | Exclusão de cliente conferida | — |
+| `cliente.limite` | Limite de fiado alterado | "R$ A → R$ B" |
+| `cliente.mensagens` | Autorização de mensagens | "autorizou mensagens da loja" / "cancelou a autorização de mensagens" |
+| `cliente.nao_incomodar` | Não incomodar | "saiu das listas de lembrete" / "voltou para as listas de lembrete" |
+| `cliente.cpf_visto` | CPF completo visto | — |
+| `cliente.fiado_recebido` | Fiado recebido | valor • "em <forma>" • "cobrado <bruto> (taxa <taxa>)" • "troco <valor>" • "vencimento dd/mm/aaaa" |
+| `cliente.lembrete_retorno` / `cliente.aviso_cashback` / `cliente.lembrete_pagamento` | Lembrete de retorno / Aviso de cashback / Lembrete de pagamento | "Mensagem pelo WhatsApp" ou "Contato registrado sem mensagem" • "cupom de <pct> até dd/mm/aaaa" |
+| `cliente.lembrete_adiado` | Lembrete adiado | "volta para a lista em dd/mm/aaaa" |
+| `cliente.cupom_usado` | Cupom de retorno usado | pct • "na venda nº 00012" |
+| `cliente.cashback_nao_recuperado` | Cashback não recuperado | "Cancelamento"/"Devolução" • "venda nº 00012" • "<valor> do cashback desta compra já tinham sido usados ou venceram" |
+| `vale.emitido` | Vale-troca emitido | código • valor • "devolução da venda nº 00012" |
+| `financeiro.entrada` / `.despesa` / `.retirada` / `.saldo_inicial` / `.recebimento` | Entrada lançada / Despesa lançada / Retirada do dono / Saldo inicial / Recebimento confirmado | valor • nome da conta • categoria |
+| `financeiro.transferencia` | Transferência entre contas | valor • "<conta> → <conta>" |
+| `financeiro.taxas` | Taxas de cartão alteradas | "débito <pct>" • "crédito <pct>" • "baixa automática"/"baixa manual" |
+
+  "venda nº 00012" leva 5 dígitos; os nomes das contas saem com o nome que a loja deu (`auditoria.ts:170-200`).
