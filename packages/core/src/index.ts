@@ -26,3 +26,4 @@ export * from './modelosDePlanilha';
 export * from './perfil';
 export * from './importacao';
 export * from './vendasAntigas';
+export * from './comunicados';

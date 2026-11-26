@@ -1,10 +1,10 @@
 // apps/web/src/painel/AvisoComIcone.tsx
-// Aviso com ícone (DaniPets V9.3.3 .alert): atenção (amarelo, triângulo), erro (vermelho, octógono) ou ok
-// (verde, círculo com visto). Opcional: botões à direita (`acao`). Usado no Caixa do dia e no aviso do novo dia.
+// Aviso com ícone (DaniPets V9.3.3 .alert): atenção (amarelo, triângulo), erro (vermelho, octógono), ok (verde,
+// círculo com visto) ou informação (verde, círculo com "i": os avisos do suporte). Opcional: botões à direita (`acao`).
 import type { ReactNode } from 'react';
 
 interface Props {
-  tipo: 'atencao' | 'erro' | 'ok';
+  tipo: 'atencao' | 'erro' | 'ok' | 'info';
   /** status = informa; alert = precisa de atenção já (o leitor de tela lê na hora). */
   papel: 'status' | 'alert';
   acao?: ReactNode;
@@ -25,6 +25,11 @@ export function AvisoComIcone({ tipo, papel, acao, className = '', children }: P
           <>
             <circle cx="12" cy="12" r="9" />
             <path d="m8 12.5 2.7 2.7L16 9.8" />
+          </>
+        ) : tipo === 'info' ? (
+          <>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5.5M12 7.5h.01" />
           </>
         ) : (
           <>

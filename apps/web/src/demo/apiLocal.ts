@@ -245,6 +245,13 @@ import {
   type ConferenciaDasVendasAntigas,
   conferirVendasAntigas,
   type VendaAntiga,
+  type Atualizacao,
+  type AvisoDaEquipe,
+  avisosParaMostrar,
+  novidadesParaMostrar,
+  validarAtualizacao,
+  validarAviso,
+  versaoAtual,
 } from '@saas/core';
 import {
   type ApiSistema,
@@ -304,6 +311,17 @@ const CHAVES = {
   vales: 'saas-demo:vales-troca:v1',
   /** Vendas antigas importadas de outro sistema, só como histórico (módulo 13). */
   vendasAntigas: 'saas-demo:vendas-antigas:v1',
+} as const;
+
+/**
+ * As ferramentas do Adm. Sup (módulo 13): as atualizações valem para o sistema todo (fora das lojas); os avisos e o
+ * que cada pessoa já viu, por loja. Não vão na cópia de segurança da loja (são do suporte).
+ */
+const CHAVES_DO_SUPORTE = {
+  atualizacoes: 'saas-demo:atualizacoes:v1',
+  avisos: 'saas-demo:avisos-equipe:v1',
+  /** loja -> pessoa -> ids dos avisos e das novidades que ela já fechou. */
+  vistos: 'saas-demo:comunicados-vistos:v1',
 } as const;
 
 /**
@@ -1300,6 +1318,11 @@ export function criarApiLocal({
     );
     gravarDaLoja(CHAVES.clientes, lojaId, [...clientesDaLoja(), ...novos]);
   };
+  // ---------------------------------------------------------------- atualizações e avisos do suporte (módulo 13)
+  const atualizacoesDoSistema = () => [...ler<Atualizacao[]>(CHAVES_DO_SUPORTE.atualizacoes, [])].sort((a, b) => b.publicadaEm.localeCompare(a.publicadaEm));
+  const avisosDaLoja = () => lerDaLoja<AvisoDaEquipe>(CHAVES_DO_SUPORTE.avisos, lojaId);
+  const vistosPor = (pessoaId: string) => new Set(ler<Record<string, Record<string, string[]>>>(CHAVES_DO_SUPORTE.vistos, {})[lojaId]?.[pessoaId] ?? []);
+
   const vendasAntigasDaLoja = () => lerDaLoja<VendaAntiga>(CHAVES.vendasAntigas, lojaId);
   /** Vendas antigas: Dados e backup para importar e Relatórios (o histórico de vendas). */
   const exigirParaVendasAntigas = (): OperadorComPapel => {
@@ -3246,6 +3269,83 @@ export function criarApiLocal({
         .map((v, i) => [v, i] as const)
         .sort((a, b) => b[0].dia.localeCompare(a[0].dia) || b[1] - a[1])
         .map(([v]) => v);
+    },
+
+    // ---------------------------------------------------------------- atualizações e avisos do suporte (módulo 13)
+    async meusComunicados() {
+      await preparar();
+      const quem = exigirOperador();
+      const vistos = vistosPor(quem.id);
+      const atualizacoes = atualizacoesDoSistema();
+      return { versao: versaoAtual(atualizacoes), avisos: avisosParaMostrar(avisosDaLoja(), hojeNaLoja(), vistos), novidades: novidadesParaMostrar(atualizacoes, vistos) };
+    },
+
+    async marcarComunicadoVisto(id) {
+      await preparar();
+      return gravando(() => {
+        const quem = exigirOperador();
+        if (typeof id !== 'string' || id === '' || id.length > 80) throw new ErroApi(400, 'Aviso inválido.');
+        const todos = ler<Record<string, Record<string, string[]>>>(CHAVES_DO_SUPORTE.vistos, {});
+        const daLoja = { ...(todos[lojaId] ?? {}) };
+        const meus = daLoja[quem.id] ?? [];
+        if (meus.includes(id)) return;
+        daLoja[quem.id] = [...meus, id].slice(-200);
+        gravar(CHAVES_DO_SUPORTE.vistos, { ...todos, [lojaId]: daLoja });
+      });
+    },
+
+    async listarAtualizacoes() {
+      await preparar();
+      exigirOperador();
+      return atualizacoesDoSistema();
+    },
+
+    async publicarAtualizacao(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('suporte.ferramentas');
+        const publicadas = atualizacoesDoSistema();
+        const v = validarAtualizacao(dados, { publicadas });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const nova: Atualizacao = { id: novoId(), ...v.valor, publicadaEm: agora().toISOString(), publicadaPor: pessoa(quem) };
+        gravar(CHAVES_DO_SUPORTE.atualizacoes, [nova, ...publicadas]);
+        auditar('suporte.atualizacao_publicada', null, { versao: nova.versao, novidades: nova.novidades.length });
+        return nova;
+      });
+    },
+
+    async listarAvisosDaEquipe() {
+      await preparar();
+      exigir('suporte.ferramentas');
+      return maisNovosPrimeiro(avisosDaLoja());
+    },
+
+    async criarAvisoDaEquipe(dados) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('suporte.ferramentas');
+        const v = validarAviso(dados, { hoje: hojeNaLoja() });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const aviso: AvisoDaEquipe = { id: novoId(), ...v.valor, criadoEm: agora().toISOString(), criadoPor: pessoa(quem), encerradoEm: null };
+        gravarDaLoja(CHAVES_DO_SUPORTE.avisos, lojaId, [...avisosDaLoja(), aviso]);
+        auditar('suporte.aviso_publicado', null, { importancia: aviso.importancia, ate: aviso.ate });
+        return aviso;
+      });
+    },
+
+    async encerrarAvisoDaEquipe(id) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('suporte.ferramentas');
+        const lista = avisosDaLoja();
+        const i = lista.findIndex((a) => a.id === id);
+        if (i < 0) throw new ErroApi(404, 'Aviso não encontrado.');
+        if (lista[i]!.encerradoEm) return lista[i]!;
+        const encerrado: AvisoDaEquipe = { ...lista[i]!, encerradoEm: agora().toISOString() };
+        gravarDaLoja(CHAVES_DO_SUPORTE.avisos, lojaId, lista.map((a, j) => (j === i ? encerrado : a)));
+        auditar('suporte.aviso_encerrado', null, {});
+        return encerrado;
+      });
     },
 
     // ---------------------------------------------------------------- dados e regras da loja

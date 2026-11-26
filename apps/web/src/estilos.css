@@ -1075,6 +1075,16 @@ h2 { font-size: 1.05rem; }
 .db-escolha label.db-escolha-on { border-color: var(--primaria); background: var(--primaria-clara); color: var(--primaria-texto); font-weight: 600; }
 .db-escolha input { accent-color: var(--primaria); margin: 0; }
 .db-dica-antes { margin: -4px 0 14px; }
+/* Adm. Sup: atualizações e avisos (módulo 13) */
+.as-versao { margin: 0 0 12px; }
+.as-historico, .as-avisos { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.as-historico > li { padding: 10px 14px; border: 1px solid var(--borda); border-radius: 10px; }
+.as-historico p { margin: 0 0 4px; }
+.as-historico ul { margin: 0; padding-left: 18px; }
+.as-avisos > li { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--borda); border-radius: 10px; }
+.as-avisos p { margin: 0; }
+.as-avisos p + p { margin-top: 4px; font-size: 0.85rem; }
+.as-aviso-venceu, .as-aviso-encerrado { opacity: 0.7; }
 .db-importar-tabela td { vertical-align: top; }
 .db-importar-tabela td:first-child, .db-importar-tabela th:first-child { padding-left: 14px; width: 1%; white-space: nowrap; }
 .db-importar-tabela td:nth-child(3) { white-space: nowrap; }
@@ -1162,6 +1172,8 @@ h2 { font-size: 1.05rem; }
 .cx-aviso-erro .cx-aviso-icone { color: var(--erro); }
 .cx-aviso-ok { background: var(--primaria-clara); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
 .cx-aviso-ok .cx-aviso-icone { color: var(--primaria-texto); }
+.cx-aviso-info { background: var(--primaria-clara); border-color: color-mix(in srgb, var(--primaria) 30%, var(--superficie)); }
+.cx-aviso-info .cx-aviso-icone { color: var(--primaria-texto); }
 .cx-a-verificar { color: var(--aviso); font-weight: 600; }
 .cx-conferir { margin: 0 0 12px; }
 .cx-conferir-dica { margin-bottom: 12px; }

@@ -1286,3 +1286,33 @@ valendo, e o assunto volta vazio.
 
 **Navegador:** importei um .csv com os dois formatos e uma linha com data no futuro. Entraram 3 vendas, R$ 312,20; a aba
 "Tudo" continuou com o mesmo total vendido. Computador e celular sem rolagem para o lado, console sem erros.
+
+### 13e (26/11/2026): Adm. Sup — atualizações do sistema e avisos para a equipe
+
+A parte **Adm. Sup** de Dados e backup (só o Adm. Sup vê) ganhou os dois primeiros cartões:
+
+- **Atualizações do sistema:** a versão de agora, o formulário "Publicar a atualização" e a lista do que já saiu.
+  - O formulário pede a versão nova (sugere a próxima, como V0.2) e as novidades, uma por linha.
+  - A versão precisa ser maior que a de agora, e vale para todas as lojas.
+  - A versão mais nova aparece no rodapé da barra lateral ("V0.2 • Nome da empresa").
+  - Cada pessoa vê as novidades uma vez, no alto da tela, até clicar em "Entendi". Só as da versão mais nova aparecem.
+- **Avisos para a equipe desta loja:** o texto (até 300 caracteres), a importância (informação ou atenção) e, se
+  quiser, o último dia.
+  - O aviso aparece no alto da tela de todos da loja, em todas as abas, até cada pessoa clicar em "Entendi".
+  - Os de atenção vêm primeiro.
+  - O Adm. Sup pode encerrar o aviso antes. A lista mostra cada aviso como ativo, vencido ou encerrado.
+- **Histórico:** "Atualização do sistema publicada • V0.2 • 3 novidades", "Aviso para a equipe publicado • atenção • até
+  26/11/2026" e "Aviso para a equipe encerrado".
+- **Regras:** `packages/core/src/comunicados.ts`. Só o Adm. Sup publica (`suporte.ferramentas`).
+- **Cópia de segurança:** as atualizações e os avisos são do suporte, não da loja, então ficam fora dela.
+- **Servidor:** responde 501. No sistema real, a barra fica com a versão de sempre e sem avisos.
+- **Testes:**
+  - núcleo 464 (+6): versões, as novidades uma por linha, o aviso e as datas, o que aparece para cada pessoa, o resumo;
+  - tela 479 (+7): a API da demonstração (a versão vale para as duas lojas; cada pessoa vê uma vez; o aviso só na loja
+    dele, até fechar, até o último dia ou até encerrar; só o Adm. Sup) e as telas (publicar, encerrar, os avisos no
+    alto e a versão no rodapé).
+- **Navegador:**
+  - o Adm. Sup publicou a V0.2 e um aviso de atenção;
+  - o Bruno viu as novidades e o aviso no alto e a V0.2 no rodapé;
+  - "Entendi" tirou cada um;
+  - celular sem rolagem para o lado, console sem erros.

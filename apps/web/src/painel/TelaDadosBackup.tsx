@@ -13,6 +13,7 @@ import { type ApiLoja, type ApiPainel, ErroApi } from '../api';
 import type { Baixar } from '../relatorios/baixar';
 import { iniciais } from './BarraLateral';
 import { prepararImagem, TIPOS_DE_IMAGEM } from './imagem';
+import { ParteAdmSup } from './dados/ParteAdmSup';
 import { ParteImportarExportar } from './dados/ParteImportarExportar';
 import { usarCarga } from './usarCarga';
 
@@ -115,6 +116,7 @@ export function TelaDadosBackup({ api, papel, aoMudar, fuso = FUSO_PADRAO, agora
           aoMudar={salvou}
         />
       )}
+      {parte === 'admsup' && ehAdmSup && <ParteAdmSup api={api} fuso={fuso} agora={agora} aoMudar={aoMudar} />}
     </div>
   );
 }

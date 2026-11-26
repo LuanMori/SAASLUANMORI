@@ -56,6 +56,10 @@ export const ACOES_AUDITORIA = {
   'dados.planilha_exportada': 'Planilha exportada (Dados e backup)',
   'dados.importados': 'Planilha importada (Dados e backup)',
   'dados.vendas_importadas': 'Vendas antigas importadas',
+  // ferramentas do Adm. Sup (módulo 13)
+  'suporte.atualizacao_publicada': 'Atualização do sistema publicada',
+  'suporte.aviso_publicado': 'Aviso para a equipe publicado',
+  'suporte.aviso_encerrado': 'Aviso para a equipe encerrado',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -275,6 +279,14 @@ export function resumirAuditoria(
       partes.push(n === null ? null : `${n} ${n === 1 ? 'venda' : 'vendas'}`, dinheiro(d.totalCentavos), periodo);
       break;
     }
+    case 'suporte.atualizacao_publicada': {
+      const n = inteiro(d.novidades);
+      partes.push(typeof d.versao === 'string' ? d.versao : null, n === null ? null : `${n} ${n === 1 ? 'novidade' : 'novidades'}`);
+      break;
+    }
+    case 'suporte.aviso_publicado':
+      partes.push(d.importancia === 'atencao' ? 'atenção' : d.importancia === 'info' ? 'informação' : null, diaBr(d.ate) ? `até ${diaBr(d.ate)}` : null);
+      break;
     case 'dados.copia_gerada':
     case 'dados.copia_restaurada': {
       const n = inteiro(d.registros);

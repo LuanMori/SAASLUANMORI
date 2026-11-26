@@ -15,7 +15,7 @@
 // recarregam e aparece o aviso do novo dia (também na Frente de caixa, que fica sem vender até abrir o caixa).
 import { type ConfiguracaoDaLoja, dataBr, ehDono, ehGestor, FUSO_PADRAO, NOME_CONTA, type PapelNaLoja } from '@saas/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type ApiSistema, MENSAGEM_SEM_SERVIDOR, type UsuarioDaLoja } from '../api';
+import { type ApiSistema, type ComunicadosDaPessoa, MENSAGEM_SEM_SERVIDOR, type UsuarioDaLoja } from '../api';
 import { aoMudaremOsDados, avisarQueOsDadosMudaram } from '../sincronizacao';
 import { usarInatividade } from '../usarInatividade';
 import { BarraLateral, type DadosBarra } from './BarraLateral';
@@ -118,6 +118,20 @@ export function TelaPainel({
     carregarPerfil();
     return aoMudaremOsDados(carregarPerfil);
   }, [carregarPerfil]);
+  // os avisos do suporte e as novidades da versão (módulo 13), no alto da tela; a versão vai para o rodapé da barra
+  const [comunicados, setComunicados] = useState<ComunicadosDaPessoa | null>(null);
+  const carregarComunicados = useCallback(() => {
+    api.meusComunicados().then(setComunicados, () => undefined); // sem essa parte no servidor: sem avisos, versão de sempre
+  }, [api]);
+  useEffect(() => {
+    carregarComunicados();
+    return aoMudaremOsDados(carregarComunicados);
+  }, [carregarComunicados]);
+  /** "Entendi": some só para esta pessoa (o servidor guarda que ela viu). */
+  const fecharComunicado = (id: string) => {
+    setComunicados((c) => (c ? { ...c, avisos: c.avisos.filter((a) => a.id !== id), novidades: c.novidades?.id === id ? null : c.novidades } : c));
+    void api.marcarComunicadoVisto(id).catch(() => undefined);
+  };
   const lojaDaBarra = config ? { nome: config.dados.nome, descricao: config.dados.descricao, logo: config.dados.logo } : loja;
   const nomesDasContas = config?.regras.financeiro.nomesContas ?? NOME_CONTA;
   // quem está logado, com as funções do Personalizado (as telas perguntam `pode(acesso, ...)`)
@@ -167,7 +181,7 @@ export function TelaPainel({
   return (
     <ContextoNomesDasContas.Provider value={nomesDasContas}>
       <div className="painel-app">
-        <BarraLateral loja={lojaDaBarra} pessoa={{ ...pessoa, foto }} secao={secao} aoEscolher={escolher} aoSair={aoSair} />
+        <BarraLateral loja={lojaDaBarra} pessoa={{ ...pessoa, foto }} secao={secao} aoEscolher={escolher} aoSair={aoSair} versao={comunicados?.versao} />
         <main className="painel-conteudo" aria-label={item?.rotulo ?? ''}>
           {avisoDaVirada && (
             <AvisoComIcone
@@ -190,6 +204,35 @@ export function TelaPainel({
               {avisoDaVirada} Abra o caixa de hoje para voltar a vender.
             </AvisoComIcone>
           )}
+          {comunicados?.novidades && (
+            <AvisoComIcone
+              tipo="info"
+              papel="status"
+              className="painel-aviso"
+              acao={
+                <button type="button" className="botao" onClick={() => fecharComunicado(comunicados.novidades!.id)}>
+                  Entendi
+                </button>
+              }
+            >
+              <strong>Novidades da versão {comunicados.novidades.versao}:</strong> {comunicados.novidades.novidades.join(' • ')}
+            </AvisoComIcone>
+          )}
+          {comunicados?.avisos.map((a) => (
+            <AvisoComIcone
+              key={a.id}
+              tipo={a.importancia === 'atencao' ? 'atencao' : 'info'}
+              papel={a.importancia === 'atencao' ? 'alert' : 'status'}
+              className="painel-aviso"
+              acao={
+                <button type="button" className="botao" onClick={() => fecharComunicado(a.id)} aria-label={`Entendi: ${a.texto}`}>
+                  Entendi
+                </button>
+              }
+            >
+              <strong>Aviso do suporte:</strong> {a.texto}
+            </AvisoComIcone>
+          ))}
           {permitido && !disponivel(secao) && (
             <div className="rel">
               <header className="vg-topo">
@@ -220,7 +263,18 @@ export function TelaPainel({
           {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={acesso} fuso={fuso} intervaloMs={intervaloMs} />}
           {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
           {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} />}
-          {ver('dados-e-backup') && <TelaDadosBackup api={api} papel={acesso} aoMudar={carregarConfig} fuso={fuso} agora={agora} />}
+          {ver('dados-e-backup') && (
+            <TelaDadosBackup
+              api={api}
+              papel={acesso}
+              aoMudar={() => {
+                carregarConfig();
+                carregarComunicados();
+              }}
+              fuso={fuso}
+              agora={agora}
+            />
+          )}
           {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
           {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
           {ver('clientes') && (

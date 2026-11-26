@@ -5,6 +5,9 @@
 // (demo/apiLocal.ts), então as telas são as mesmas nos dois.
 import type {
   AcessoDoUsuario,
+  Atualizacao,
+  AvisoDaEquipe,
+  ImportanciaDoAviso,
   AssuntoDaCopia,
   CadastroDaPlanilha,
   SituacaoDaLinha,
@@ -769,6 +772,30 @@ export interface ApiDados {
   listarVendasAntigas(): Promise<VendaAntiga[]>;
 }
 
+// ---- Ferramentas do Adm. Sup (Fase 2, módulo 13): atualizações do sistema e avisos para a equipe da loja.
+
+/** O que a pessoa logada vê: a versão de agora, os avisos do suporte que ela ainda não fechou e as novidades novas. */
+export interface ComunicadosDaPessoa {
+  versao: string;
+  avisos: AvisoDaEquipe[];
+  novidades: Atualizacao | null;
+}
+
+export interface ApiComunicados {
+  /** Todos os logados. */
+  meusComunicados(): Promise<ComunicadosDaPessoa>;
+  /** A pessoa fechou o aviso ou viu as novidades: some só para ela. */
+  marcarComunicadoVisto(id: string): Promise<void>;
+  /** As atualizações publicadas, da mais nova para a mais antiga. */
+  listarAtualizacoes(): Promise<Atualizacao[]>;
+  /** Só o Adm. Sup. Vale para todas as lojas. `novidades`: uma por linha. */
+  publicarAtualizacao(dados: { versao: string; novidades: string }): Promise<Atualizacao>;
+  /** Os avisos desta loja (ativos, vencidos e encerrados). Só o Adm. Sup. */
+  listarAvisosDaEquipe(): Promise<AvisoDaEquipe[]>;
+  criarAvisoDaEquipe(dados: { texto: string; importancia?: ImportanciaDoAviso; ate?: string | null }): Promise<AvisoDaEquipe>;
+  encerrarAvisoDaEquipe(id: string): Promise<AvisoDaEquipe>;
+}
+
 export type ApiPainel = ApiProdutos &
   ApiVendas &
   ApiEstoque &
@@ -781,7 +808,8 @@ export type ApiPainel = ApiProdutos &
   ApiFidelidade &
   ApiVales &
   ApiRelatorios &
-  ApiDados;
+  ApiDados &
+  ApiComunicados;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 
