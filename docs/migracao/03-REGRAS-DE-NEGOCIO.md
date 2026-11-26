@@ -1122,3 +1122,141 @@ antigo não tinha caixa).
 - **Situação** (qualquer logado, para o cabeçalho e a Frente de caixa) (`apiLocal.ts:2781-2812`): hoje, estado, aberto em,
   fechado em, responsável, dia atrasado, e as pendências (a verificar, para `caixa.desfazer`; diferenças, para
   `caixa.ciencia`).
+
+---
+
+## 12. Clientes e fiado
+
+Regras do DaniPets V9.3.3 (`legacy/core/src/cliente.ts:1-12`; `legacy/core/src/fiado.ts:1-12`). Só na demonstração.
+
+### 12.1 Cadastro
+
+| Campo | Regra | Mensagem | Fonte |
+|---|---|---|---|
+| nome | NFC, espaços juntados; 3 a 120; sem controle; com pelo menos uma letra | "Informe o nome completo do cliente (pelo menos 3 letras)." · "O nome pode ter até 120 caracteres." · "O nome contém caracteres inválidos." · "O nome precisa ter letras." | `cliente.ts:76-78,162-166` |
+| telefone | só dígitos; 10 (fixo) ou 11 com 9 depois do DDD (celular); DDD sem zero | "Telefone inválido. Use o DDD e o número, por exemplo (41) 99999-9999." | `cliente.ts:112-118,169-170` |
+| cpf | 11 dígitos, verificadores certos, não todos iguais | 11 dígitos errados: "CPF inválido. Confira os números."; outro tamanho: "Informe os 11 números do CPF." | `cliente.ts:99-110,172-173` |
+| extra | opcional (o "Pet" do DaniPets, com o rótulo da loja, §5.3); até 160 | "O campo extra deve ser um texto." · "O campo extra pode ter até 160 caracteres." · "O campo extra contém caracteres inválidos." | `cliente.ts:176` |
+| endereco | opcional; até 160 | "O endereço …" (as mesmas três) | `cliente.ts:177` |
+| observacoes | opcional; até 300 | "As observações …" | `cliente.ts:178` |
+| nascimento | opcional; AAAA-MM-DD real, de 1900-01-01 até hoje | "Data de nascimento inválida." | `cliente.ts:179-185` |
+| limiteFiadoCentavos | inteiro ≥ 0, até R$ 100.000,00; 0 = não compra no fiado sem a liberação do Dono; mudar exige `clientes.limite` | "O limite de fiado não pode ser negativo." · "O limite de fiado pode ser no máximo R$ 100.000,00." | `cliente.ts:38-39,83,186-191`; `legacy/web/src/demo/apiLocal.ts:1967-1968,2008-2010` |
+| whatsapp | sim/não; sem informar, sim para celular | "Marque sim ou não." | `cliente.ts:96-97,192-196` |
+| autorizaMensagens | sim/não; a demonstração guarda quando e quem registrou | "Marque sim ou não." | `cliente.ts:42-43`; `apiLocal.ts:1979,2017` |
+| naoIncomodar | sim/não; fora das listas de lembrete | "Marque sim ou não." | `cliente.ts:44-45` |
+| outro campo | recusado | "Campo não permitido." | `cliente.ts:134,160` |
+
+- Corpo que não é objeto: "Envie um objeto com os dados do cliente." (`cliente.ts:157`). Na importação de planilha,
+  telefone e CPF podem vir vazios (cadastro incompleto) (`cliente.ts:151-156,168`).
+- CPF único entre os clientes **ativos** da loja: 409 "Este CPF já está no cadastro de <nome>." (`cliente.ts:202-206`).
+- **Cadastro completo** = nome com 3+ letras (e não "Cliente removido"), telefone válido e CPF válido; sem isso, não
+  compra no fiado (`cliente.ts:89-91`).
+- Mostrar: telefone "(11) 98765-4321" / "(11) 3456-7890"; CPF mascarado "***.456.789-**" (LGPD; o inteiro fica só no
+  cadastro) (`cliente.ts:9,120-132`). Primeiro nome para mensagens (`cliente.ts:93-94`).
+- **Cadastrar** (qualquer logado) (`apiLocal.ts:1960-1991`): limite > 0 exige `clientes.limite`; histórico
+  `cliente.cadastrado`, `cliente.mensagens` (`autorizou: true`) e `cliente.limite` (`de: 0`, `para`).
+- **Alterar** (qualquer logado) (`apiLocal.ts:1993-2034`): a tela não tem o CPF inteiro: sem CPF no pedido, fica o do
+  cadastro; mudar o limite exige `clientes.limite`; marcar a autorização de novo mantém a data antiga; nada mudou → não
+  grava; histórico `cliente.alterado` (`campos`), `cliente.limite` (`de`, `para`), `cliente.mensagens` (`autorizou`),
+  `cliente.nao_incomodar` (`ativo`). Não existe: 404 "Cliente não encontrado.".
+- **Desativar/reativar** (`clientes.desativar`) (`apiLocal.ts:2036-2054`): reativar confere o CPF único; histórico
+  `cliente.desativado` / `cliente.reativado`.
+- **Excluir** (permissão `clientes`) (`apiLocal.ts:2190-2211`): motivo obrigatório (até 200): "Informe o motivo da
+  exclusão." · "O motivo pode ter até 200 caracteres."; com compra, fiado ou vale-troca: 409 "Cliente com compras, fiado ou
+  vale-troca não pode ser excluído. Um Dono pode excluir os dados (LGPD) na conta do cliente." (`cliente.ts:299-308`);
+  histórico `cliente.excluido`. Feito por quem não tem `clientes.desativar` (o Vendedor): vira um **aviso** para o Dono e o
+  Administrador (nome, telefone, motivo, quem, quando) (DaniPets avisosClientes); listar e conferir avisos exige
+  `clientes.desativar`: "Aviso não encontrado." (404) · "Este aviso já foi conferido." (409); histórico
+  `cliente.aviso_conferido` (`apiLocal.ts:2213-2232`).
+- **Ver o CPF inteiro** (`clientes.cpf`): histórico `cliente.cpf_visto` (`apiLocal.ts:2179-2188`).
+
+### 12.2 Busca (F6) e lista
+
+- Busca da Frente de caixa (qualquer logado; termo vazio devolve nada) (`cliente.ts:208-225`; `apiLocal.ts:1922-1952`):
+  termo até 80, sem acento; 3+ dígitos procuram no CPF e no telefone; 2+ letras (e não só números/pontuação) procuram no
+  nome; só ativos; ordem alfabética (pt-BR); até 8 resultados. Cada resultado traz CPF mascarado, telefone, fiado em
+  aberto, limite, vencido e dias, cashback e o próximo vencimento, cupom ativo, se o cadastro está completo e o saldo de
+  vale-troca.
+- O que foi digitado preenche o cadastro novo: CPF válido → CPF; 10+ dígitos → telefone; sem dígito → nome
+  (`cliente.ts:227-235`).
+- Lista da aba Clientes (`apiLocal.ts:2067-2135`): sem os excluídos pela LGPD; filtros `todos`, `fiado` e `vencido`
+  (exigem `clientes.fiado`), `desativados` (exige `clientes.desativar`), `incompleto`, `nao_incomodar`, `cashback`, `vale`,
+  `sumidos` (sem comprar há "dias sem comprar" da regra de retorno ou mais); busca no nome, no campo extra e, com 3+
+  dígitos, no CPF e no telefone; o fiado de cada linha só vai para quem tem `clientes.fiado`; ordem alfabética; até 300
+  linhas, com o total. Recusa de filtro: a mensagem de permissão (§3 de `05-MATRIZ-PERMISSOES.md`).
+- Resumo do cliente: compras finalizadas, total (menos o devolvido), ticket médio e última compra (`cliente.ts:237-251`).
+
+### 12.3 Conta do cliente e extrato
+
+(`apiLocal.ts:2137-2177`; `cliente.ts:310-399`)
+- Qualquer logado; cliente excluído pela LGPD: 404. Devolve o cadastro sem o CPF (só o mascarado), o resumo, o extrato
+  completo, a fidelidade (saldo, vencendo, próximo vencimento, vencido, cupom, se está sumido), o fiado (devendo, vencido,
+  dias, compras em aberto com o que falta de cada), o limite, se tem história e os vales com saldo.
+- Extrato (DaniPets cliExtrato), do mais novo para o mais antigo (desempate pela hora e pela ordem do tipo): "Compra
+  #00012" (com " (cancelada)" riscada), detalhe "<itens> • <formas> • desconto <valor>" (itens: "2 Areia", "1,5 kg Granel",
+  "Ração" para uma unidade); "Devolução nº N" (−); "Fiado estornado" (−); "Fiado pago" (−, com a forma ou a conta, a compra
+  e quem recebeu); "Compra no fiado" (+, "compra #00012 • vence dd/mm/aaaa", somando as partes da mesma venda). A
+  fidelidade e o vale-troca entram no extrato completo (§13, §14).
+
+### 12.4 Fiado
+
+- Cada compra no fiado é um a receber na conta do cliente, com vencimento = dia da venda + prazo da loja (padrão 30 dias)
+  (`fiado.ts:2-3`; §15).
+- **Fiado do cliente hoje** (`fiado.ts:32-55`): em aberto = recebíveis de fiado do cliente com algo a receber, da que vence
+  primeiro (desempate pelo número da venda e `criadoEm`); devendo; vencido (vence antes de hoje); dias de atraso da mais
+  antiga vencida.
+- **Na venda** (DaniPets PDV-10) (`fiado.ts:57-88`; `apiLocal.ts:1598-1616`): cadastro completo obrigatório; motivos que
+  pedem o Dono: devendo + valor no fiado > limite → "passa do limite de <limite> em <excesso>" (limite 0 → "o cliente não tem
+  limite de fiado no cadastro"); com a regra `fiado.vencidoPedeDono` ligada e algo vencido → "tem <valor> vencido há <n>
+  dia(s)". Sem liberação: 409 `fiado_liberacao` "Venda no fiado para <nome>: <motivos separados por "; ">. Precisa da
+  liberação de um Dono.". A liberação serve se é de quem tem `fiado.liberar`, do tipo `fiado`, para este cliente e
+  exatamente este valor, dentro de 4 horas; a venda guarda quem liberou, o motivo e os motivos.
+- **Receber pela conta do cliente** (permissão `vender`) (`fiado.ts:90-267`; `apiLocal.ts:2241-2322`) — arquivo do Luan de
+  23/11/2026:
+  - o caixa de hoje não pode estar fechado; em dinheiro, precisa estar aberto ("Receber em dinheiro: abra o caixa de hoje
+    (Caixa do dia) primeiro.");
+  - formas: dinheiro, Pix, débito, crédito ("Escolha a forma de pagamento.");
+  - **cotação**: valor que abate > 0 e até o teto ("Informe um valor válido para a baixa."); no cartão a taxa da maquininha
+    é **repassada ao cliente**: bruto = `round(principal × 10000 / (10000 − round(taxa × 100)))`, conferido para que bruto −
+    taxa(bruto) = principal ("Não foi possível calcular a taxa deste valor. Tente outro valor."; taxa fora de 0 a 99,99%:
+    "A taxa da maquininha está inválida. Confira as taxas."; bruto acima do teto: "O valor a cobrar passa do limite de um
+    recebimento."); em dinheiro, o entregue (sem: o valor certo) ≥ principal ("O dinheiro entregue é menor que o valor da
+    baixa.") e o troco = entregue − principal (o troco não entra na gaveta);
+  - se a tela mandou o bruto ou a taxa previstos e mudaram: 409 `taxa_mudou` "A taxa da maquininha mudou. Confira o novo
+    valor antes de confirmar.";
+  - opcional `vencimento`: só as compras desse vencimento ("Vencimento inválido."; sem nada nele: 409 "<nome> não tem fiado
+    em aberto com vencimento em dd/mm/aaaa.");
+  - "<nome> não tem fiado em aberto." · "Informe o valor recebido." · acima do devido: "<nome> deve <valor>. Informe um valor
+    até esse.";
+  - abate da compra que vence primeiro; a compra paga por inteiro fica "recebido"; a paga em parte continua com o que falta
+    e a parte paga vira um recebido separado (a devolução sabe de onde voltar);
+  - dinheiro → lançamento `recebimento_fiado` no Caixa físico; Pix → na Conta bancária ("Fiado • <nome> • <forma>"); cartão →
+    um recebível da operadora (bruto e taxa repassados, vence em hoje + prazo da maquininha), que entra no banco na hora se
+    o Dono escolheu a baixa automática (a descrição ganha " • cobrado <bruto> • taxa <taxa>") (§15);
+  - **pedido repetido** (`chave` de 8 a 96 caracteres, "Identificador do recebimento inválido."): o mesmo pedido devolve o
+    mesmo resultado; a mesma chave com outro pagamento: 409 "Este pedido de recebimento já foi usado para outro
+    pagamento.";
+  - pagar fiado não gera cashback; histórico `cliente.fiado_recebido` (`valorCentavos`, `forma`, `brutoCentavos`,
+    `taxaCentavos`, `trocoCentavos`, `vencimento`); devolve o que foi abatido de cada compra, quanto fica devendo e a
+    cotação.
+- Prévia antes de confirmar: o que o valor abate de cada compra e quanto fica devendo (`fiado.ts:180-199`); texto
+  "#00012 (R$ 30,00), #00015 (R$ 20,00)" (`fiado.ts:269-271`).
+- Situação na lista: "vencido há N dia(s)" (vencido) · "vence hoje" · "vence amanhã" · "vence em N dias (dd/mm/aaaa)"; até 3
+  dias = perto (`fiado.ts:273-280`).
+- **Aba Fiado** (`clientes.fiado`) (`apiLocal.ts:2324-2347`): clientes com fiado (fora os excluídos pela LGPD), do mais
+  atrasado para o menos, depois do maior devido; com a compra mais antiga e a soma dos limites dos clientes ativos.
+- Lembrete de cobrança por vencimento: referência "fiado:AAAA-MM-DD" (`fiado.ts:102-110`; §13).
+
+### 12.5 LGPD: excluir os dados do cliente
+
+(`cliente.ts:253-297`; `apiLocal.ts:2349-2391`) — DaniPets cliAnonimizar.
+- Só quem tem `clientes.excluir_dados` (o Dono): 403 com a mensagem de permissão; não existe ou já removido: 404 "Cliente
+  não encontrado."; com fiado em aberto: 403 "<nome> tem <valor> de fiado em aberto. Os dados ficam guardados até a conta
+  ser paga.".
+- Precisa ainda da **liberação de um Dono** (autorização `excluir_dados_cliente` deste cliente, dentro de 4 horas, com
+  motivo): 403 `precisa_liberacao` "A exclusão precisa da liberação de um Dono.".
+- Efeito: nome vira "Cliente removido"; telefone e CPF vazios; inativo; campo extra, nascimento, endereço e observações
+  nulos; limite 0; sem WhatsApp; sem autorização de mensagens; sem adiamento; "não incomodar"; guarda quando, quem liberou
+  e o motivo. O cashback que sobrou é zerado (uso "Exclusão dos dados"). O nome sai também das vendas, dos recebíveis, dos
+  vales (que continuam valendo para quem tem o código) e da descrição dos lançamentos. As vendas continuam no histórico
+  (obrigação fiscal). Histórico `cliente.dados_excluidos` (`autorizadoPor`).
