@@ -626,7 +626,7 @@ mínimo, só zerado e negativo avisam.
 **Venda sem estoque** (`estoque.ts:76-92`): soma as quantidades do mesmo produto na venda; faltando: "Estoque insuficiente
 para <nome>. Disponível: <saldo, nunca abaixo de 0, com a unidade>.".
 
-**Entrada e ajuste à mão** (`estoque.estoque.lancar`: Dono e Administrador) (`estoque.ts:113-157`;
+**Entrada e ajuste à mão** (`estoque.lancar`: Dono e Administrador) (`estoque.ts:113-157`;
 `legacy/web/src/demo/apiLocal.ts:1874-1904`):
 - campos: `produtoId`, `tipo` (`entrada` | `ajuste`), `quantidade`, `motivo`, `observacao`, `dia`; outro campo: "Campo não
   permitido."; corpo que não é objeto: "Envie um objeto com o movimento.";
@@ -797,3 +797,187 @@ Lista: filtro de/até pela data; mais nova primeiro, depois maior número (`apiL
   `conta`).
 - Resumo: total em aberto, quantas, total e quantidade das vencidas (vencimento antes de hoje) (`compra.ts:498-508`).
 - Lista: filtro por situação; ordem de vencimento, depois `criadoEm` (`apiLocal.ts:3071-3077`).
+
+---
+
+## 10. Vendas (Frente de caixa)
+
+Regras do DaniPets V9.3.3 (`legacy/core/src/venda.ts:1-25`). Venda só na demonstração: o servidor antigo não tinha
+vendas (§2 de `02-MAPA-DE-FUNCIONALIDADES.md`).
+
+### 10.1 Formas de pagamento
+
+| Forma | Nome | Como entra | Fonte |
+|---|---|---|---|
+| `dinheiro` | Dinheiro | botão; pede o valor recebido e calcula o troco | `venda.ts:36-48` |
+| `pix` | Pix | botão | idem |
+| `debito` | Cartão de débito | botão | idem |
+| `credito` | Cartão de crédito | botão | idem |
+| `vale` | Vale-troca | botão "Usar vale-troca"; cada vale é uma parte; vale com ou sem cliente | `venda.ts:50-58,128-131` |
+| `cashback` | Cashback | botão "Usar cashback"; só com cliente identificado | `venda.ts:50-61` |
+| `fiado` | Fiado | botão; só com cliente identificado e o recurso Fiado ligado | `venda.ts:60-65`; `legacy/web/src/demo/apiLocal.ts:1575-1576` |
+
+- Ordem fixa (a do DaniPets): dinheiro, pix, débito, crédito, vale, cashback, fiado; a venda grava os pagamentos nessa
+  ordem, não na digitada; partes na mesma forma se somam; o mesmo vale duas vezes soma (`venda.ts:35-36,469-508,545-549`).
+- Sem cliente: "Venda no fiado precisa de cliente identificado. Identifique o cliente (F6)." · "O cashback precisa de
+  cliente identificado. Identifique o cliente (F6)." (`venda.ts:63-65`).
+- Descrição: "Pix" numa forma só; "Dinheiro R$ 10,00 + Pix R$ 22,40" no dividido; "Vale-troca VT-0001-ABC" no vale; sem
+  pagamento: "Sem pagamento (brinde)" (`venda.ts:300-308`). Número da venda: "#00012" (`venda.ts:295-298`).
+
+### 10.2 O pedido da Frente de caixa (`validarNovaVenda`, `venda.ts:376-553`)
+
+- Campos: `itens`, `pagamentos`, `recebidoDinheiroCentavos`, `clienteId`, `liberacaoFiado`. Recusas próprias:
+  `vendedor` → "Quem vendeu é sempre quem está logado."; campo que começa com `cliente` → "O cliente vem do cadastro: envie
+  só o clienteId."; outro → "Campo não permitido."; no item, campo com "preco" → "O preço vem do cadastro do produto."
+  (`venda.ts:18-23,377-380,392-394,407-409`). Corpo que não é objeto: "Envie um objeto com os dados da venda.".
+- Itens: "Adicione pelo menos um produto à venda." · "Item inválido." · "Produto inválido." (vazio ou id > 64) · "A
+  quantidade deve ser um número inteiro maior que zero.". O mesmo produto repetido sem desconto nem cupom soma numa linha
+  (o leitor bipa várias vezes); repetido com desconto ou cupom: "Produto repetido na venda: junte as quantidades numa
+  linha só.". Soma acima de 999.999: "Quantidade acima do limite num mesmo produto (<id>).". Mais de 200 produtos
+  diferentes: "Uma venda pode ter até 200 produtos diferentes." (`venda.ts:75-86,396-467`).
+- Desconto do item `{ precoFinalCentavos, motivo, autorizacao? }`: "Desconto inválido." · "O preço final deve ser em
+  centavos, zero ou mais." · "Informe o motivo do desconto." · "O motivo pode ter até 200 caracteres." · "O motivo contém
+  caracteres inválidos." · "Autorização inválida." (texto > 100 ou com controle) (`venda.ts:310-328,420-434`).
+- Cupom do item (id do cupom de retorno): "Cupom inválido." · com desconto no mesmo item: "Use o cupom de retorno ou o
+  desconto manual, não os dois no mesmo item." (`venda.ts:435-447`).
+- Pagamentos: lista obrigatória ("Informe a forma de pagamento."), até 8 partes ("O pagamento pode ser dividido em até 8
+  partes."); "Pagamento inválido." · "Escolha a forma de pagamento." · "O valor de cada parte deve ser maior que zero." ·
+  vale sem `valeId`: "Escolha o vale-troca." · `valeId` em outra forma: "Só o vale-troca leva o vale."
+  (`venda.ts:469-508`).
+- `recebidoDinheiroCentavos`: inteiro de 0 ao teto ("Valor recebido inválido."); `clienteId`: texto até 64 sem controle
+  ("Cliente inválido."); `liberacaoFiado` `{ autorizacao, motivo }`: motivo NFC, espaços juntados, 1 a 200 ("Liberação do
+  fiado inválida: informe o motivo.") (`venda.ts:510-536`).
+- Erro de validação na demonstração: 400 "Dados da venda inválidos." com a lista (`apiLocal.ts:1573-1574`).
+
+### 10.3 O cálculo (`calcularVenda`, `venda.ts:555-763`)
+
+1. Cada item sai do cadastro: nome, código interno, preço de tabela e unidade da hora da venda; produto que não existe ou
+   está inativo: "Produto não encontrado ou desativado."; acima do máximo da unidade: "Quantidade acima de 9999 unidades num
+   mesmo produto (<nome>)." ou "Quantidade acima de 999,999 kg de <nome> numa venda." (`venda.ts:607-620`).
+2. **Cupom de retorno**: vale só o cupom ativo do cliente identificado desta venda; preço = `round(preço × (10000 −
+   round(pct × 100)) / 10000)`; precisa ficar menor que o de tabela; senão: "O cupom de retorno de <nome> não vale para esta
+   venda. Identifique o cliente de novo."; motivo gravado "Cupom de retorno <pct com vírgula>%", responsável = quem vende
+   (`venda.ts:67-73,623-633`).
+3. **Desconto manual** (`venda.ts:336-374,634-666`): classificação pelo preço final:
+   - igual ao de tabela, maior, negativo ou não inteiro → "O preço final de <nome> deve ser menor que o preço de tabela (0
+     para brinde).";
+   - 0 → **brinde** (100%): quem não tem a permissão `brinde` (só Dono e Adm. Sup) precisa da autorização de um Dono;
+   - % = (tabela − final) / tabela × 100; até o limite da loja (regra `venda.descontoSemSenhaPct`, padrão 10, com folga de
+     1e-9) → **dentro do limite**, sem senha;
+   - acima → quem não tem `desconto.acima_do_limite` precisa da autorização do Dono ou do Administrador;
+   - a autorização serve se: existe, é desta loja, tem até 4 horas (`VALIDADE_AUTORIZACAO_HORAS`), quem autorizou
+     "atende" (para brinde, pode `brinde`; para acima do limite, pode `desconto.acima_do_limite` e `estorno`), é do tipo
+     `desconto`, do mesmo produto e com preço final autorizado ≤ o pedido (no brinde, exatamente 0); senão: "O brinde de
+     <nome> precisa da autorização de um Dono. Aplique o desconto de novo." ou "O desconto de <nome> passa de <limite com
+     vírgula>% e precisa da autorização do Dono ou do Administrador. Aplique o desconto de novo.";
+   - grava o motivo, o responsável (quem autorizou, ou a própria pessoa) e se foi com senha.
+4. Subtotal = valor da quantidade ao preço cobrado (§6.2); desconto da venda = soma de (valor ao preço de tabela −
+   subtotal); total acima do teto: "Total da venda acima do limite permitido."; o item guarda o custo médio da hora
+   (arredondado), para o lucro (`venda.ts:667-686`).
+5. Estoque para todos os itens (§7.3) (`venda.ts:689-693`).
+6. Cliente: do cadastro, ativo; senão "Cliente não encontrado. Identifique o cliente de novo (F6) ou tire o cliente da
+   venda." (`venda.ts:695-703`).
+7. Fiado/cashback sem cliente: as mensagens de 10.1. Cashback acima do saldo do cliente hoje: "O cashback disponível de
+   <cliente> é <valor>." (`venda.ts:704-712`).
+8. Vale: em aberto e com saldo: "Vale-troca inválido ou já usado. Remova o vale do pagamento." · "O vale <código> tem
+   saldo de <saldo>." (`venda.ts:713-721`).
+9. Pagamentos: total > 0 sem pagamento: "Informe a forma de pagamento."; soma diferente do total: "Os pagamentos somam
+   <pago>, e a venda é <total>."; com parte em dinheiro, o recebido precisa ser ≥ a parte: "Informe o valor recebido em
+   dinheiro (igual ou maior que <parte>)."; troco = recebido − parte em dinheiro (`venda.ts:723-747`). Venda de brinde
+   (total 0) passa sem pagamento.
+10. Na demonstração, os erros do cálculo saem como 409 com a primeira mensagem (`apiLocal.ts:1597`).
+
+### 10.4 Registrar a venda (`legacy/web/src/demo/apiLocal.ts:1566-1699`)
+
+1. Qualquer logado (sem permissão própria além do acesso à Frente de caixa); o caixa de hoje precisa estar aberto, com
+   responsável (§11) — 409 `caixa`.
+2. Valida (10.2); fiado exige o recurso Fiado ligado (§5.4).
+3. Busca o cupom ativo do cliente, o saldo de cashback, os vales e os custos; calcula (10.3).
+4. **Fiado** (§12): exige o cadastro completo do cliente (nome, telefone e CPF): 409 "Fiado só com o cadastro completo do
+   cliente (nome, telefone e CPF)."; acima do limite ou com fiado vencido (quando a regra pede o Dono): 409
+   `fiado_liberacao`, que só passa com a liberação de um Dono para este cliente e este valor.
+5. As autorizações usadas são apagadas (uso único), inclusive a do fiado.
+6. Número sequencial da loja (o maior + 1); grava quem vendeu (a pessoa logada), o cliente, os itens, total, desconto,
+   pagamentos, recebido, troco, `status: 'finalizada'`, o caixa do dia e a liberação do fiado.
+7. Efeitos (tudo na mesma gravação): cashback usado sai dos lotes do cliente (o que vence antes primeiro) e a compra gera
+   o cashback dela se a Fidelidade estiver ligada (§13); cupom usado fica marcado (`cliente.cupom_usado`); saldo dos vales
+   usados diminui (§14); estoque sai (`venda`); lançamentos e recebíveis do financeiro (§15), com a baixa automática do
+   cartão quando o Dono escolheu.
+8. Histórico: `venda.fiado_liberado` (`numero`, `valorCentavos`, `autorizadoPor`) e, com desconto, `venda.desconto`
+   (`numero`, `descontoCentavos`, `brinde`, `autorizadoPor`).
+
+Listar vendas (`apiLocal.ts:962-968,1552-1556`): período de/até no fuso; quem não tem `relatorios` (o Vendedor) só pede
+hoje: 403 "Vendas de outros dias: só o Dono ou o Administrador (Relatórios)."; mais novas primeiro. Buscar pelo número:
+404 "Venda não encontrada." (`apiLocal.ts:1558-1564`).
+
+### 10.5 Autorização com senha (desconto, brinde, cancelamento, devolução e as liberações do Dono)
+
+- Quem aparece para autorizar: usuários ativos da loja (fora o Adm. Sup) que têm `desconto.acima_do_limite`
+  (`legacy/web/src/demo/usuariosDemo.ts:332-339`).
+- Conferir (`usuariosDemo.ts:341-366`; `apiLocal.ts:1707-1725`): escolhido inválido: 403 "Escolha quem vai autorizar (Dono
+  ou Administrador ativo)."; bloqueado: 429 com a mensagem de bloqueio do login; senha errada: 403 "Senha incorreta.", e
+  conta como tentativa errada do login dele (5 erradas bloqueiam por 5 minutos, com `sessao.senha_errada` /
+  `sessao.bloqueado` no histórico) (§1.4); a senha certa zera as tentativas.
+- Recusas por ação: brinde (preço final 0) sem `brinde`: 403 "Brinde só com a autorização de um Dono."; `dia_fechado` sem
+  `dia_fechado.liberar`: 403 "Lançamento em dia com o caixa já fechado: só com a liberação de um Dono."; `fiado` sem
+  `fiado.liberar`: 403 "Fiado acima do limite ou vencido: só com a liberação de um Dono."; `excluir_dados_cliente` sem
+  `clientes.excluir_dados`: 403 "Excluir os dados de um cliente: só com a liberação de um Dono.".
+- A autorização guarda quem autorizou, a ação exata (`desconto` com produto e preço final; `cancelamento`/`devolucao`
+  com a venda; `retirada` com o valor; `fechamento` com o dia e o contado; `dia_fechado` com o dia; `fiado` com o cliente
+  e o valor; `excluir_dados_cliente` com o cliente) e quando (`legacy/core/src/venda.ts:262-288`). Fica só na memória
+  (recarregar a página perde), por loja; vale 4 horas; é gasta no uso (`apiLocal.ts:568-570,986`; `venda.ts:91-92`).
+  Na reconstrução: guardar no servidor (tabela com loja, expiração e uso único) — decisão para o
+  `06-RISCOS-E-DECISOES.md`.
+
+### 10.6 Cancelar a venda inteira
+
+(`legacy/core/src/venda.ts:765-774,831-838,888-927`; `legacy/web/src/demo/apiLocal.ts:1727-1762`)
+- Pedido `{ motivo, autorizacao? }`: "Envie um objeto com o motivo." · "Informe o motivo do cancelamento." (até 200, sem
+  controle).
+- "Esta venda já foi cancelada."; só no mesmo dia (no fuso) e sem devolução: "Cancelar a venda inteira só é possível no
+  mesmo dia e sem devoluções. Use "Devolver itens"."; só com o caixa daquela venda aberto (venda sem caixa: basta o de hoje
+  aberto): "Cancelar a venda inteira só com o caixa daquela venda aberto. Use "Devolver itens"." (DaniPets canCancelSale).
+- Quem não tem `estorno` (o Vendedor) precisa da autorização do Dono ou do Administrador para esta venda: "O cancelamento
+  precisa da autorização do Dono ou do Administrador.".
+- Tudo volta pelas mesmas formas da venda; o que foi pago com vale volta para o mesmo vale; estoque volta
+  (`cancelamento`); financeiro desfeito (§15); cashback usado volta como lote novo e o gerado sai; o cupom usado volta a
+  valer (§13).
+- Grava `status: 'cancelada'` e o cancelamento (quando, quem, quem autorizou, motivo, estornos). Histórico
+  `venda.cancelada` (`numero`, `valorCentavos`, `autorizadoPor`).
+
+### 10.7 Devolver itens
+
+(`legacy/core/src/venda.ts:776-810,817-874,929-974`; `legacy/web/src/demo/apiLocal.ts:1764-1837`)
+- Pedido `{ itens: [{ linha, quantidade, voltaAoEstoque? }], motivo, autorizacao?, modo?, clienteDoVale? }`: "Envie um
+  objeto com os itens e o motivo." · "Escolha o que vai ser devolvido." · "Item inválido." · "Marque se o item volta para o
+  estoque." · nenhuma quantidade > 0: "Informe a quantidade de pelo menos um item." · "Informe o motivo da devolução." ·
+  `modo` `mesma` (padrão) ou `vale`: "Escolha como o valor volta para o cliente." · "Cliente inválido." · cliente do vale
+  fora do modo vale: "O cliente do vale só vale na devolução como vale-troca.".
+- Modo vale exige o recurso Vale-troca ligado (§5.4); o caixa de hoje não pode estar fechado (§11).
+- "Esta venda foi cancelada." · "Item da venda não encontrado." · "Item repetido na devolução." · acima do que resta: "De
+  <nome> ainda dá para devolver no máximo <quantidade>.".
+- Valor de cada item: pelo preço cobrado; no kg, a diferença entre o já devolvido com e sem esta parte (devolver tudo aos
+  poucos dá o subtotal exato).
+- Quem não tem `estorno` precisa da autorização: "A devolução precisa da autorização do Dono ou do Administrador.".
+- **Pelas mesmas formas**: reparte o valor na proporção do que cada forma ainda pode devolver (pago menos já devolvido),
+  arredondando para baixo e completando pelas maiores; acima do disponível: "Só <valor> desta venda ainda pode voltar pela
+  mesma forma de pagamento.". Em dinheiro, o caixa de hoje precisa estar aberto ("Devolução em dinheiro", §11) e não passar
+  do esperado na gaveta (§15).
+- **Como vale-troca** (DaniPets planRefund/DEV-03): abate antes o fiado desta venda ainda em aberto (até o que o fiado
+  ainda pode devolver); o resto vira um vale novo. Dono do vale: o cliente escolhido (ativo, não excluído: senão 404
+  "Cliente do vale não encontrado. Escolha outro ou deixe o da venda."), ou o da venda, ou ninguém (vale para quem tiver o
+  código) (§14).
+- Número da devolução: sequencial da loja (o maior entre todas as vendas + 1); grava itens, total, estornos, vale, motivo,
+  quem fez e quem autorizou. Estoque volta só do que volta para a prateleira (`devolucao`). Histórico `venda.devolucao`
+  (`numero`, `devolucao`, `valorCentavos`, `autorizadoPor`) e `vale.emitido` (alvo: o cliente do vale; `codigo`,
+  `valorCentavos`, `numero`).
+
+### 10.8 Resumos de vendas (Visão geral e Relatórios)
+
+(`legacy/core/src/venda.ts:999-1091`)
+- Só finalizadas entram no total; canceladas só contam em "canceladas". Itens vendidos em unidades e em gramas separados
+  ("un + kg"); ticket médio = `round(total / quantidade)` (0 sem vendas).
+- Por forma: só as formas usadas, na ordem fixa; no dividido, cada parte na sua forma; a quantidade conta a venda uma vez
+  por forma. Por vendedor: do maior total para o menor, empate por nome (pt-BR).
+- Devoluções de um período: pela data da devolução, com o número da venda, quem vendeu, o cliente e as formas da venda
+  (`apiLocal.ts:1839-1843`, mesma regra do Vendedor só hoje).
