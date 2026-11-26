@@ -6,6 +6,9 @@
 import type {
   AcessoDoUsuario,
   AjustesDaLoja,
+  ConferenciaDoEstoque,
+  NovoErro,
+  RegistroDeErro,
   DefinicaoDaVisao,
   VisaoSobMedida,
   MudancaDosAjustes,
@@ -820,6 +823,42 @@ export interface ApiVisoes {
   excluirVisao(id: string): Promise<void>;
 }
 
+// ---- Manutenção (Adm. Sup, módulo 13h): diagnóstico da loja, estoque negativo e registro de erros.
+
+export interface DiagnosticoDaLoja {
+  geradoEm: string;
+  /** A versão do sistema (a última atualização publicada). */
+  versao: string;
+  /** Quantos registros de cada assunto (os mesmos da cópia de segurança). */
+  assuntos: { assunto: AssuntoDaCopia; nome: string; registros: number }[];
+  equipe: { ativos: number; total: number };
+  /** Linhas do histórico da loja. */
+  historico: number;
+  /** Espaço ocupado (na demonstração, no navegador). limiteBytes null = não se sabe. */
+  espaco: { daLojaBytes: number; totalBytes: number | null; limiteBytes: number | null };
+  caixa: { hoje: EstadoCaixa; ultimoFechado: string | null; aVerificar: number };
+  estoque: ConferenciaDoEstoque;
+  /** Quantos erros há no registro. */
+  erros: number;
+}
+
+export interface ItemDoRegistroDeErros extends RegistroDeErro {
+  /** O nome de quem estava usando (null = não se sabe ou não existe mais). */
+  quemNome: string | null;
+}
+
+export interface ApiManutencao {
+  /** Só o Adm. Sup. */
+  diagnosticoDaLoja(): Promise<DiagnosticoDaLoja>;
+  /** Só o Adm. Sup: lança o ajuste que leva o saldo negativo a zero. */
+  zerarEstoqueNegativo(produtoId: string): Promise<SaldoEstoque>;
+  /** Todos os logados: a tela guarda o erro inesperado (a tela nunca para por causa disto). */
+  registrarErro(erro: NovoErro): Promise<void>;
+  /** Só o Adm. Sup: do mais novo para o mais antigo. */
+  listarErros(): Promise<ItemDoRegistroDeErros[]>;
+  limparErros(): Promise<void>;
+}
+
 export type ApiPainel = ApiProdutos &
   ApiVendas &
   ApiEstoque &
@@ -835,7 +874,8 @@ export type ApiPainel = ApiProdutos &
   ApiDados &
   ApiComunicados &
   ApiAjustes &
-  ApiVisoes;
+  ApiVisoes &
+  ApiManutencao;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

@@ -65,6 +65,8 @@ export const ACOES_AUDITORIA = {
   'suporte.ajustes_alterados': 'Ajustes da loja alterados (recursos e limites)',
   'suporte.visao_salva': 'Visão sob medida salva (Relatórios)',
   'suporte.visao_excluida': 'Visão sob medida excluída (Relatórios)',
+  'suporte.estoque_zerado': 'Saldo negativo zerado (manutenção do suporte)',
+  'suporte.erros_limpos': 'Registro de erros limpo',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -292,6 +294,16 @@ export function resumirAuditoria(
     case 'suporte.ajustes_alterados':
       partes.push(resumoDosAjustes(d) || null);
       break;
+    case 'suporte.estoque_zerado': {
+      const q = typeof d.quantidade === 'number' && Number.isSafeInteger(d.quantidade) ? d.quantidade : null;
+      partes.push(q === null ? null : `+${formatarQuantidade(q, unidadeDe(d.unidade))}`);
+      break;
+    }
+    case 'suporte.erros_limpos': {
+      const n = inteiro(d.erros);
+      partes.push(n === null ? null : `${n} ${n === 1 ? 'erro' : 'erros'}`);
+      break;
+    }
     case 'suporte.visao_salva':
     case 'suporte.visao_excluida':
       partes.push(ehBaseDaVisao(d.base) ? BASES_DAS_VISOES[d.base] : null, acao === 'suporte.visao_salva' ? (d.nova === true ? 'nova' : d.nova === false ? 'alterada' : null) : null);

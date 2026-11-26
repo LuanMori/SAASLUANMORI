@@ -29,3 +29,4 @@ export * from './vendasAntigas';
 export * from './comunicados';
 export * from './recursosDaLoja';
 export * from './visoes';
+export * from './manutencao';

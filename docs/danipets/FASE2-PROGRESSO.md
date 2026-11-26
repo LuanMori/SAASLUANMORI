@@ -1396,3 +1396,44 @@ jeito que ela precisa, e a equipe vê em **Relatórios → Visões**.
   - o Adm. Sup montou "Vendas por vendedor" (sem as canceladas, agrupada e somada, do maior para o menor) e viu a prévia;
   - a Ana viu a mesma tabela em Relatórios → Visões e exportou para o Excel;
   - celular sem rolagem para o lado, console sem erros.
+
+### 13h (26/11/2026): Adm. Sup — manutenção (diagnóstico, estoque e registro de erros)
+
+A parte **Adm. Sup** ganhou três cartões de manutenção:
+
+- **Diagnóstico da loja** (com "Atualizar"):
+  - a versão do sistema, a equipe ("3 ativos de 4"), as linhas do histórico e os erros no registro;
+  - o espaço: quanto a loja ocupa e o total no navegador, de cerca de 5 MB (avisa perto de encher);
+  - o caixa: a situação de hoje, o último dia fechado e os fechamentos a verificar;
+  - quantos registros de cada assunto a loja tem (os mesmos 20 assuntos da cópia de segurança).
+- **Conferir o estoque:** o saldo é sempre recalculado a partir dos movimentos; aparecem os produtos com saldo
+  negativo (o mais negativo primeiro) e quantos movimentos são de um produto que não existe mais.
+  - "Zerar o saldo" (com "Sim, zerar") lança um ajuste com o motivo "Manutenção do suporte: saldo negativo zerado".
+    Ele fica no histórico do produto e no histórico da loja ("Saldo negativo zerado (manutenção do suporte) • +4 un").
+- **Registro de erros:** o erro inesperado que acontece na tela de qualquer pessoa da loja fica guardado, para o suporte
+  ver sem pedir print.
+  - Guarda quando, quem, em que aba, a mensagem técnica e onde no código.
+  - O mesmo erro logo em seguida (até 1 minuto, mesma pessoa e aba) vira "vezes" na mesma linha.
+  - Ficam os 100 mais novos de cada loja. "Limpar o registro" (com confirmação) entra no histórico.
+  - **Como chega:** a área logada escuta os erros da página e as promessas recusadas sem tratamento.
+  - **Tela que quebra:** se uma tela quebra ao desenhar, aparece "Algo deu errado nesta tela", com "Tentar de novo",
+    no lugar dela. A barra e os avisos continuam, e o erro vai para o registro.
+  - Registrar nunca atrapalha a pessoa: sem essa parte no servidor, segue sem registrar.
+- **Reabrir caixa:** já existe "Desfazer o fechamento" na aba Caixa do dia (Dono, Administrador e o Adm. Sup). Ele vale
+  para o último fechamento, para não quebrar o saldo dos dias seguintes. O diagnóstico mostra a situação do caixa e
+  aponta para ele, em vez de repetir a ferramenta.
+- **Regras:** `packages/core/src/manutencao.ts`. Só o Adm. Sup vê e mexe (`suporte.ferramentas`); o registro recebe de
+  todos os logados.
+- **Cópia de segurança:** o registro de erros fica fora dela.
+- **LGPD:** o registro de erros entrou no registro de tratamento (linha 12).
+- **Servidor:** responde 501.
+- **Testes:**
+  - núcleo 481 (+4): o registro de erros (o que é guardado, "vezes", os 100 mais novos) e a conferência do estoque;
+  - tela 509 (+8): a API da demonstração (só o Adm. Sup; o diagnóstico; zerar o saldo; registrar, listar e limpar; fora
+    da cópia), os três cartões, a tela que quebra e os erros que escapam.
+- **Navegador:**
+  - dois erros de propósito na tela da Ana (um da página, um de promessa) apareceram no registro, com "Ana" e "Visão
+    geral";
+  - um saldo negativo gravado direto apareceu em "Conferir o estoque" e foi zerado com o ajuste de +4 un;
+  - o registro foi limpo;
+  - celular sem rolagem para o lado, console sem erros (fora os dois de propósito).

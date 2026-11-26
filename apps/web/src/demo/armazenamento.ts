@@ -89,6 +89,21 @@ export function usarArmazenamentoParaTeste(s: Storage | null): void {
 
 export const situacaoGravacao = (): SituacaoGravacao => situacao;
 
+/** Quantos caracteres a demonstração ocupa no navegador (chaves e valores; null = sem acesso ao armazenamento). */
+export function caracteresGuardados(): number | null {
+  if (!armazenamento) return [...memoria].reduce((t, [k, v]) => t + k.length + v.length, 0);
+  try {
+    let total = 0;
+    for (let i = 0; i < armazenamento.length; i++) {
+      const k = armazenamento.key(i);
+      if (k) total += k.length + (armazenamento.getItem(k)?.length ?? 0);
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
 /** Avisa quando a situação muda (a tela mostra o aviso fixo). Devolve a função que para de avisar. */
 export function aoMudarSituacao(f: (s: SituacaoGravacao) => void): () => void {
   ouvintesSituacao.add(f);

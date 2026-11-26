@@ -34,6 +34,7 @@ import { TelaProdutosEstoque } from './TelaProdutosEstoque';
 import { TelaRelatorios } from './TelaRelatorios';
 import { TelaUsuarios } from './TelaUsuarios';
 import { TelaVisaoGeral } from './TelaVisaoGeral';
+import { LimiteDeErro, registrar, usarRegistroDeErros } from './registroDeErros';
 import { usarViradaDoDia } from './usarViradaDoDia';
 
 interface Props extends DadosBarra {
@@ -80,6 +81,9 @@ export function TelaPainel({
   secoesDisponiveis = null,
 }: Props) {
   const [secao, setSecao] = useState<IdSecao>(secaoInicial);
+  // o erro inesperado vai para o registro do suporte (módulo 13h), com a aba em que a pessoa estava
+  usarRegistroDeErros(api, secao);
+  const aoErroDaTela = (mensagem: string, onde: string | null) => registrar(api, mensagem, onde, secao);
   const [config, setConfig] = useState<ConfiguracaoDaLoja | null>(null);
   /** A foto do perfil (Meu usuário), no canto da barra lateral. */
   const [foto, setFoto] = useState<string | null>(null);
@@ -171,19 +175,21 @@ export function TelaPainel({
     return (
       <div className="painel-app pdv-modo">
         <main className="pdv-conteudo" aria-label="Frente de caixa">
-          <TelaFrenteCaixa
-            api={api}
-            operador={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
-            loja={lojaDaBarra}
-            limiteDescontoPct={config?.regras.venda.descontoSemSenhaPct}
-            fuso={fuso}
-            agora={agora}
-            chaveCarrinho={chaveCarrinho}
-            aoSair={() => setSecao('visao-geral')}
-            aoAbrirCaixa={pode('caixa-do-dia') ? () => setSecao('caixa-do-dia') : undefined}
-            avisoDaVirada={avisoDaVirada}
-            ajustes={ajustes}
-          />
+          <LimiteDeErro key={secao} aoErro={aoErroDaTela}>
+            <TelaFrenteCaixa
+              api={api}
+              operador={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
+              loja={lojaDaBarra}
+              limiteDescontoPct={config?.regras.venda.descontoSemSenhaPct}
+              fuso={fuso}
+              agora={agora}
+              chaveCarrinho={chaveCarrinho}
+              aoSair={() => setSecao('visao-geral')}
+              aoAbrirCaixa={pode('caixa-do-dia') ? () => setSecao('caixa-do-dia') : undefined}
+              avisoDaVirada={avisoDaVirada}
+              ajustes={ajustes}
+            />
+          </LimiteDeErro>
         </main>
       </div>
     );
@@ -257,73 +263,76 @@ export function TelaPainel({
               </header>
             </div>
           )}
-          {permitido && !disponivel(secao) && (
-            <div className="rel">
-              <header className="vg-topo">
-                <div>
-                  <h1>{item?.rotulo}</h1>
-                  <p className="alerta" role="status">
-                    {MENSAGEM_SEM_SERVIDOR}
-                  </p>
-                </div>
-              </header>
-            </div>
-          )}
-          {ver('visao-geral') && (
-            <TelaVisaoGeral
-              api={api}
-              nome={pessoa.nome}
-              fuso={fuso}
-              agora={agora}
-              intervaloMs={intervaloMs}
-              aoVerProdutos={pode('produtos-e-estoque') ? () => escolher('produtos-e-estoque') : undefined}
-              aoVerFinanceiro={pode('financeiro') ? () => escolher('financeiro') : undefined}
-              aoVerRelatorios={pode('relatorios') ? () => escolher('relatorios') : undefined}
-              aoVerCaixa={pode('caixa-do-dia') ? () => escolher('caixa-do-dia') : undefined}
-              pendencias={pendenciasVisiveis}
-              aoIrPara={escolher}
-            />
-          )}
-          {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={acesso} fuso={fuso} intervaloMs={intervaloMs} />}
-          {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
-          {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} />}
-          {ver('dados-e-backup') && (
-            <TelaDadosBackup
-              api={api}
-              papel={acesso}
-              aoMudar={() => {
-                carregarConfig();
-                carregarComunicados();
-                carregarAjustes();
-              }}
-              fuso={fuso}
-              agora={agora}
-              ajustes={ajustes}
-            />
-          )}
-          {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
-          {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
-          {ver('clientes') && (
-            <TelaClientes
-              api={api}
-              pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
-              fuso={fuso}
-              agora={agora}
-              aoMudarRegras={carregarConfig}
-              ajustes={ajustes}
-            />
-          )}
-          {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} aoMudarRegras={carregarConfig} />}
-          {ver('meu-usuario') && (
-            <TelaMeuUsuario
-              api={api}
-              pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '', papel: pessoa.papel }}
-              fuso={fuso}
-              agora={agora}
-              aoMudarFoto={setFoto}
-              aoBloquear={sessaoEncerrada}
-            />
-          )}
+          {/* a tela que quebrar ao desenhar vira um aviso (e o erro vai para o suporte); a barra e os avisos continuam */}
+          <LimiteDeErro key={secao} aoErro={aoErroDaTela}>
+            {permitido && !disponivel(secao) && (
+              <div className="rel">
+                <header className="vg-topo">
+                  <div>
+                    <h1>{item?.rotulo}</h1>
+                    <p className="alerta" role="status">
+                      {MENSAGEM_SEM_SERVIDOR}
+                    </p>
+                  </div>
+                </header>
+              </div>
+            )}
+            {ver('visao-geral') && (
+              <TelaVisaoGeral
+                api={api}
+                nome={pessoa.nome}
+                fuso={fuso}
+                agora={agora}
+                intervaloMs={intervaloMs}
+                aoVerProdutos={pode('produtos-e-estoque') ? () => escolher('produtos-e-estoque') : undefined}
+                aoVerFinanceiro={pode('financeiro') ? () => escolher('financeiro') : undefined}
+                aoVerRelatorios={pode('relatorios') ? () => escolher('relatorios') : undefined}
+                aoVerCaixa={pode('caixa-do-dia') ? () => escolher('caixa-do-dia') : undefined}
+                pendencias={pendenciasVisiveis}
+                aoIrPara={escolher}
+              />
+            )}
+            {ver('produtos-e-estoque') && <TelaProdutosEstoque api={api} papel={acesso} fuso={fuso} intervaloMs={intervaloMs} />}
+            {ver('relatorios') && <TelaRelatorios api={api} fuso={fuso} agora={agora} />}
+            {ver('usuarios') && <TelaUsuarios api={api} eu={{ id: pessoa.id ?? '', papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} agora={agora} />}
+            {ver('dados-e-backup') && (
+              <TelaDadosBackup
+                api={api}
+                papel={acesso}
+                aoMudar={() => {
+                  carregarConfig();
+                  carregarComunicados();
+                  carregarAjustes();
+                }}
+                fuso={fuso}
+                agora={agora}
+                ajustes={ajustes}
+              />
+            )}
+            {ver('compras') && <TelaCompras api={api} fuso={fuso} agora={agora} />}
+            {ver('financeiro') && <TelaFinanceiro api={api} papel={acesso} fuso={fuso} agora={agora} aoMudarRegras={carregarConfig} />}
+            {ver('clientes') && (
+              <TelaClientes
+                api={api}
+                pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }}
+                fuso={fuso}
+                agora={agora}
+                aoMudarRegras={carregarConfig}
+                ajustes={ajustes}
+              />
+            )}
+            {ver('caixa-do-dia') && <TelaCaixaDoDia api={api} pessoa={{ nome: pessoa.nome, papel: pessoa.papel, permissoes: pessoa.permissoes ?? null }} fuso={fuso} aoMudarRegras={carregarConfig} />}
+            {ver('meu-usuario') && (
+              <TelaMeuUsuario
+                api={api}
+                pessoa={{ nome: pessoa.nome, usuario: pessoa.usuario ?? '', papel: pessoa.papel }}
+                fuso={fuso}
+                agora={agora}
+                aoMudarFoto={setFoto}
+                aoBloquear={sessaoEncerrada}
+              />
+            )}
+          </LimiteDeErro>
         </main>
       </div>
     </ContextoNomesDasContas.Provider>

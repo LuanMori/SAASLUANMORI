@@ -263,6 +263,12 @@ import {
   LIMITES_VISOES,
   validarVisao,
   type VisaoSobMedida,
+  ajusteParaZerar,
+  conferirEstoqueDaLoja,
+  juntarErro,
+  lerErro,
+  type RegistroDeErro,
+  ultimoDiaFechado,
 } from '@saas/core';
 import {
   type ApiSistema,
@@ -274,7 +280,7 @@ import {
   type Produto,
   type SaldoEstoque,
 } from '../api';
-import { comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
+import { caracteresGuardados, comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
 import {
   autorizadoresDemo,
   conferirAutorizadorDemo,
@@ -338,7 +344,12 @@ const CHAVES_DO_SUPORTE = {
   ajustes: 'saas-demo:ajustes-loja:v1',
   /** loja -> as visões sob medida dos Relatórios (módulo 13g). */
   visoes: 'saas-demo:visoes:v1',
+  /** loja -> o registro de erros das telas (módulo 13h): os mais novos. */
+  erros: 'saas-demo:erros:v1',
 } as const;
+
+/** O que o navegador costuma deixar a página guardar (cerca de 5 MB); a demonstração avisa perto disso. */
+const LIMITE_DO_NAVEGADOR_BYTES = 5 * 1024 * 1024;
 
 /** Os ajustes que o suporte fez na loja; sem nenhum, o padrão (tudo ligado e sem limite). */
 function ajustesGuardados(lojaId: string): AjustesDaLoja {
@@ -3445,6 +3456,71 @@ export function criarApiLocal({
         if (!v) throw new ErroApi(404, 'Visão não encontrada.');
         gravarDaLoja(CHAVES_DO_SUPORTE.visoes, lojaId, lista.filter((x) => x.id !== id));
         auditar('suporte.visao_excluida', null, { base: v.base });
+      });
+    },
+
+    // ---------------------------------------------------------------- manutenção (Adm. Sup, módulo 13h)
+    async diagnosticoDaLoja() {
+      await preparar();
+      exigir('suporte.ferramentas');
+      const assuntos = lerAssuntosDaLoja(lojaId);
+      const equipe = equipeParaCopiaDemo(lojaId);
+      const historico = historicoParaCopiaDemo(lojaId);
+      const caixas = caixasDaLoja();
+      // o texto guardado vira bytes como o navegador conta (UTF-16: dois bytes por caractere)
+      const total = caracteresGuardados();
+      return {
+        geradoEm: agora().toISOString(),
+        versao: versaoAtual(atualizacoesDoSistema()),
+        assuntos: LISTA_ASSUNTOS_DA_COPIA.map((a) => {
+          const v = assuntos[a];
+          const registros = ASSUNTOS_DA_COPIA[a].tipo === 'lista' ? (Array.isArray(v) ? v.length : 0) : ASSUNTOS_DA_COPIA[a].tipo === 'mapa' ? Object.keys((v as object | null) ?? {}).length : v ? 1 : 0;
+          return { assunto: a, nome: ASSUNTOS_DA_COPIA[a].nome, registros };
+        }),
+        equipe: { ativos: equipe.filter((u) => u.ativo).length, total: equipe.length },
+        historico: historico.length,
+        espaco: { daLojaBytes: JSON.stringify({ assuntos, equipe, historico }).length * 2, totalBytes: total === null ? null : total * 2, limiteBytes: LIMITE_DO_NAVEGADOR_BYTES },
+        caixa: { hoje: situacaoCaixa().estado, ultimoFechado: ultimoDiaFechado(caixas), aVerificar: fechamentosAVerificar(caixas).length },
+        estoque: conferirEstoqueDaLoja(produtosDaLoja(), movimentosDaLoja()),
+        erros: lerDaLoja<RegistroDeErro>(CHAVES_DO_SUPORTE.erros, lojaId).length,
+      };
+    },
+
+    async zerarEstoqueNegativo(produtoId) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('suporte.ferramentas');
+        const p = exigirProduto(produtoId);
+        const { saldo } = saldoDoProduto(p.id);
+        if (saldo >= 0) throw new ErroApi(409, `O saldo de ${p.nome} não está negativo.`);
+        juntarMovimentos([ajusteParaZerar(p.id, saldo, { em: agora().toISOString(), por: pessoa(quem) })]);
+        auditar('suporte.estoque_zerado', { tipo: 'produto', id: p.id }, { quantidade: -saldo, unidade: unidadeDe(p.unidade) });
+        return saldoDoProduto(p.id);
+      });
+    },
+
+    async registrarErro(erro) {
+      const v = lerErro(erro);
+      if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+      // fora da trava das operações: o erro pode ter acontecido no meio de uma delas
+      gravarDaLoja(CHAVES_DO_SUPORTE.erros, lojaId, juntarErro(lerDaLoja<RegistroDeErro>(CHAVES_DO_SUPORTE.erros, lojaId), v.valor, { id: novoId(), em: agora().toISOString(), quem: operador?.id ?? null }));
+    },
+
+    async listarErros() {
+      await preparar();
+      exigir('suporte.ferramentas');
+      return lerDaLoja<RegistroDeErro>(CHAVES_DO_SUPORTE.erros, lojaId)
+        .map((e) => ({ ...e, quemNome: e.quem ? (usuarioGuardadoDemo(lojaId, e.quem)?.nome ?? null) : null }))
+        .reverse();
+    },
+
+    async limparErros() {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('suporte.ferramentas');
+        const n = lerDaLoja<RegistroDeErro>(CHAVES_DO_SUPORTE.erros, lojaId).length;
+        gravarDaLoja(CHAVES_DO_SUPORTE.erros, lojaId, []);
+        auditar('suporte.erros_limpos', null, { erros: n });
       });
     },
 

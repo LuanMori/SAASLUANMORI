@@ -5,9 +5,9 @@
 //   - AVISOS PARA A EQUIPE (13e): um recado para a equipe desta loja, com a importância e o último dia; encerrar;
 //   - AJUSTES DESTA LOJA (13f): ligar e desligar recursos (o que o plano da loja inclui) e os limites de usuários e
 //     de produtos ativos, com quantos ela tem hoje;
-//   - VISÕES SOB MEDIDA (13g): tabelas dos Relatórios montadas para a loja (CartaoVisoes.tsx).
-// As regras ficam no @saas/core (comunicados.ts, recursosDaLoja.ts e visoes.ts). A manutenção entra aqui, na parte
-// seguinte do módulo.
+//   - VISÕES SOB MEDIDA (13g): tabelas dos Relatórios montadas para a loja (CartaoVisoes.tsx);
+//   - MANUTENÇÃO (13h): diagnóstico da loja, conferir o estoque e o registro de erros (CartaoManutencao.tsx).
+// As regras ficam no @saas/core (comunicados.ts, recursosDaLoja.ts, visoes.ts e manutencao.ts).
 import {
   type AjustesDaLoja,
   type Atualizacao,
@@ -25,13 +25,14 @@ import {
   versaoAtual,
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
-import { type ApiAjustes, type ApiComunicados, type ApiProdutos, type ApiUsuarios, ErroApi } from '../../api';
+import { type ApiAjustes, type ApiComunicados, type ApiManutencao, type ApiProdutos, type ApiUsuarios, ErroApi } from '../../api';
+import { ParteManutencao } from './CartaoManutencao';
 import { type ApiDasVisoes, CartaoVisoes } from './CartaoVisoes';
 import { dataNoFuso, horaNoFuso } from '../formato';
 import { usarCarga } from '../usarCarga';
 
 interface Props {
-  api: ApiComunicados & ApiAjustes & Pick<ApiUsuarios, 'listarUsuarios'> & Pick<ApiProdutos, 'listarProdutos'> & ApiDasVisoes;
+  api: ApiComunicados & ApiAjustes & Pick<ApiUsuarios, 'listarUsuarios'> & Pick<ApiProdutos, 'listarProdutos'> & ApiDasVisoes & ApiManutencao;
   fuso: string;
   agora?: () => Date;
   /** Publicou algo: a área logada lê de novo (a versão do rodapé e os avisos do alto da tela). */
@@ -54,6 +55,7 @@ export function ParteAdmSup({ api, fuso, agora = () => new Date(), aoMudar }: Pr
       <CartaoAvisos api={api} fuso={fuso} agora={agora} aoMudar={aoMudar} />
       <CartaoAjustes api={api} fuso={fuso} aoMudar={aoMudar} />
       <CartaoVisoes api={api} fuso={fuso} aoMudar={aoMudar} />
+      <ParteManutencao api={api} fuso={fuso} aoMudar={aoMudar} />
     </>
   );
 }
