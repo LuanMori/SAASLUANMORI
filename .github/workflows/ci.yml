@@ -1,0 +1,48 @@
+# .github/workflows/ci.yml — confere a cada push e pull request (reconstrução em Java, Fase 0, 26/11/2026).
+# Falhou? O GitHub mostra um X vermelho no commit e manda e-mail.
+#   1. varredura de segredos nos arquivos e em todo o histórico do git (scripts/varrer-segredos.mjs)
+#   2. o sistema reconstruído: mvn -f backend/pom.xml verify (compila tratando todo aviso como erro e roda os testes)
+# O CI do sistema antigo ficou em legacy/raiz/ci.yml, só para consulta: legacy/ não é executado.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  segredos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # o histórico inteiro, para a varredura de segredos
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Varredura de segredos (arquivos e histórico)
+        run: node scripts/varrer-segredos.mjs --historico
+
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Compila e testa o backend
+        run: mvn -B -f backend/pom.xml verify
