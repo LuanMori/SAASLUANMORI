@@ -7,6 +7,8 @@ coverage/
 !.env.example
 !.env.producao.example
 backups/
-apps/api/src/generated/
+legacy/api/src/generated/
 .DS_Store
 dist-demo/
+# sistema reconstruído (backend/): saída do Maven
+backend/target/
