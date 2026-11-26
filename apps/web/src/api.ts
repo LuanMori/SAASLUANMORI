@@ -6,6 +6,9 @@
 import type {
   AcessoDoUsuario,
   AssuntoDaCopia,
+  CadastroDaPlanilha,
+  SituacaoDaLinha,
+  TabelaImportada,
   CopiaDaLoja,
   CotacaoRecebimento,
   FiadoAVencer,
@@ -688,6 +691,26 @@ export interface PreviaDaCopia {
   assuntos: { assunto: AssuntoDaCopia; nome: string; quantidade: number }[];
 }
 
+/** O que a planilha traz, antes de importar (Dados e backup → Importar uma planilha). */
+export interface PreviaDaImportacao {
+  cadastro: CadastroDaPlanilha;
+  /** As colunas do modelo achadas na planilha. */
+  colunas: string[];
+  /** Os títulos que ficam de fora (não são do modelo ou são só de consulta). */
+  ignoradas: string[];
+  contagem: Record<SituacaoDaLinha, number>;
+  /** As linhas que não entram ou que entram com observação (até 500); as outras entram sem nada a dizer. */
+  linhas: { numero: number; situacao: SituacaoDaLinha; nome: string; motivos: string[]; avisos: string[] }[];
+}
+
+export interface ResultadoDaImportacao {
+  cadastro: CadastroDaPlanilha;
+  importadas: number;
+  existentes: number;
+  repetidas: number;
+  comErro: number;
+}
+
 export interface ApiDados {
   /**
    * A cópia de segurança completa da loja (@saas/core copiaDaLoja). Precisa de Dados e backup e de ver o CPF completo
@@ -703,6 +726,16 @@ export interface ApiDados {
   restaurarCopiaDaLoja(texto: string): Promise<PreviaDaCopia>;
   /** Registra no histórico a planilha de cadastro exportada em Dados e backup (o cadastro e quantas linhas). */
   registrarPlanilhaExportada(dados: { assunto: string; linhas: number }): Promise<void>;
+  /**
+   * Confere a planilha (a tabela lida do arquivo, títulos na primeira linha) com as regras do cadastro e o que a loja já
+   * tem (@saas/core importacao.ts). Não grava nada. Precisa de Dados e backup e do acesso ao cadastro.
+   */
+  conferirImportacao(cadastro: CadastroDaPlanilha, tabela: TabelaImportada): Promise<PreviaDaImportacao>;
+  /**
+   * Grava as linhas novas, tudo ou nada; o que já existe fica como está. Com linhas com erro, só importa se
+   * `semAsLinhasComErro` (elas ficam de fora). Fica no histórico.
+   */
+  importarCadastro(cadastro: CadastroDaPlanilha, tabela: TabelaImportada, opcoes?: { semAsLinhasComErro?: boolean }): Promise<ResultadoDaImportacao>;
 }
 
 export type ApiPainel = ApiProdutos &

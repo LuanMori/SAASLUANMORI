@@ -150,9 +150,10 @@ const diaReal = (dia: string) => {
 
 /**
  * Confere o cadastro. Nome, telefone e CPF são obrigatórios; os outros campos são opcionais e só voltam
- * quando enviados. `hoje` (AAAA-MM-DD) limita o nascimento.
+ * quando enviados. `hoje` (AAAA-MM-DD) limita o nascimento. `incompletoPermitido` (importação de planilha, 25/11/2026):
+ * telefone e CPF podem vir vazios (o cliente fica com o "cadastro incompleto"); informados, são conferidos igual.
  */
-export function validarNovoCliente(entrada: unknown, ctx: { hoje?: string } = {}): Resultado<NovoCliente> {
+export function validarNovoCliente(entrada: unknown, ctx: { hoje?: string; incompletoPermitido?: boolean } = {}): Resultado<NovoCliente> {
   if (!ehObjeto(entrada)) return { ok: false, erros: [{ campo: '_', mensagem: 'Envie um objeto com os dados do cliente.' }] };
   const d = entrada;
   const erros: ErroCampo[] = [];
@@ -164,11 +165,12 @@ export function validarNovoCliente(entrada: unknown, ctx: { hoje?: string } = {}
   else if (CONTROLE.test(nome)) erros.push({ campo: 'nome', mensagem: 'O nome contém caracteres inválidos.' });
   else if (!/\p{L}/u.test(nome)) erros.push({ campo: 'nome', mensagem: 'O nome precisa ter letras.' });
 
+  const vazioPode = (t: string) => ctx.incompletoPermitido === true && t === '';
   const telefone = typeof d.telefone === 'string' ? soDigitos(d.telefone) : '';
-  if (!telefoneValido(telefone)) erros.push({ campo: 'telefone', mensagem: 'Telefone inválido. Use o DDD e o número, por exemplo (41) 99999-9999.' });
+  if (!vazioPode(telefone) && !telefoneValido(telefone)) erros.push({ campo: 'telefone', mensagem: 'Telefone inválido. Use o DDD e o número, por exemplo (41) 99999-9999.' });
 
   const cpf = typeof d.cpf === 'string' ? soDigitos(d.cpf) : '';
-  if (!cpfValido(cpf)) erros.push({ campo: 'cpf', mensagem: cpf.length === 11 ? 'CPF inválido. Confira os números.' : 'Informe os 11 números do CPF.' });
+  if (!vazioPode(cpf) && !cpfValido(cpf)) erros.push({ campo: 'cpf', mensagem: cpf.length === 11 ? 'CPF inválido. Confira os números.' : 'Informe os 11 números do CPF.' });
 
   const extras: Partial<NovoCliente> = {};
   if ('extra' in d) extras.extra = textoDoCliente(d.extra, 'extra', LIMITES_CLIENTE.textoMax, 'O campo extra', erros);

@@ -1068,6 +1068,24 @@ h2 { font-size: 1.05rem; }
 .db-previa .alerta-aviso { margin: 0; }
 .db-confirmar { display: flex; align-items: flex-start; gap: 8px; font-weight: 600; cursor: pointer; }
 .db-confirmar input { margin-top: 3px; accent-color: var(--erro); }
+/* importar uma planilha: o que importar, a prévia linha por linha */
+.db-escolha { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; padding: 0; border: 0; }
+.db-escolha legend { width: 100%; padding: 0; margin-bottom: 8px; font-weight: 600; font-size: 0.92rem; }
+.db-escolha label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--borda-campo); border-radius: 999px; cursor: pointer; font-size: 0.92rem; }
+.db-escolha label.db-escolha-on { border-color: var(--primaria); background: var(--primaria-clara); color: var(--primaria-texto); font-weight: 600; }
+.db-escolha input { accent-color: var(--primaria); margin: 0; }
+.db-importar-tabela td { vertical-align: top; }
+.db-importar-tabela td:first-child, .db-importar-tabela th:first-child { padding-left: 14px; width: 1%; white-space: nowrap; }
+.db-importar-tabela td:nth-child(3) { white-space: nowrap; }
+.db-linha-erro td:nth-child(3) { color: var(--erro); font-weight: 600; }
+.db-linha-existe td:nth-child(3), .db-linha-repetida td:nth-child(3) { color: var(--suave); }
+@media (max-width: 640px) {
+  .db-importar-tabela tr { grid-template-columns: auto 1fr; gap: 2px 12px; padding: 10px 14px; }
+  .db-importar-tabela td, .db-importar-tabela td:first-child { padding: 2px 0; white-space: normal; }
+  .db-importar-tabela td:first-child { white-space: nowrap; }
+  .db-importar-tabela td[data-rotulo]::before { content: attr(data-rotulo) ": "; color: var(--suave); font-size: 0.82rem; font-weight: 400; }
+  .db-importar-tabela td:last-child { grid-column: 1 / -1; }
+}
 
 /* Compras (Fase 2, módulo 4) */
 .compra-cabeca { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.9fr); }

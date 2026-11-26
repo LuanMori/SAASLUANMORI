@@ -1,30 +1,37 @@
 // apps/web/src/painel/dados/ParteImportarExportar.tsx
 // Dados e backup → "Importar e exportar" (Fase 2, módulo 13; pedido do Luan, 25/11/2026):
+//   - IMPORTAR UMA PLANILHA (.xlsx ou .csv; DaniPets DAT-07) de produtos, clientes ou fornecedores, com o modelo para
+//     baixar. Antes de gravar, a prévia mostra o que entra, o que já existe (fica como está), o que se repete e o que
+//     tem erro, linha por linha. Grava tudo de uma vez (regras no @saas/core, importacao.ts);
 //   - EXPORTAR PARA O EXCEL os cadastros (produtos, clientes e fornecedores), com as colunas do modelo de importação;
 //   - CÓPIA DE SEGURANÇA: um arquivo com todos os dados da loja (DaniPets DAT-01). Leva o CPF completo dos clientes:
 //     só quem pode vê-lo baixa;
 //   - RESTAURAR UMA CÓPIA (DaniPets DAT-05): só o Adm. Sup, porque troca os dados atuais. O arquivo é conferido antes
 //     (formato, loja e conferência), a tela mostra o que ele leva, pede a confirmação e, antes de trocar, baixa uma
 //     cópia dos dados de agora.
-// A importação de planilhas entra aqui na próxima parte do módulo (13c).
 import {
   type CadastroDaPlanilha,
+  type CelulaImportada,
   COPIA_MAX_BYTES,
   type CopiaDaLoja,
   diaNoFuso,
   MENSAGENS_DA_COPIA,
+  NOME_DA_SITUACAO,
   NOME_DO_CADASTRO,
+  type Permissao,
   pode,
   podeBaixarCopia,
   type QuemAcessa,
+  resumoDaImportacao,
 } from '@saas/core';
 import { type ChangeEvent, useState } from 'react';
-import { type ApiPainel, ErroApi, type PreviaDaCopia } from '../../api';
+import { type ApiPainel, ErroApi, type PreviaDaCopia, type PreviaDaImportacao } from '../../api';
 import { type Baixar, baixarArquivo } from '../../relatorios/baixar';
+import { lerArquivoDePlanilha } from '../../relatorios/lerPlanilha';
 import { gerarXlsx, type Planilha } from '../../relatorios/xlsx';
 import { dataNoFuso, horaNoFuso, plural } from '../formato';
 import { IconeExcel } from '../relatorios/TabelaDaPlanilha';
-import { momentoParaArquivo, nomeParaArquivo, planilhaDeClientes, planilhaDeFornecedores, planilhaDeProdutos } from './planilhasDeCadastro';
+import { modeloDeImportacao, momentoParaArquivo, nomeParaArquivo, planilhaDeClientes, planilhaDeFornecedores, planilhaDeProdutos } from './planilhasDeCadastro';
 
 interface Props {
   api: ApiPainel;
@@ -72,10 +79,180 @@ function MostrarAviso({ aviso }: { aviso: Aviso | null }) {
 export function ParteImportarExportar({ api, papel, nomeDaLoja, fuso, agora = () => new Date(), baixar = baixarArquivo, aoMudar }: Props) {
   return (
     <>
+      <CartaoImportar api={api} papel={papel} baixar={baixar} aoMudar={aoMudar} />
       <CartaoExportar api={api} papel={papel} nomeDaLoja={nomeDaLoja} fuso={fuso} agora={agora} baixar={baixar} />
       <CartaoCopia api={api} papel={papel} fuso={fuso} baixar={baixar} />
       {pode(papel, 'dados.restaurar') && <CartaoRestaurar api={api} fuso={fuso} baixar={baixar} aoMudar={aoMudar} />}
     </>
+  );
+}
+
+// ------------------------------------------------------------------ importar uma planilha
+
+/** Cada cadastro com o acesso da aba dele (além de Dados e backup). */
+const PERMISSAO_PARA_IMPORTAR: Record<CadastroDaPlanilha, Permissao> = { produtos: 'produtos.cadastrar', clientes: 'clientes', fornecedores: 'compras' };
+const NO_SINGULAR_E_PLURAL: Record<CadastroDaPlanilha, [string, string]> = { produtos: ['produto', 'produtos'], clientes: ['cliente', 'clientes'], fornecedores: ['fornecedor', 'fornecedores'] };
+
+function CartaoImportar({ api, papel, baixar, aoMudar }: Required<Pick<Props, 'api' | 'papel' | 'baixar'>> & Pick<Props, 'aoMudar'>) {
+  const cadastros = (['produtos', 'clientes', 'fornecedores'] as const).filter((c) => pode(papel, PERMISSAO_PARA_IMPORTAR[c]));
+  const [cadastro, setCadastro] = useState<CadastroDaPlanilha>(cadastros[0] ?? 'produtos');
+  const [escolhida, setEscolhida] = useState<{ nome: string; tabela: CelulaImportada[][]; previa: PreviaDaImportacao } | null>(null);
+  const [ocupado, setOcupado] = useState<'lendo' | 'importando' | null>(null);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  if (cadastros.length === 0) return null;
+
+  function trocarCadastro(c: CadastroDaPlanilha) {
+    setCadastro(c);
+    setEscolhida(null);
+    setAviso(null);
+  }
+
+  async function baixarModelo() {
+    setAviso(null);
+    try {
+      const extra = cadastro === 'clientes' ? (await api.lerConfiguracao()).regras.clientes.campoExtra : null;
+      baixar(`modelo-${cadastro}.xlsx`, gerarXlsx(modeloDeImportacao(cadastro, extra?.ativo ? extra.rotulo : null)));
+    } catch (e) {
+      setAviso({ tipo: 'erro', texto: mensagemDe(e) });
+    }
+  }
+
+  async function escolher(e: ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = '';
+    if (!arquivo) return;
+    setEscolhida(null);
+    setAviso(null);
+    setOcupado('lendo');
+    try {
+      const tabela = await lerArquivoDePlanilha(arquivo);
+      setEscolhida({ nome: arquivo.name, tabela, previa: await api.conferirImportacao(cadastro, tabela) });
+    } catch (falha) {
+      setAviso({ tipo: 'erro', texto: mensagemDe(falha) });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function importar() {
+    if (!escolhida) return;
+    setOcupado('importando');
+    setAviso(null);
+    try {
+      const r = await api.importarCadastro(escolhida.previa.cadastro, escolhida.tabela, { semAsLinhasComErro: escolhida.previa.contagem.erro > 0 });
+      const [um, varios] = NO_SINGULAR_E_PLURAL[r.cadastro];
+      const partes = [
+        `${plural(r.importadas, `${um} importado`, `${varios} importados`)}.`,
+        r.existentes ? `${plural(r.existentes, 'já existia e ficou como estava', 'já existiam e ficaram como estavam')}.` : '',
+        r.repetidas ? `${plural(r.repetidas, 'linha repetida na planilha ficou de fora', 'linhas repetidas na planilha ficaram de fora')}.` : '',
+        r.comErro ? `${plural(r.comErro, 'linha com erro ficou de fora', 'linhas com erro ficaram de fora')}.` : '',
+      ];
+      setEscolhida(null);
+      setAviso({ tipo: 'ok', texto: partes.filter(Boolean).join(' ') });
+      aoMudar?.();
+    } catch (falha) {
+      setAviso({ tipo: 'erro', texto: mensagemDe(falha) });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  return (
+    <section className="card db-card" aria-labelledby="db-importar-titulo">
+      <h2 id="db-importar-titulo">Importar uma planilha</h2>
+      <p className="suave db-sub">
+        Traga os cadastros de outro sistema ou de uma planilha (.xlsx ou .csv). O que já está cadastrado (mesmo código de barras, CPF ou nome) fica como
+        está: a importação só acrescenta. Antes de gravar, o sistema mostra o que vai entrar.
+      </p>
+      <fieldset className="db-escolha">
+        <legend>O que vai importar?</legend>
+        {cadastros.map((c) => (
+          <label key={c} className={cadastro === c ? 'db-escolha-on' : undefined}>
+            <input type="radio" name="db-cadastro" value={c} checked={cadastro === c} onChange={() => trocarCadastro(c)} disabled={ocupado !== null} />
+            {NOME_DO_CADASTRO[c]}
+          </label>
+        ))}
+      </fieldset>
+      {!escolhida && (
+        <div className="db-exportar">
+          <label className="botao botao-primario db-arquivo">
+            {ocupado === 'lendo' ? 'Lendo a planilha…' : 'Escolher a planilha'}
+            <input
+              type="file"
+              accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={(e) => void escolher(e)}
+              aria-label={`Escolher a planilha de ${NOME_DO_CADASTRO[cadastro].toLowerCase()} para importar`}
+              disabled={ocupado !== null}
+            />
+          </label>
+          <button type="button" className="botao rel-exportar" onClick={() => void baixarModelo()} disabled={ocupado !== null}>
+            <IconeExcel />
+            Baixar o modelo
+          </button>
+        </div>
+      )}
+      {escolhida && (
+        <PreviaDaPlanilha nome={escolhida.nome} previa={escolhida.previa} ocupado={ocupado === 'importando'} aoImportar={() => void importar()} aoCancelar={() => setEscolhida(null)} />
+      )}
+      <MostrarAviso aviso={aviso} />
+    </section>
+  );
+}
+
+function PreviaDaPlanilha({ nome, previa: p, ocupado, aoImportar, aoCancelar }: { nome: string; previa: PreviaDaImportacao; ocupado: boolean; aoImportar: () => void; aoCancelar: () => void }) {
+  const [um, varios] = NO_SINGULAR_E_PLURAL[p.cadastro];
+  const semObservacao = p.contagem.nova - p.linhas.filter((l) => l.situacao === 'nova').length;
+  return (
+    <div className="db-previa" role="group" aria-label="O que a planilha traz">
+      <p className="db-previa-titulo">
+        <strong>{nome}</strong>: {resumoDaImportacao(p.contagem)}
+      </p>
+      <p className="modal-dica">
+        Colunas usadas: {p.colunas.join(', ')}.{p.ignoradas.length > 0 ? ` Ficam de fora: ${p.ignoradas.join(', ')}.` : ''}
+      </p>
+      {p.linhas.length > 0 && (
+        <div className="tabela-caixa tabela-caixa-borda">
+          <table className="tabela db-importar-tabela">
+            <thead>
+              <tr>
+                <th scope="col">Linha</th>
+                <th scope="col">Nome</th>
+                <th scope="col">Situação</th>
+                <th scope="col">O que acontece</th>
+              </tr>
+            </thead>
+            <tbody>
+              {p.linhas.map((l) => (
+                <tr key={l.numero} className={`db-linha-${l.situacao}`}>
+                  <td data-rotulo="Linha">{l.numero}</td>
+                  <td data-rotulo="Nome">{l.nome || '—'}</td>
+                  <td data-rotulo="Situação">{NOME_DA_SITUACAO[l.situacao]}</td>
+                  <td data-rotulo="O que acontece">{[...l.motivos, ...l.avisos].join(' ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {semObservacao > 0 && p.linhas.length > 0 && <p className="modal-dica">{plural(semObservacao, 'outra linha entra', 'outras linhas entram')} sem observação.</p>}
+      {p.contagem.nova === 0 ? (
+        <p className="alerta alerta-aviso">Nada a importar: as linhas desta planilha já estão cadastradas, repetidas ou com erro.</p>
+      ) : (
+        p.contagem.erro > 0 && (
+          <p className="alerta alerta-aviso">As linhas com erro ficam de fora. Depois, corrija a planilha e importe de novo: o que já tiver entrado não se repete.</p>
+        )
+      )}
+      <div className="modal-acoes">
+        <button type="button" className="botao" onClick={aoCancelar} disabled={ocupado}>
+          Cancelar
+        </button>
+        {p.contagem.nova > 0 && (
+          <button type="button" className="botao botao-primario" onClick={aoImportar} disabled={ocupado}>
+            {ocupado ? 'Importando…' : p.contagem.erro > 0 ? `Importar só as linhas certas (${p.contagem.nova})` : `Importar ${plural(p.contagem.nova, um, varios)}`}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

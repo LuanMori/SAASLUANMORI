@@ -1190,3 +1190,55 @@ essa parte. Lá, a conferência vai ser assinada com uma chave que só o servido
   - o Dono baixou a cópia; depois, mudou a descrição da loja;
   - o Adm. Sup restaurou: a cópia de antes saiu com a descrição mudada, e a descrição voltou;
   - 1600 px claro e escuro e celular sem rolagem para o lado, console sem erros.
+
+### 13c (26/11/2026): importar planilhas de produtos, clientes e fornecedores
+
+**Importar uma planilha** (DaniPets DAT-07), o primeiro cartão de Importar e exportar:
+
+1. **O que importar:** produtos, clientes ou fornecedores. Cada um aparece para quem tem o acesso da aba dele (além de
+   Dados e backup).
+2. **Baixar o modelo:** um .xlsx com os títulos das colunas, sem nenhuma linha de exemplo (para não entrar sem querer),
+   e a aba "Como preencher". O modelo de clientes leva a coluna do campo extra da loja, quando ele está ligado.
+3. **Escolher a planilha:** .xlsx (Excel, LibreOffice, Google Planilhas; lida no próprio navegador, sem biblioteca de
+   fora) ou .csv (ponto e vírgula, vírgula ou tabulação; acentos em UTF-8 ou no padrão do Excel antigo do Windows). O
+   .xls antigo é recusado, com o pedido de salvar como .xlsx ou .csv.
+4. **Prévia, antes de gravar:** quantas linhas entram, já estão cadastradas, se repetem ou têm erro, as colunas usadas
+   e as que ficam de fora, e uma tabela com o número de cada linha e o que acontece com ela.
+5. **Importar:** tudo de uma vez. Com linhas com erro, o botão vira "Importar só as linhas certas" e elas ficam de fora.
+   A importação fica no histórico ("Produtos • 95 cadastros novos • 20 já existiam").
+
+**Regras** (`packages/core/src/importacao.ts`):
+- cada coluna é achada pelo título, sem diferenciar maiúsculas, acentos e espaços. Falta coluna obrigatória: o arquivo
+  é recusado e a mensagem diz qual;
+- **acrescenta só o que não existe**: o mesmo código de barras, ou o mesmo nome, marca e peso (produto); o mesmo CPF,
+  ou o mesmo nome e telefone (cliente); o mesmo documento, ou o mesmo nome (fornecedor). O que já existe fica como está.
+  Linha repetida na própria planilha entra uma vez só;
+- **produtos:** preço, marca, unidade (un ou kg), peso, estoque inicial com o custo, estoque mínimo e fornecedor (pelo
+  nome). No produto por kg, estoque e mínimo vão em quilos. O custo fica só com o Dono e o Administrador, e o mínimo só
+  com quem lança no estoque: para os outros, a coluna fica de fora com aviso. Fornecedor que não está cadastrado vira
+  aviso, e o produto entra sem ele;
+- **clientes:** os campos do cadastro, inclusive o campo extra, o limite de fiado (só Dono e Administrador) e "Aceita
+  mensagens";
+- **cliente sem CPF ou sem telefone entra com o cadastro incompleto** (a recomendação, sem resposta do Luan; dá para
+  mudar). Ele aparece no filtro "Cadastro incompleto" da aba Clientes e só compra no fiado depois de completar. CPF ou
+  telefone informado errado continua sendo erro;
+- o cadastro pela tela continua exigindo telefone e CPF (`validarNovoCliente` só os dispensa com
+  `incompletoPermitido`, que a importação usa).
+
+**Servidor:** responde 501 até ganhar essa parte.
+
+**Testes:**
+- núcleo 450 (+18): leitura das células (texto, dinheiro, número, data do Excel, sim/não), os títulos, e as regras de
+  produtos, clientes e fornecedores;
+- tela 465 (+17):
+  - o leitor: o .xlsx do próprio sistema, um .xlsx compactado como o Excel salva (textos compartilhados, prefixo de
+    namespace, célula pulada, linha vazia no meio) e .csv em três separadores e nos acentos do Windows;
+  - a API da demonstração: conferir não grava; importar cria tudo de uma vez; as linhas com erro; o código interno; os
+    clientes incompletos; quem pode. E a volta completa: exportar os produtos de uma loja e importar na outra, com tudo
+    chegando igual;
+  - a tela: a prévia, o modelo e quem vê o cartão.
+- **Navegador:**
+  - importei um .xlsx gerado por outro programa e um .csv com os acentos do Excel antigo;
+  - o produto importado apareceu em Produtos e estoque, e o cliente sem CPF apareceu com "cadastro incompleto";
+  - o modelo abriu no openpyxl;
+  - computador e celular sem rolagem para o lado, console sem erros.

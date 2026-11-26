@@ -24,3 +24,4 @@ export * from './vale';
 export * from './copiaDaLoja';
 export * from './modelosDePlanilha';
 export * from './perfil';
+export * from './importacao';

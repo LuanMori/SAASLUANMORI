@@ -2,6 +2,7 @@
 // As planilhas de cadastro de Dados e backup (Fase 2, módulo 13): produtos, clientes e fornecedores, com as colunas
 // do @saas/core (modelosDePlanilha.ts), as mesmas do modelo de importação. Também os nomes dos arquivos baixados.
 import {
+  type CadastroDaPlanilha,
   type Cliente,
   type ColunaDoModelo,
   colunasClientes,
@@ -10,6 +11,7 @@ import {
   formatarDocumento,
   formatarTelefone,
   type Fornecedor,
+  NOME_DO_CADASTRO,
   simOuNao,
   temWhatsapp,
   unidadeDe,
@@ -99,6 +101,26 @@ export function planilhaDeFornecedores(fornecedores: readonly Fornecedor[]): Pla
       Situação: f.ativo ? 'Ativo' : 'Desativado',
     })),
   );
+}
+
+/**
+ * O modelo para importar (Baixar o modelo): a aba do cadastro só com os títulos, sem as colunas de consulta (nenhuma
+ * linha de exemplo, para não entrar sem querer), e a aba "Como preencher", com o que vai em cada coluna.
+ */
+export function modeloDeImportacao(cadastro: CadastroDaPlanilha, rotuloDoExtra: string | null): Planilha[] {
+  const colunas = (cadastro === 'produtos' ? COLUNAS_PRODUTOS : cadastro === 'clientes' ? colunasClientes(rotuloDoExtra) : COLUNAS_FORNECEDORES).filter((c) => !c.soConsulta);
+  return [
+    { nome: NOME_DO_CADASTRO[cadastro], colunas: colunas.map((c) => ({ titulo: c.titulo, tipo: c.tipo })), linhas: [] },
+    {
+      nome: 'Como preencher',
+      colunas: [{ titulo: 'Coluna' }, { titulo: 'Obrigatória' }, { titulo: 'Como preencher' }],
+      linhas: [
+        ...colunas.map((c) => [c.titulo, c.obrigatoria ? 'Sim' : 'Não', c.ajuda]),
+        ['(cada linha)', '', 'Um cadastro por linha, a partir da linha 2. Não mude os títulos da linha 1.'],
+        ['(o que já existe)', '', 'O que já está cadastrado na loja fica como está: a importação só acrescenta.'],
+      ],
+    },
+  ];
 }
 
 /** "Loja Pet & Cia" -> "loja-pet-cia" (para o nome do arquivo). */

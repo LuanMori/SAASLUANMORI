@@ -232,8 +232,18 @@ import {
   podeBaixarCopia,
   resumoDaCopia,
   totalDeRegistros,
+  type CadastroDaPlanilha,
+  type CelulaImportada,
+  type ConferenciaDaImportacao,
+  conferirClientes,
+  conferirFornecedores,
+  conferirProdutos,
+  LIMITES_IMPORTACAO,
+  NOME_DO_CADASTRO,
+  type NovoFornecedor,
+  type ProdutoImportado,
 } from '@saas/core';
-import { type ApiSistema, ErroApi, type FiltroVendas, type PreviaDaCopia, type Produto, type SaldoEstoque } from '../api';
+import { type ApiSistema, ErroApi, type FiltroVendas, type PreviaDaCopia, type PreviaDaImportacao, type Produto, type SaldoEstoque } from '../api';
 import { comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
 import {
   autorizadoresDemo,
@@ -332,6 +342,48 @@ function gravarAssuntosDaLoja(lojaId: string, dados: Record<AssuntoDaCopia, unkn
     const lojas = ler<string[]>(marca, []);
     if (!lojas.includes(lojaId)) gravar(marca, [...lojas, lojaId]);
   }
+}
+
+/** A planilha que chegou para importar: linhas de células simples (texto, número, sim/não ou vazia). */
+function tabelaValida(t: unknown): t is CelulaImportada[][] {
+  return (
+    Array.isArray(t) &&
+    t.length <= LIMITES_IMPORTACAO.linhasMax + 2 &&
+    t.every(
+      (l) =>
+        Array.isArray(l) &&
+        l.length <= 200 &&
+        l.every((c) => c === null || typeof c === 'boolean' || (typeof c === 'number' && Number.isFinite(c)) || (typeof c === 'string' && c.length <= 5000)),
+    )
+  );
+}
+
+/** A prévia da importação: a contagem e as linhas que não entram ou entram com observação (sem o que seria gravado). */
+const previaDaImportacao = (c: ConferenciaDaImportacao<unknown>): PreviaDaImportacao => ({
+  cadastro: c.cadastro,
+  colunas: c.colunas,
+  ignoradas: c.ignoradas,
+  contagem: c.contagem,
+  linhas: c.linhas
+    .filter((l) => l.situacao !== 'nova' || l.avisos.length > 0)
+    .slice(0, 500)
+    .map(({ numero, situacao, nome, motivos, avisos }) => ({ numero, situacao, nome, motivos, avisos })),
+});
+
+/** O próximo código interno: o maior da loja + 1, pulando os números já usados como código (interno ou de barras) e os reservados. */
+function proximoCodigoInterno(daLoja: readonly Pick<Produto, 'codigoInterno' | 'codigoBarras'>[], reservados: Iterable<string> = []): string {
+  const usados = new Set<string>(reservados);
+  for (const p of daLoja) {
+    usados.add(p.codigoInterno);
+    if (p.codigoBarras) usados.add(p.codigoBarras);
+  }
+  let numero = daLoja.reduce((maior, p) => Math.max(maior, Number(p.codigoInterno) || 0), 0) + 1;
+  let codigo = formatarCodigoInterno(numero);
+  while (usados.has(codigo)) {
+    numero += 1;
+    codigo = formatarCodigoInterno(numero);
+  }
+  return codigo;
 }
 
 const previaDaCopia = (c: CopiaDaLoja): PreviaDaCopia => ({
@@ -1140,6 +1192,85 @@ export function criarApiLocal({
     };
   };
 
+  // ---------------------------------------------------------------- importar planilhas (módulo 13; DaniPets DAT-07)
+  const PERMISSAO_DO_CADASTRO: Record<CadastroDaPlanilha, Permissao> = { produtos: 'produtos.cadastrar', clientes: 'clientes', fornecedores: 'compras' };
+  /** Dados e backup e o acesso ao cadastro que vai ser importado. */
+  const exigirParaImportar = (cadastro: unknown): { quem: OperadorComPapel; qual: CadastroDaPlanilha } => {
+    if (cadastro !== 'produtos' && cadastro !== 'clientes' && cadastro !== 'fornecedores') throw new ErroApi(400, 'Escolha o que vai importar: produtos, clientes ou fornecedores.');
+    exigir('dados');
+    return { quem: exigir(PERMISSAO_DO_CADASTRO[cadastro]), qual: cadastro };
+  };
+  /** Confere a planilha com as regras do cadastro e o que a loja já tem (@saas/core importacao.ts). */
+  const conferirPlanilha = (qual: CadastroDaPlanilha, tabela: unknown, quem: OperadorComPapel): ConferenciaDaImportacao<unknown> => {
+    if (!tabelaValida(tabela)) throw new ErroApi(400, 'A planilha não chegou inteira. Escolha o arquivo de novo.');
+    const extra = regras().clientes.campoExtra;
+    const r =
+      qual === 'produtos'
+        ? conferirProdutos(tabela, {
+            existentes: produtosDaLoja(),
+            fornecedores: fornecedoresDaLoja(),
+            unidades: regras().produtos.unidades,
+            podeCusto: pode(quem, 'produtos.alterar'),
+            podeMinimo: pode(quem, 'estoque.lancar'),
+          })
+        : qual === 'clientes'
+          ? conferirClientes(tabela, { existentes: clientesDaLoja(), hoje: hojeNaLoja(), rotuloDoExtra: extra.ativo ? extra.rotulo : null, podeLimite: pode(quem, 'clientes.limite') })
+          : conferirFornecedores(tabela, { existentes: fornecedoresDaLoja() });
+    if (!r.ok) throw new ErroApi(400, r.erros[0]!.mensagem, r.erros);
+    return r.valor as ConferenciaDaImportacao<unknown>;
+  };
+  const gravarProdutosImportados = (itens: ProdutoImportado[], quem: OperadorComPapel, quando: string) => {
+    const daLoja = produtosDaLoja();
+    // o código interno novo nunca é o código de barras de outro produto da planilha
+    const reservados = itens.flatMap((i) => (i.produto.codigoBarras ? [i.produto.codigoBarras] : []));
+    const novos: Produto[] = [];
+    const movimentos: ReturnType<typeof movimentoInicial>[] = [];
+    const minimos = { ...minimosDaLoja() };
+    for (const { produto: v, minimo } of itens) {
+      const produto: Produto = {
+        id: novoId(),
+        codigoInterno: proximoCodigoInterno([...daLoja, ...novos], reservados),
+        nome: v.nome,
+        codigoBarras: v.codigoBarras,
+        precoCentavos: v.precoCentavos,
+        marca: v.marca ?? null,
+        pesoGramas: v.pesoGramas ?? null,
+        unidade: unidadeDe(v.unidade),
+        fornecedorId: v.fornecedorId ?? null,
+        ativo: true,
+        criadoEm: quando,
+        atualizadoEm: quando,
+      };
+      novos.push(produto);
+      const inicial = v.estoqueInicial ?? 0;
+      if (inicial > 0) movimentos.push(movimentoInicial({ produtoId: produto.id, quantidade: inicial, custoUnitarioCentavos: v.custoInicialCentavos ?? null }, { em: quando, por: pessoa(quem) }));
+      if (minimo) minimos[produto.id] = minimo;
+    }
+    gravarDaLoja(CHAVES.produtos, lojaId, [...lerDaLoja<Produto>(CHAVES.produtos, lojaId), ...novos]);
+    if (movimentos.length > 0) juntarMovimentos(movimentos);
+    gravar(CHAVES.minimos, { ...ler<Record<string, Record<string, number>>>(CHAVES.minimos, {}), [lojaId]: minimos });
+  };
+  const gravarClientesImportados = (itens: NovoCliente[], quem: OperadorComPapel, quando: string) => {
+    const novos = itens.map(
+      ({ autorizaMensagens, ...v }): Cliente => ({
+        id: novoId(),
+        ...v,
+        whatsapp: v.whatsapp ?? temWhatsapp({ telefone: v.telefone }),
+        limiteFiadoCentavos: v.limiteFiadoCentavos ?? 0,
+        autorizaMensagens: autorizaMensagens ? { em: quando, por: pessoa(quem) } : null,
+        naoIncomodar: v.naoIncomodar ?? false,
+        ativo: true,
+        criadoEm: quando,
+        atualizadoEm: quando,
+      }),
+    );
+    gravarDaLoja(CHAVES.clientes, lojaId, [...clientesDaLoja(), ...novos]);
+  };
+  const gravarFornecedoresImportados = (itens: NovoFornecedor[], quando: string) => {
+    const novos = itens.map((v): Fornecedor => ({ id: novoId(), ...v, ativo: true, criadoEm: quando, atualizadoEm: quando }));
+    gravarDaLoja(CHAVES.fornecedores, lojaId, [...fornecedoresDaLoja(), ...novos]);
+  };
+
   const usuarios = criarApiUsuariosDemo({
     lojaId,
     operadorId: operador?.id ?? null,
@@ -1192,13 +1323,7 @@ export function criarApiLocal({
         }
 
         // Maior código interno da loja + 1, pulando números já usados como código de barras.
-        const comCodigo = (codigo: string) => daLoja.find((p) => p.codigoInterno === codigo || p.codigoBarras === codigo) ?? null;
-        let numero = daLoja.reduce((maior, p) => Math.max(maior, Number(p.codigoInterno)), 0) + 1;
-        let codigoInterno = formatarCodigoInterno(numero);
-        while (codigoInterno === novo.codigoBarras || comCodigo(codigoInterno)) {
-          numero += 1;
-          codigoInterno = formatarCodigoInterno(numero);
-        }
+        const codigoInterno = proximoCodigoInterno(daLoja, novo.codigoBarras ? [novo.codigoBarras] : []);
 
         const quando = agora().toISOString();
         const produto: Produto = {
@@ -3012,6 +3137,33 @@ export function criarApiLocal({
         if (!assunto) throw new ErroApi(400, 'Diga qual planilha foi exportada.');
         const linhas = typeof d.linhas === 'number' && Number.isSafeInteger(d.linhas) && d.linhas >= 0 ? d.linhas : null;
         auditar('dados.planilha_exportada', null, { assunto, linhas });
+      });
+    },
+
+    async conferirImportacao(cadastro, tabela) {
+      await preparar();
+      const { quem, qual } = exigirParaImportar(cadastro);
+      return previaDaImportacao(conferirPlanilha(qual, tabela, quem));
+    },
+
+    async importarCadastro(cadastro, tabela, opcoes = {}) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const { quem, qual } = exigirParaImportar(cadastro);
+        // confere de novo, já com a trava: o que outra aba cadastrou nesse meio-tempo conta como "já existe"
+        const c = conferirPlanilha(qual, tabela, quem);
+        if (c.contagem.erro > 0 && opcoes.semAsLinhasComErro !== true) {
+          const n = c.contagem.erro;
+          throw new ErroApi(409, `A planilha tem ${n} ${n === 1 ? 'linha' : 'linhas'} com erro. Corrija a planilha ou importe só as linhas certas.`, [], 'linhas_com_erro');
+        }
+        const novas = c.linhas.filter((l) => l.situacao === 'nova').map((l) => l.valor);
+        if (novas.length === 0) throw new ErroApi(409, 'Nada a importar: as linhas da planilha já estão cadastradas, repetidas ou com erro.');
+        const quando = agora().toISOString();
+        if (qual === 'produtos') gravarProdutosImportados(novas as ProdutoImportado[], quem, quando);
+        else if (qual === 'clientes') gravarClientesImportados(novas as NovoCliente[], quem, quando);
+        else gravarFornecedoresImportados(novas as NovoFornecedor[], quando);
+        auditar('dados.importados', null, { assunto: NOME_DO_CADASTRO[qual], linhas: novas.length, existentes: c.contagem.existe });
+        return { cadastro: qual, importadas: novas.length, existentes: c.contagem.existe, repetidas: c.contagem.repetida, comErro: c.contagem.erro };
       });
     },
 

@@ -54,6 +54,7 @@ export const ACOES_AUDITORIA = {
   'relatorios.exportado': 'Relatório exportado para Excel',
   // dados e backup (módulo 13)
   'dados.planilha_exportada': 'Planilha exportada (Dados e backup)',
+  'dados.importados': 'Planilha importada (Dados e backup)',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -255,6 +256,16 @@ export function resumirAuditoria(
     case 'dados.planilha_exportada': {
       const n = inteiro(d.linhas);
       partes.push(typeof d.assunto === 'string' && d.assunto ? d.assunto : null, n === null ? null : `${n} ${n === 1 ? 'linha' : 'linhas'}`);
+      break;
+    }
+    case 'dados.importados': {
+      const n = inteiro(d.linhas);
+      const ja = inteiro(d.existentes);
+      partes.push(
+        typeof d.assunto === 'string' && d.assunto ? d.assunto : null,
+        n === null ? null : `${n} ${n === 1 ? 'cadastro novo' : 'cadastros novos'}`,
+        ja ? `${ja} já ${ja === 1 ? 'existia' : 'existiam'}` : null,
+      );
       break;
     }
     case 'dados.copia_gerada':
