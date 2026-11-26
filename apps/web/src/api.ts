@@ -9,6 +9,7 @@ import type {
   CadastroDaPlanilha,
   SituacaoDaLinha,
   TabelaImportada,
+  VendaAntiga,
   CopiaDaLoja,
   CotacaoRecebimento,
   FiadoAVencer,
@@ -711,6 +712,28 @@ export interface ResultadoDaImportacao {
   comErro: number;
 }
 
+/** As vendas antigas da planilha, antes de importar: a contagem das linhas e as vendas já juntadas. */
+export interface PreviaDasVendasAntigas {
+  colunas: string[];
+  ignoradas: string[];
+  contagem: Record<SituacaoDaLinha, number>;
+  /** As linhas que não entram (até 500). */
+  linhas: PreviaDaImportacao['linhas'];
+  /** Quantas vendas entram (as linhas de cada uma juntadas), o total e os dias da primeira e da última. */
+  vendas: number;
+  totalCentavos: number;
+  de: string | null;
+  ate: string | null;
+  vendasExistentes: number;
+}
+
+export interface ResultadoDasVendasAntigas {
+  vendas: number;
+  totalCentavos: number;
+  vendasExistentes: number;
+  linhasComErro: number;
+}
+
 export interface ApiDados {
   /**
    * A cópia de segurança completa da loja (@saas/core copiaDaLoja). Precisa de Dados e backup e de ver o CPF completo
@@ -736,6 +759,14 @@ export interface ApiDados {
    * `semAsLinhasComErro` (elas ficam de fora). Fica no histórico.
    */
   importarCadastro(cadastro: CadastroDaPlanilha, tabela: TabelaImportada, opcoes?: { semAsLinhasComErro?: boolean }): Promise<ResultadoDaImportacao>;
+  /**
+   * Vendas antigas, só como histórico (@saas/core vendasAntigas.ts): não mexem em estoque, caixa nem financeiro.
+   * Conferir não grava; importar grava tudo de uma vez. Precisa de Dados e backup e de Relatórios.
+   */
+  conferirVendasAntigas(tabela: TabelaImportada): Promise<PreviaDasVendasAntigas>;
+  importarVendasAntigas(tabela: TabelaImportada, opcoes?: { semAsLinhasComErro?: boolean }): Promise<ResultadoDasVendasAntigas>;
+  /** As vendas antigas importadas (Relatórios → Vendas antigas), da mais nova para a mais antiga. */
+  listarVendasAntigas(): Promise<VendaAntiga[]>;
 }
 
 export type ApiPainel = ApiProdutos &

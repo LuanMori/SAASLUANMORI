@@ -89,7 +89,10 @@ describe('lerCopiaDaLoja', () => {
   it('lê a cópia da mesma loja (também com o BOM do Windows no começo)', () => {
     const c = copia();
     const r = ler(c);
-    expect(r.ok && r.valor).toEqual(c);
+    if (!r.ok) throw new Error('Era para ler.');
+    const { textoDaConferencia, ...lida } = r.valor;
+    expect(lida).toEqual(c);
+    expect(textoDaConferencia).toBe(textoParaConferencia(c));
     const comBom = lerCopiaDaLoja(`﻿${JSON.stringify(c, null, 2)}`, 'loja-a');
     expect(comBom.ok).toBe(true);
   });
@@ -127,6 +130,18 @@ describe('lerCopiaDaLoja', () => {
       { ...c, dados: { ...c.dados, produtos: [] } },
     ];
     for (const caso of casos) expect(mensagem(ler(caso))).toBe(MENSAGENS_DA_COPIA.alterada);
+  });
+
+  it('cópia feita antes de um assunto novo existir: a conferência é a do arquivo como veio, e o assunto volta vazio', () => {
+    const c = copia();
+    const { vendasAntigas: _a, ...dadosDeAntes } = c.dados;
+    const { vendasAntigas: _b, ...contagemDeAntes } = c.contagem;
+    const deAntes = { ...c, dados: dadosDeAntes, contagem: contagemDeAntes };
+    const r = ler(deAntes);
+    if (!r.ok) throw new Error('Era para ler.');
+    expect(r.valor.dados.vendasAntigas).toEqual([]);
+    expect(r.valor.textoDaConferencia).not.toContain('vendasAntigas');
+    expect(r.valor.textoDaConferencia).toBe(textoParaConferencia(deAntes as unknown as CopiaDaLoja));
   });
 
   it('assunto que falta no arquivo conta como vazio; arquivo grande demais é recusado antes de ler', () => {

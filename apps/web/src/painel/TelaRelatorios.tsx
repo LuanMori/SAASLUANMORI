@@ -6,7 +6,8 @@
 //     estimado), Estoque (posição no período e movimentos), Clientes (compras, fiado, vales-troca), Financeiro
 //     (lançamentos, despesas por categoria, a receber e a pagar), Caixa (cada dia), Compras e Histórico (quem fez o quê);
 //   - cada aba tem os filtros dela e "Exportar esta aba (Excel)", que leva o que a tabela mostra;
-//   - "Exportar tudo (Excel)" gera um arquivo com um resumo e uma aba do Excel para cada assunto, no período escolhido.
+//   - "Exportar tudo (Excel)" gera um arquivo com um resumo e uma aba do Excel para cada assunto, no período escolhido;
+//   - "Vendas antigas" (módulo 13): aparece só quando a loja importou vendas de outro sistema, que ficam à parte.
 // O arquivo é feito no navegador (relatorios/xlsx.ts) e o histórico registra quem exportou, o assunto e o período.
 import { diaNoFuso, somarDias } from '@saas/core';
 import { useState } from 'react';
@@ -18,7 +19,7 @@ import { AvisoComIcone } from './AvisoComIcone';
 import { plural } from './formato';
 import { usarNomesDasContas } from './nomesDasContas';
 import { AbaVendas } from './relatorios/AbaVendas';
-import { AbaCaixa, AbaClientes, AbaCompras, AbaEstoque, AbaFinanceiro, AbaHistorico, AbaProdutos } from './relatorios/AbasRelatorios';
+import { AbaCaixa, AbaClientes, AbaCompras, AbaEstoque, AbaFinanceiro, AbaHistorico, AbaProdutos, AbaVendasAntigas } from './relatorios/AbasRelatorios';
 import { AbaTudo, type AssuntoDoTudo } from './relatorios/AbaTudo';
 import { BotaoExportar } from './relatorios/TabelaDaPlanilha';
 import { usarCarga } from './usarCarga';
@@ -57,7 +58,7 @@ const ATALHOS: { id: Atalho; rotulo: string }[] = [
   { id: 'mes', rotulo: 'Este mês' },
 ];
 
-type IdAba = 'tudo' | AssuntoDoTudo;
+type IdAba = 'tudo' | AssuntoDoTudo | 'antigas';
 // "Tudo" (pedido do Luan, 25/11/2026): o resumo de todos os assuntos; é a primeira e a que abre
 const ABAS: { id: IdAba; rotulo: string }[] = [
   { id: 'tudo', rotulo: 'Tudo' },
@@ -70,6 +71,8 @@ const ABAS: { id: IdAba; rotulo: string }[] = [
   { id: 'compras', rotulo: 'Compras' },
   { id: 'historico', rotulo: 'Histórico' },
 ];
+/** Só aparece quando a loja tem vendas antigas importadas (módulo 13). */
+const ABA_VENDAS_ANTIGAS = { id: 'antigas' as const, rotulo: 'Vendas antigas' };
 
 /** Os relatórios precisam de todas estas partes para as outras abas e o "Exportar tudo". */
 const temTudo = (api: Props['api']): api is Props['api'] & ApiRelatorios =>
@@ -94,6 +97,12 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
     [api, de, ate, aba === 'vendas', completa],
   );
   const dados = estado.tipo === 'pronto' ? estado.dados : null;
+  // a aba das vendas antigas: só quando a loja importou alguma (lido à parte, para a aba não sumir na aba Vendas)
+  const { estado: antigas } = usarCarga(
+    () => (completa && api.listarVendasAntigas ? api.listarVendasAntigas().then((v) => v.length > 0, () => false) : Promise.resolve(false)),
+    [api, completa],
+  );
+  const abas = antigas.tipo === 'pronto' && antigas.dados ? [...ABAS, ABA_VENDAS_ANTIGAS] : ABAS;
   const atalhoAtivo = ATALHOS.find((a) => {
     const p = periodoDo(a.id, hoje);
     return p.de === de && p.ate === ate;
@@ -174,7 +183,7 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
 
       {completa && (
         <nav className="cli-abas rel-abas" aria-label="Assuntos dos relatórios">
-          {ABAS.map((a) => (
+          {abas.map((a) => (
             <button key={a.id} type="button" className={aba === a.id ? 'cli-aba-on' : ''} aria-current={aba === a.id ? 'page' : undefined} onClick={() => setAba(a.id)}>
               {a.rotulo}
             </button>
@@ -210,6 +219,8 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
         <AbaCaixa {...props} />
       ) : aba === 'compras' ? (
         <AbaCompras {...props} />
+      ) : aba === 'antigas' ? (
+        <AbaVendasAntigas {...props} />
       ) : (
         <AbaHistorico {...props} />
       )}

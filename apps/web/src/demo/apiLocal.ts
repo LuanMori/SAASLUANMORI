@@ -242,8 +242,20 @@ import {
   NOME_DO_CADASTRO,
   type NovoFornecedor,
   type ProdutoImportado,
+  type ConferenciaDasVendasAntigas,
+  conferirVendasAntigas,
+  type VendaAntiga,
 } from '@saas/core';
-import { type ApiSistema, ErroApi, type FiltroVendas, type PreviaDaCopia, type PreviaDaImportacao, type Produto, type SaldoEstoque } from '../api';
+import {
+  type ApiSistema,
+  ErroApi,
+  type FiltroVendas,
+  type PreviaDaCopia,
+  type PreviaDaImportacao,
+  type PreviaDasVendasAntigas,
+  type Produto,
+  type SaldoEstoque,
+} from '../api';
 import { comTrava, gravando, gravar, gravarDaLoja, ler, lerDaLoja, type PorLoja, transacao } from './armazenamento';
 import {
   autorizadoresDemo,
@@ -290,6 +302,8 @@ const CHAVES = {
   contatos: 'saas-demo:contatos-clientes:v1',
   /** Vales-troca de cada loja (módulo 8). */
   vales: 'saas-demo:vales-troca:v1',
+  /** Vendas antigas importadas de outro sistema, só como histórico (módulo 13). */
+  vendasAntigas: 'saas-demo:vendas-antigas:v1',
 } as const;
 
 /**
@@ -316,6 +330,7 @@ const CHAVE_DO_ASSUNTO: Record<AssuntoDaCopia, string> = {
   cupons: CHAVES.cupons,
   contatos: CHAVES.contatos,
   vales: CHAVES.vales,
+  vendasAntigas: CHAVES.vendasAntigas,
 };
 
 /** SÓ PARA TESTES: chaves da demonstração que a cópia de segurança não leva (devem ser só as marcas de preparo). */
@@ -369,6 +384,25 @@ const previaDaImportacao = (c: ConferenciaDaImportacao<unknown>): PreviaDaImport
     .slice(0, 500)
     .map(({ numero, situacao, nome, motivos, avisos }) => ({ numero, situacao, nome, motivos, avisos })),
 });
+
+/** A prévia das vendas antigas: a contagem, as linhas que não entram e as vendas já juntadas. */
+function previaDasVendasAntigas(c: ConferenciaDasVendasAntigas): PreviaDasVendasAntigas {
+  const dias = c.vendas.map((v) => v.dia).sort();
+  return {
+    colunas: c.colunas,
+    ignoradas: c.ignoradas,
+    contagem: c.contagem,
+    linhas: c.linhas
+      .filter((l) => l.situacao !== 'nova')
+      .slice(0, 500)
+      .map(({ numero, situacao, nome, motivos, avisos }) => ({ numero, situacao, nome, motivos, avisos })),
+    vendas: c.vendas.length,
+    totalCentavos: c.vendas.reduce((s, v) => s + v.totalCentavos, 0),
+    de: dias[0] ?? null,
+    ate: dias.at(-1) ?? null,
+    vendasExistentes: c.vendasExistentes,
+  };
+}
 
 /** O próximo código interno: o maior da loja + 1, pulando os números já usados como código (interno ou de barras) e os reservados. */
 function proximoCodigoInterno(daLoja: readonly Pick<Produto, 'codigoInterno' | 'codigoBarras'>[], reservados: Iterable<string> = []): string {
@@ -1265,6 +1299,18 @@ export function criarApiLocal({
       }),
     );
     gravarDaLoja(CHAVES.clientes, lojaId, [...clientesDaLoja(), ...novos]);
+  };
+  const vendasAntigasDaLoja = () => lerDaLoja<VendaAntiga>(CHAVES.vendasAntigas, lojaId);
+  /** Vendas antigas: Dados e backup para importar e Relatórios (o histórico de vendas). */
+  const exigirParaVendasAntigas = (): OperadorComPapel => {
+    exigir('dados');
+    return exigir('relatorios');
+  };
+  const conferirAsVendasAntigas = (tabela: unknown): ConferenciaDasVendasAntigas => {
+    if (!tabelaValida(tabela)) throw new ErroApi(400, 'A planilha não chegou inteira. Escolha o arquivo de novo.');
+    const r = conferirVendasAntigas(tabela, { hoje: hojeNaLoja(), existentes: vendasAntigasDaLoja() });
+    if (!r.ok) throw new ErroApi(400, r.erros[0]!.mensagem, r.erros);
+    return r.valor;
   };
   const gravarFornecedoresImportados = (itens: NovoFornecedor[], quando: string) => {
     const novos = itens.map((v): Fornecedor => ({ id: novoId(), ...v, ativo: true, criadoEm: quando, atualizadoEm: quando }));
@@ -3165,6 +3211,41 @@ export function criarApiLocal({
         auditar('dados.importados', null, { assunto: NOME_DO_CADASTRO[qual], linhas: novas.length, existentes: c.contagem.existe });
         return { cadastro: qual, importadas: novas.length, existentes: c.contagem.existe, repetidas: c.contagem.repetida, comErro: c.contagem.erro };
       });
+    },
+
+    async conferirVendasAntigas(tabela) {
+      await preparar();
+      exigirParaVendasAntigas();
+      return previaDasVendasAntigas(conferirAsVendasAntigas(tabela));
+    },
+
+    async importarVendasAntigas(tabela, opcoes = {}) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigirParaVendasAntigas();
+        const c = conferirAsVendasAntigas(tabela);
+        if (c.contagem.erro > 0 && opcoes.semAsLinhasComErro !== true) {
+          const n = c.contagem.erro;
+          throw new ErroApi(409, `A planilha tem ${n} ${n === 1 ? 'linha' : 'linhas'} com erro. Corrija a planilha ou importe só as vendas certas.`, [], 'linhas_com_erro');
+        }
+        if (c.vendas.length === 0) throw new ErroApi(409, 'Nada a importar: as vendas da planilha já foram importadas ou têm erro.');
+        const quando = agora().toISOString();
+        const novas: VendaAntiga[] = c.vendas.map(({ linhas: _linhas, ...v }) => ({ id: novoId(), ...v, importadaEm: quando, importadaPor: pessoa(quem) }));
+        // só no histórico de vendas antigas: estoque, caixa e financeiro não mudam
+        gravarDaLoja(CHAVES.vendasAntigas, lojaId, [...vendasAntigasDaLoja(), ...novas]);
+        const previa = previaDasVendasAntigas(c);
+        auditar('dados.vendas_importadas', null, { vendas: novas.length, totalCentavos: previa.totalCentavos, de: previa.de, ate: previa.ate });
+        return { vendas: novas.length, totalCentavos: previa.totalCentavos, vendasExistentes: c.vendasExistentes, linhasComErro: c.contagem.erro };
+      });
+    },
+
+    async listarVendasAntigas() {
+      await preparar();
+      exigir('relatorios');
+      return vendasAntigasDaLoja()
+        .map((v, i) => [v, i] as const)
+        .sort((a, b) => b[0].dia.localeCompare(a[0].dia) || b[1] - a[1])
+        .map(([v]) => v);
     },
 
     // ---------------------------------------------------------------- dados e regras da loja

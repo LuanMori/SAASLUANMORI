@@ -1242,3 +1242,47 @@ essa parte. Lá, a conferência vai ser assinada com uma chave que só o servido
   - o produto importado apareceu em Produtos e estoque, e o cliente sem CPF apareceu com "cadastro incompleto";
   - o modelo abriu no openpyxl;
   - computador e celular sem rolagem para o lado, console sem erros.
+
+### 13d (26/11/2026): vendas antigas, só como histórico
+
+**Importar** (o quarto item de "O que vai importar?"; precisa de Dados e backup e de Relatórios):
+- as vendas de outro sistema entram **só como histórico**. Não mexem em estoque, caixa nem financeiro, e não entram nos
+  números do dia a dia: Visão geral, Frente de caixa, Caixa do dia e as outras abas dos Relatórios;
+- **os dois formatos na mesma planilha** (a recomendação, sem resposta do Luan; dá para mudar):
+  - **uma linha por item**, com a coluna Produto. As linhas com o mesmo Número e o mesmo dia são uma venda só. O total do
+    item é o da coluna Total ou a quantidade × o preço unitário;
+  - **uma linha por venda**, sem o produto: a linha é a venda inteira, com o total dela;
+- colunas: Data (obrigatória), Número, Cliente, Produto, Quantidade, Preço unitário, Total, Forma de pagamento e Vendedor.
+  A forma de pagamento conhecida vira o nome do sistema ("cartão de crédito" vira Crédito); a desconhecida fica como
+  veio;
+- **venda com uma linha com erro fica de fora inteira**, para nunca entrar pela metade. Também é erro a data depois de
+  hoje ou antes de 2000;
+- **a mesma venda não entra duas vezes.** Com número, vale o dia e o número. Sem número, vale o dia, o total, o cliente e
+  os itens;
+- a prévia mostra quantas vendas entram, o total e os dias da primeira e da última. Fica no histórico ("3 vendas •
+  R$ 312,20 • 10/03/2025 a 02/05/2025").
+
+**Relatórios → Vendas antigas:** a aba aparece só quando a loja importou vendas.
+- O aviso no topo diz que elas não entram nos números das outras abas.
+- Filtros por busca (cliente, produto, número ou vendedor) e por pagamento.
+- Cartões com o total, as vendas, o ticket médio e os itens.
+- A lista de vendas e a de itens.
+- "Exportar esta aba" leva as duas. A planilha de itens sai nas colunas do modelo, então dá para importar de volta em
+  outra loja.
+- "Exportar tudo" inclui as duas abas quando há vendas antigas no período.
+
+**Cópia de segurança:** as vendas antigas entram na cópia, e a restauração traz de volta. A conferência passou a ser
+calculada sobre o arquivo como veio (`textoDaConferencia`). Assim, uma cópia feita antes desse assunto existir continua
+valendo, e o assunto volta vazio.
+
+**Servidor:** responde 501 até ganhar essa parte.
+
+**Testes:**
+- núcleo 458 (+8): os dois formatos, a junção por número e dia, a venda com erro fora inteira, as datas, a venda já
+  importada, as formas de pagamento, o resumo e a cópia de antes do assunto novo;
+- tela 472 (+7): a API da demonstração (estoque, financeiro, lançamentos, caixa e vendas do sistema sem mudar, a mesma
+  planilha de novo, as linhas com erro, quem pode, a cópia e o "Exportar tudo") e as telas (importar e a aba dos
+  Relatórios, com filtro e exportação).
+
+**Navegador:** importei um .csv com os dois formatos e uma linha com data no futuro. Entraram 3 vendas, R$ 312,20; a aba
+"Tudo" continuou com o mesmo total vendido. Computador e celular sem rolagem para o lado, console sem erros.

@@ -3,7 +3,7 @@
 // (posição no período e movimentos), Clientes (compras, fiado e vales-troca), Financeiro (lançamentos, despesas por
 // categoria, a receber e a pagar), Caixa (cada dia), Compras (e itens) e Histórico (quem fez o quê). Cada aba tem os
 // filtros dela e "Exportar esta aba (Excel)", que leva exatamente o que a tabela mostra (com os filtros).
-import { formatarCentavos, type NomesDasContas, semAcento } from '@saas/core';
+import { formatarCentavos, type NomesDasContas, resumirVendasAntigas, semAcento } from '@saas/core';
 import { useMemo, useState } from 'react';
 import {
   type DadosDosRelatorios,
@@ -24,6 +24,8 @@ import {
   planilhaMovimentos,
   planilhaProdutos,
   planilhaVales,
+  planilhaItensVendasAntigas,
+  planilhaVendasAntigas,
   posicaoDeEstoque,
   situacaoDoEstoque,
 } from '../../relatorios/planilhas';
@@ -352,6 +354,53 @@ export function AbaCompras({ dados, nomes, aoExportar }: PropsDaAba) {
       </section>
       <TabelaDaPlanilha planilha={compras} titulo="Compras" id="rm-titulo" vazio="Nenhuma compra no período." />
       <TabelaDaPlanilha planilha={itens} titulo="Itens comprados" id="rm-itens-titulo" vazio="Nenhum item comprado no período." />
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ vendas antigas (importadas; módulo 13)
+export function AbaVendasAntigas({ dados, periodo, aoExportar }: PropsDaAba) {
+  const [busca, setBusca] = useState('');
+  const [pagamento, setPagamento] = useState('');
+  if (!dados.vendasAntigas) return <SemParte />;
+  const doPeriodo = dados.vendasAntigas.filter((v) => noPeriodo(v.dia, periodo));
+  const pagamentos = [...new Set(doPeriodo.map((v) => v.pagamento).filter((x): x is string => Boolean(x)))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const termo = semAcento(busca);
+  const vistas = doPeriodo.filter(
+    (v) =>
+      (!pagamento || v.pagamento === pagamento) &&
+      (contem(v.cliente ?? '', termo) || contem(v.numeroAntigo ?? '', termo) || contem(v.vendedor ?? '', termo) || v.itens.some((i) => contem(i.produto ?? '', termo))),
+  );
+  const r = resumirVendasAntigas(vistas);
+  const vendas = planilhaVendasAntigas(vistas);
+  const itens = planilhaItensVendasAntigas(vistas);
+  return (
+    <div className="rel-aba">
+      <p className="alerta" role="note">
+        Vendas importadas de outro sistema, só como histórico: não entram no estoque, no caixa, no financeiro nem nos números das outras abas.
+      </p>
+      <Filtros rotulo="Filtros das vendas antigas" aoExportar={() => aoExportar([vendas, itens], 'Vendas antigas')}>
+        <Busca id="ra-busca" valor={busca} aoMudar={setBusca} dica="Cliente, produto, número ou vendedor" />
+        <div className="campo">
+          <label htmlFor="ra-pagamento">Pagamento</label>
+          <select id="ra-pagamento" value={pagamento} onChange={(e) => setPagamento(e.target.value)}>
+            <option value="">Todos</option>
+            {pagamentos.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Filtros>
+      <section className="rel-metricas" aria-label="Resumo das vendas antigas">
+        <Cartao rotulo="Total vendido" valor={formatarCentavos(r.totalCentavos)} />
+        <Cartao rotulo="Vendas" valor={String(r.vendas)} />
+        <Cartao rotulo="Ticket médio" valor={formatarCentavos(r.ticketMedioCentavos)} />
+        <Cartao rotulo="Itens" valor={String(r.itens)} />
+      </section>
+      <TabelaDaPlanilha planilha={vendas} titulo="Vendas antigas" id="ra-titulo" vazio="Nenhuma venda antiga no período." />
+      <TabelaDaPlanilha planilha={itens} titulo="Itens das vendas antigas" id="ra-itens-titulo" vazio="Nenhum item no período." />
     </div>
   );
 }

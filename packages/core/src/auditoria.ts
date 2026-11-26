@@ -55,6 +55,7 @@ export const ACOES_AUDITORIA = {
   // dados e backup (módulo 13)
   'dados.planilha_exportada': 'Planilha exportada (Dados e backup)',
   'dados.importados': 'Planilha importada (Dados e backup)',
+  'dados.vendas_importadas': 'Vendas antigas importadas',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -266,6 +267,12 @@ export function resumirAuditoria(
         n === null ? null : `${n} ${n === 1 ? 'cadastro novo' : 'cadastros novos'}`,
         ja ? `${ja} já ${ja === 1 ? 'existia' : 'existiam'}` : null,
       );
+      break;
+    }
+    case 'dados.vendas_importadas': {
+      const n = inteiro(d.vendas);
+      const periodo = diaBr(d.de) && diaBr(d.ate) ? (d.de === d.ate ? diaBr(d.de) : `${diaBr(d.de)} a ${diaBr(d.ate)}`) : null;
+      partes.push(n === null ? null : `${n} ${n === 1 ? 'venda' : 'vendas'}`, dinheiro(d.totalCentavos), periodo);
       break;
     }
     case 'dados.copia_gerada':

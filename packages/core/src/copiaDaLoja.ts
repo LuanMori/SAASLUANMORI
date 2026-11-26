@@ -45,6 +45,7 @@ export const ASSUNTOS_DA_COPIA = {
   cupons: { nome: 'Cupons de retorno', tipo: 'lista' },
   contatos: { nome: 'Contatos com clientes', tipo: 'lista' },
   vales: { nome: 'Vales-troca', tipo: 'lista' },
+  vendasAntigas: { nome: 'Vendas antigas (importadas)', tipo: 'lista' },
 } as const satisfies Record<string, { nome: string; tipo: 'lista' | 'mapa' | 'objeto' }>;
 
 export type AssuntoDaCopia = keyof typeof ASSUNTOS_DA_COPIA;
@@ -156,9 +157,11 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d
 
 /**
  * Lê o arquivo da cópia e confere o formato, a versão, a loja e o jeito de cada assunto. A conferência (SHA-256) é
- * comparada por quem lê, com `textoParaConferencia` (o cálculo fica com a plataforma: o navegador ou o servidor).
+ * comparada por quem lê, sobre `textoDaConferencia` (o cálculo fica com a plataforma: o navegador ou o servidor).
+ * `textoDaConferencia` é o do arquivo como ele veio: uma cópia feita antes de um assunto novo existir (sem ele) continua
+ * valendo, e o assunto que falta volta vazio.
  */
-export function lerCopiaDaLoja(texto: string, lojaId: string): Resultado<CopiaDaLoja> {
+export function lerCopiaDaLoja(texto: string, lojaId: string): Resultado<CopiaDaLoja & { textoDaConferencia: string }> {
   if (typeof texto !== 'string' || texto.trim() === '') return erro(MENSAGENS_DA_COPIA.naoE);
   if (texto.length > COPIA_MAX_BYTES) return erro(MENSAGENS_DA_COPIA.grande);
   let bruto: unknown;
@@ -203,6 +206,17 @@ export function lerCopiaDaLoja(texto: string, lojaId: string): Resultado<CopiaDa
       equipe: c.equipe as unknown[],
       historico: c.historico as unknown[],
       conferencia: c.conferencia,
+      textoDaConferencia: jsonCanonico({
+        formato: c.formato,
+        versao: c.versao,
+        loja: c.loja,
+        geradaEm: c.geradaEm,
+        geradaPor: c.geradaPor,
+        contagem: c.contagem,
+        dados: c.dados,
+        equipe: c.equipe,
+        historico: c.historico,
+      }),
     },
   };
 }

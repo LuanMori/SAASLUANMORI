@@ -1074,6 +1074,7 @@ h2 { font-size: 1.05rem; }
 .db-escolha label { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid var(--borda-campo); border-radius: 999px; cursor: pointer; font-size: 0.92rem; }
 .db-escolha label.db-escolha-on { border-color: var(--primaria); background: var(--primaria-clara); color: var(--primaria-texto); font-weight: 600; }
 .db-escolha input { accent-color: var(--primaria); margin: 0; }
+.db-dica-antes { margin: -4px 0 14px; }
 .db-importar-tabela td { vertical-align: top; }
 .db-importar-tabela td:first-child, .db-importar-tabela th:first-child { padding-left: 14px; width: 1%; white-space: nowrap; }
 .db-importar-tabela td:nth-child(3) { white-space: nowrap; }

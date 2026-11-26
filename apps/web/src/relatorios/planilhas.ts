@@ -6,7 +6,9 @@
 //   - planilha*: vendas, itens vendidos, pagamentos, devoluções, produtos (mais vendidos e lucro estimado),
 //     posição de estoque, movimentos de estoque, clientes, vales-troca, lançamentos, a receber, a pagar, caixa do dia,
 //     compras, itens comprados e histórico (quem fez o quê);
-//   - planilhasDeTudo: o "Exportar tudo", com um resumo na primeira aba.
+//   - planilhasDeTudo: o "Exportar tudo", com um resumo na primeira aba;
+//   - vendas antigas (importadas de outro sistema, só como histórico; módulo 13): ficam à parte, na aba e nas planilhas
+//     delas, e não entram nos números das outras abas.
 // LGPD: o CPF sai mascarado (como na tela); o resto é o que o Dono e o Administrador já veem em cada aba.
 import {
   type CaixaDoDia,
@@ -34,6 +36,7 @@ import {
   type ValeTroca,
   valorDaQuantidade,
   type Venda,
+  type VendaAntiga,
 } from '@saas/core';
 import type { ApiSistema, ItemAuditoria, LinhaFiado, Produto, SaldoEstoque } from '../api';
 import type { Celula, Planilha } from './xlsx';
@@ -61,6 +64,7 @@ export type ApiRelatorios = Pick<
   | 'lerCaixa'
   | 'listarCompras'
   | 'listarAuditoria'
+  | 'listarVendasAntigas'
 >;
 
 /** Tudo o que os relatórios usam. null = parte que o servidor ainda não tem (ou sem permissão). */
@@ -80,6 +84,8 @@ export interface DadosDosRelatorios {
   caixas: CaixaDoDia[] | null;
   compras: Compra[] | null;
   auditoria: ItemAuditoria[] | null;
+  /** As vendas antigas importadas (todas, de qualquer período: a aba filtra). Fora dos outros números. */
+  vendasAntigas?: VendaAntiga[] | null;
 }
 
 /** Quantos registros do histórico os relatórios leem (o máximo que a loja guarda na demonstração). */
@@ -110,6 +116,7 @@ export async function carregarRelatorios(api: ApiRelatorios, p: Periodo): Promis
     talvez(() => api.listarCompras(filtro)),
     talvez(() => api.listarAuditoria(HISTORICO_MAX)),
   ]);
+  const vendasAntigas = await talvez(() => api.listarVendasAntigas());
   return {
     vendas,
     devolucoes,
@@ -125,6 +132,7 @@ export async function carregarRelatorios(api: ApiRelatorios, p: Periodo): Promis
     caixas: caixa?.historico ?? null,
     compras,
     auditoria,
+    vendasAntigas,
   };
 }
 
@@ -751,6 +759,56 @@ export function planilhaHistorico(itens: readonly ItemAuditoria[], p: Periodo, f
   };
 }
 
+// ------------------------------------------------------------------ vendas antigas (módulo 13)
+const NUMERO_VENDA_ANTIGA = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });
+
+/** As vendas antigas, uma por linha. */
+export function planilhaVendasAntigas(vendas: readonly VendaAntiga[]): Planilha {
+  return {
+    nome: 'Vendas antigas',
+    colunas: [
+      { titulo: 'Data', tipo: 'data' },
+      { titulo: 'Número' },
+      { titulo: 'Cliente' },
+      { titulo: 'Itens' },
+      { titulo: 'Forma de pagamento' },
+      { titulo: 'Vendedor' },
+      { titulo: 'Total', tipo: 'dinheiro' },
+    ],
+    linhas: vendas.map((v) => [
+      v.dia,
+      v.numeroAntigo,
+      v.cliente,
+      v.itens
+        .filter((i) => i.produto)
+        .map((i) => (i.quantidade !== null && i.quantidade !== 1 ? `${NUMERO_VENDA_ANTIGA.format(i.quantidade)} ${i.produto}` : i.produto))
+        .join(', ') || null,
+      v.pagamento,
+      v.vendedor,
+      v.totalCentavos,
+    ]),
+  };
+}
+
+/** Um item por linha, nas colunas do modelo de importação (dá para importar de volta em outra loja). */
+export function planilhaItensVendasAntigas(vendas: readonly VendaAntiga[]): Planilha {
+  return {
+    nome: 'Itens das vendas antigas',
+    colunas: [
+      { titulo: 'Data', tipo: 'data' },
+      { titulo: 'Número' },
+      { titulo: 'Cliente' },
+      { titulo: 'Produto' },
+      { titulo: 'Quantidade', tipo: 'numero' },
+      { titulo: 'Preço unitário', tipo: 'dinheiro' },
+      { titulo: 'Total', tipo: 'dinheiro' },
+      { titulo: 'Forma de pagamento' },
+      { titulo: 'Vendedor' },
+    ],
+    linhas: vendas.flatMap((v) => v.itens.map((i): Celula[] => [v.dia, v.numeroAntigo, v.cliente, i.produto, i.quantidade, i.precoCentavos, i.totalCentavos, v.pagamento, v.vendedor])),
+  };
+}
+
 // ------------------------------------------------------------------ exportar tudo
 /** "Exportar tudo": um resumo e uma aba para cada assunto (as partes que o servidor ainda não tem ficam de fora). */
 export function planilhasDeTudo(d: DadosDosRelatorios, p: Periodo, nomes: NomesDasContas, fuso: string, agora: Date): Planilha[] {
@@ -798,6 +856,8 @@ export function planilhasDeTudo(d: DadosDosRelatorios, p: Periodo, nomes: NomesD
   if (d.caixas) abas.push(planilhaCaixas(d.caixas, p, fuso));
   if (d.compras) abas.push(planilhaCompras(d.compras, nomes), planilhaItensComprados(d.compras));
   if (d.auditoria) abas.push(planilhaHistorico(d.auditoria, p, fuso));
+  const antigas = (d.vendasAntigas ?? []).filter((v) => noPeriodo(v.dia, p));
+  if (antigas.length > 0) abas.push(planilhaVendasAntigas(antigas), planilhaItensVendasAntigas(antigas));
   return abas;
 }
 

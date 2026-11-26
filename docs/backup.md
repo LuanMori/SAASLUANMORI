@@ -42,7 +42,7 @@ Diferente do backup acima (o banco inteiro, de todas as lojas, feito pelo servid
 **própria cópia** pela tela **Dados e backup → Importar e exportar** (Fase 2, módulo 13; DaniPets DAT-01 e DAT-05):
 
 - **O arquivo** (`copia-de-seguranca-<loja>-<AAAA-MM-DD-HHMM>.json`) leva todos os dados da loja: cadastros, vendas,
-  estoque, caixa, financeiro, fidelidade e vales-troca. Leva também a equipe (sem senha) e o histórico, que vão só
+  estoque, caixa, financeiro, fidelidade, vales-troca e as vendas antigas importadas. Leva também a equipe (sem senha) e o histórico, que vão só
   para consulta. O formato fica em `packages/core/src/copiaDaLoja.ts`.
 - **Quem baixa:** quem tem Dados e backup e pode ver o CPF completo, porque a cópia leva o CPF dos clientes. Cada
   download fica no histórico.
@@ -52,7 +52,8 @@ Diferente do backup acima (o banco inteiro, de todas as lojas, feito pelo servid
   - Antes de trocar, a tela baixa uma cópia dos dados de agora (`copia-antes-de-restaurar-...json`).
   - A equipe (com as senhas de hoje) e o histórico não mudam, e a restauração entra no histórico.
 - **Conferência:** o arquivo leva o SHA-256 do conteúdo (em JSON canônico). Ela pega arquivo corrompido ou mexido à
-  mão, mas não é assinatura: quem souber recalcular passa.
+  mão, mas não é assinatura: quem souber recalcular passa. Ela é calculada sobre o arquivo como veio: uma cópia feita
+  antes de um assunto novo existir (como as vendas antigas) continua valendo, e o assunto que falta volta vazio.
 - **No servidor**, essa parte responde 501 por enquanto. Ao entrar, a conferência passa a ser assinada com uma chave
   que só o servidor tem (HMAC), e a restauração confere cada registro antes de gravar.
 

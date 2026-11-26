@@ -8,6 +8,7 @@ import {
   colunasClientes,
   COLUNAS_FORNECEDORES,
   COLUNAS_PRODUTOS,
+  COLUNAS_VENDAS_ANTIGAS,
   formatarDocumento,
   formatarTelefone,
   type Fornecedor,
@@ -107,17 +108,21 @@ export function planilhaDeFornecedores(fornecedores: readonly Fornecedor[]): Pla
  * O modelo para importar (Baixar o modelo): a aba do cadastro só com os títulos, sem as colunas de consulta (nenhuma
  * linha de exemplo, para não entrar sem querer), e a aba "Como preencher", com o que vai em cada coluna.
  */
-export function modeloDeImportacao(cadastro: CadastroDaPlanilha, rotuloDoExtra: string | null): Planilha[] {
-  const colunas = (cadastro === 'produtos' ? COLUNAS_PRODUTOS : cadastro === 'clientes' ? colunasClientes(rotuloDoExtra) : COLUNAS_FORNECEDORES).filter((c) => !c.soConsulta);
+export function modeloDeImportacao(cadastro: CadastroDaPlanilha | 'vendas', rotuloDoExtra: string | null): Planilha[] {
+  const todas =
+    cadastro === 'produtos' ? COLUNAS_PRODUTOS : cadastro === 'clientes' ? colunasClientes(rotuloDoExtra) : cadastro === 'fornecedores' ? COLUNAS_FORNECEDORES : COLUNAS_VENDAS_ANTIGAS;
+  const colunas = todas.filter((c) => !c.soConsulta);
   return [
-    { nome: NOME_DO_CADASTRO[cadastro], colunas: colunas.map((c) => ({ titulo: c.titulo, tipo: c.tipo })), linhas: [] },
+    { nome: cadastro === 'vendas' ? 'Vendas antigas' : NOME_DO_CADASTRO[cadastro], colunas: colunas.map((c) => ({ titulo: c.titulo, tipo: c.tipo })), linhas: [] },
     {
       nome: 'Como preencher',
       colunas: [{ titulo: 'Coluna' }, { titulo: 'Obrigatória' }, { titulo: 'Como preencher' }],
       linhas: [
         ...colunas.map((c) => [c.titulo, c.obrigatoria ? 'Sim' : 'Não', c.ajuda]),
         ['(cada linha)', '', 'Um cadastro por linha, a partir da linha 2. Não mude os títulos da linha 1.'],
-        ['(o que já existe)', '', 'O que já está cadastrado na loja fica como está: a importação só acrescenta.'],
+        cadastro === 'vendas'
+          ? ['(histórico)', '', 'As vendas antigas entram só como histórico (Relatórios → Vendas antigas): não mexem em estoque, caixa nem financeiro.']
+          : ['(o que já existe)', '', 'O que já está cadastrado na loja fica como está: a importação só acrescenta.'],
       ],
     },
   ];

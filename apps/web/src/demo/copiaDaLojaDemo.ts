@@ -12,10 +12,11 @@ export async function sha256Hex(texto: string): Promise<string> {
 
 export const conferenciaDaCopia = (c: CopiaSemConferencia | CopiaDaLoja): Promise<string> => sha256Hex(textoParaConferencia(c));
 
-/** Lê o arquivo da cópia e confere tudo: formato, versão, loja, assuntos e a conferência. */
+/** Lê o arquivo da cópia e confere tudo: formato, versão, loja, assuntos e a conferência (sobre o arquivo como veio). */
 export async function lerArquivoDaCopia(texto: string, lojaId: string): Promise<Resultado<CopiaDaLoja>> {
   const r = lerCopiaDaLoja(texto, lojaId);
   if (!r.ok) return r;
-  if ((await conferenciaDaCopia(r.valor)) !== r.valor.conferencia) return { ok: false, erros: [{ campo: 'arquivo', mensagem: MENSAGENS_DA_COPIA.alterada }] };
-  return r;
+  const { textoDaConferencia, ...copia } = r.valor;
+  if ((await sha256Hex(textoDaConferencia)) !== copia.conferencia) return { ok: false, erros: [{ campo: 'arquivo', mensagem: MENSAGENS_DA_COPIA.alterada }] };
+  return { ok: true, valor: copia };
 }
