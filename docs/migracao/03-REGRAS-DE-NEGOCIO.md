@@ -1832,3 +1832,85 @@ Administrador). Só na demonstração.
   importe só as vendas certas."; nada novo: 409 "Nada a importar: as vendas da planilha já foram importadas ou têm erro.";
   guarda quem importou e quando; histórico `dados.vendas_importadas` (`vendas`, `totalCentavos`, `de`, `ate`).
 - Resumo da aba: quantas, total, ticket médio (`round`) e itens com produto (`vendasAntigas.ts:207-216`).
+
+---
+
+## 19. Ferramentas do Adm. Sup
+
+Só o Adm. Sup (`suporte.ferramentas`); ficam em Dados e backup → Adm. Sup. Os ajustes da loja estão em §5.4. Só na
+demonstração.
+
+### 19.1 Atualizações do sistema e avisos para a equipe
+
+(`legacy/core/src/comunicados.ts:1-122`; `legacy/web/src/demo/apiLocal.ts:3345-3420`)
+- **Atualização** (vale para todas as lojas): versão "V" + números separados por ponto (1 a 4 partes de até 4 dígitos;
+  "v1.2" ou "1.2" viram "V1.2"), maior que a de agora (sem nenhuma publicada, a de agora é "V0.1"; "V0.10" vem depois de
+  "V0.9"); novidades uma por linha (tira "-", "•" ou "*" do começo), de 1 a 20, cada uma até 200 sem controle. Mensagens:
+  "Envie a versão e as novidades." · "Versão: use números separados por ponto, como V0.2 ou V1.0.3." · "A versão nova
+  precisa ser maior que a de agora (<versão>)." · "Escreva pelo menos uma novidade (uma por linha)." · "Até 20 novidades por
+  versão." · "Cada novidade pode ter até 200 caracteres." Histórico `suporte.atualizacao_publicada` (`versao`,
+  `novidades`).
+- A versão mais nova aparece no rodapé da barra lateral; cada pessoa vê as novidades da versão mais nova uma vez, até
+  clicar em "Entendi" (as antigas não voltam).
+- **Aviso para a equipe** (de UMA loja): texto de 3 a 300 (espaços juntados, sem controle), importância `info`
+  (informação, padrão) ou `atencao` (atenção), último dia opcional (hoje ou depois). Mensagens: "Envie o texto do aviso." ·
+  "Escreva o aviso para a equipe." · "O aviso pode ter até 300 caracteres." · "O aviso contém caracteres inválidos." ·
+  "Escolha a importância: informação ou atenção." · "O último dia do aviso é uma data (dia, mês e ano)." · "O último dia do
+  aviso não pode ser antes de hoje." Histórico `suporte.aviso_publicado` (`importancia`, `ate`).
+- Situação: encerrado (o Adm. Sup encerrou), venceu (passou do último dia) ou ativo. Aparece no alto da tela de todos da
+  loja enquanto está ativo, até cada pessoa clicar em "Entendi"; os de atenção primeiro, depois os mais novos. Encerrar:
+  404 "Aviso não encontrado."; já encerrado não grava; histórico `suporte.aviso_encerrado`.
+- "Entendi" (qualquer logado): id até 80 ("Aviso inválido."); guarda os últimos 200 vistos de cada pessoa por loja.
+- Leituras: os comunicados da pessoa (versão de agora, avisos a mostrar, novidades a mostrar) para qualquer logado; a
+  lista de atualizações para qualquer logado; a lista de avisos da loja só para o Adm. Sup.
+
+### 19.2 Visões sob medida (Relatórios)
+
+(`legacy/core/src/visoes.ts:1-360`; `apiLocal.ts:3422-3460`)
+- O suporte monta, para cada loja, tabelas dos Relatórios: a **base** (Vendas, Itens vendidos, Pagamentos, Devoluções,
+  Produtos vendidos, Estoque, Movimentos de estoque, Clientes, Vales-troca, Lançamentos do financeiro, A receber, A pagar,
+  Caixas do dia, Compras, Itens comprados, Histórico, Vendas antigas, Itens das vendas antigas), as **colunas** (até 40;
+  nenhuma = todas), até **3 filtros**, **agrupar por** uma coluna e a **ordem**. Segue o período dos Relatórios e vai para o
+  Excel como as outras abas. Quem vê os Relatórios (`relatorios`) vê as visões da loja (por nome); só o Adm. Sup cria,
+  altera e exclui; não vão na cópia de segurança.
+- Validação: nome de 3 a 60, único na loja sem diferença de acentos e maiúsculas ("Dê um nome à visão (pelo menos 3
+  letras), como "Vendas por vendedor"." · "O nome da visão pode ter até 60 caracteres." · "Já existe a visão "<nome>" nesta
+  loja. Escolha outro nome."); "Escolha a base da visão (uma das tabelas dos Relatórios)."; "Escolha até 40 colunas."; cada
+  título até 60 ("<Colunas|Filtro N|Agrupar por|Ordem>: escolha uma coluna da base."); "Use até 3 filtros." · "Filtro
+  inválido." · "Filtro N: escolha a condição." · "Filtro N: escreva o valor (ou escolha "está vazio" / "está
+  preenchido")." · "Filtro N: o valor pode ter até 80 caracteres." · "Ordem: escolha a coluna e se é crescente ou
+  decrescente." · "Envie a visão: nome, base, colunas, filtros, agrupamento e ordem." · "Campo não permitido.".
+- Até 30 visões por loja: 409 "Esta loja já tem 30 visões. Exclua uma para criar outra."; não existe: 404 "Visão não
+  encontrada.". Histórico `suporte.visao_salva` (alvo: a visão; `base`, `nova`) e `suporte.visao_excluida` (`base`).
+- Condições: texto — contém, é igual a, é diferente de, está vazio, está preenchido; número e data — é igual a, é
+  diferente de, é maior ou igual a, é menor ou igual a, está vazio, está preenchido (`visoes.ts:54-70`).
+- **Montar** (`visoes.ts:273-347`): 1) filtros, todos precisam valer (texto compara sem acento o que a tela mostra; número
+  aceita "10,50" e o sinal de menos; dinheiro em reais; data dd/mm/aaaa ou aaaa-mm-dd); valor que não serve para o tipo:
+  o filtro fica de fora com o aviso "O filtro "<coluna> <condição> <valor>" ficou de fora: "<valor>" não é <uma data
+  (dd/mm/aaaa)|um número>."; coluna que a base não tem: "A coluna "<x>" não existe nesta base e ficou de fora."; 2) sem
+  agrupar: ordena (vazias sempre por último; texto com ordem numérica natural) e mostra as colunas escolhidas na ordem da
+  escolha; 3) agrupando: uma linha por valor do grupo, a coluna "Quantidade" (ou "Quantidade de linhas" se já houver uma
+  "Quantidade") e as somas das colunas de dinheiro e número escolhidas (percentual não se soma), com 3 casas; ordem por
+  uma dessas colunas, ou pelo grupo ("Ordem por "<x>": agrupada, a visão só tem o grupo, a quantidade e as somas; ficou
+  pela ordem do grupo.").
+- Descrição: "Vendas · 4 colunas · Vendedor contém "Ana" · agrupada por Pagamento · ordem: Total (decrescente)"
+  (`visoes.ts:349-360`).
+
+### 19.3 Manutenção
+
+(`legacy/core/src/manutencao.ts:1-116`; `apiLocal.ts:3462-3525`;
+`legacy/web/src/painel/dados/CartaoManutencao.tsx:1-30`)
+- **Diagnóstico da loja**: quando, a versão, quantos registros de cada assunto (os mesmos da cópia de segurança), a equipe
+  (ativos e total), o tamanho do histórico, o espaço ocupado (na demonstração, o do navegador), o caixa (hoje, o último dia
+  fechado e quantos fechamentos automáticos a verificar), o estoque (abaixo) e quantos erros estão registrados.
+- **Conferir o estoque**: os produtos com saldo negativo (do mais negativo para o menos, empate por nome) e quantos
+  movimentos são de produto que não existe mais. **Zerar o saldo**: só com saldo negativo (409 "O saldo de <nome> não está
+  negativo."); lança um ajuste que leva a zero, motivo "Manutenção do suporte: saldo negativo zerado"; histórico
+  `suporte.estoque_zerado` (alvo: o produto; `quantidade`, `unidade`).
+- **Reabrir um caixa** é o "Desfazer o fechamento" do Caixa do dia (o último fechamento) (§11.8); a manutenção mostra só
+  a situação.
+- **Registro de erros**: o erro inesperado na tela de alguém da loja (qualquer logado envia, fora da trava das operações):
+  mensagem técnica (até 300), onde (até 200), a aba (até 40), quem e quando; texto sem caractere de controle e cortado no
+  máximo ("Envie a mensagem do erro."); o mesmo erro (mensagem, onde, aba e pessoa) em até 60 segundos vira "mais uma vez"
+  na mesma linha; guarda os 100 mais novos por loja. Listar: só o Adm. Sup, do mais novo para o mais antigo, com o nome de
+  quem. Limpar: histórico `suporte.erros_limpos` (`erros`).
