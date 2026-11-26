@@ -1380,3 +1380,158 @@ vencido" (−, no dia seguinte ao vencimento, "Ganho em dd/mm/aaaa e não usado 
 compra #00012") / "Cashback retirado" (−, "<rótulo> da compra #00012" ou o rótulo); "Cupom de retorno" ("<pct> até
 dd/mm/aaaa • usado na compra #N | venceu sem uso | ainda não usado"); os contatos ("Mensagem pelo WhatsApp" ou "Contato
 sem mensagem" • quem). Junto com compras, fiado e vale-troca, do mais novo para o mais antigo.
+
+---
+
+## 14. Vale-troca
+
+Regras do DaniPets V9.3.3, DEV-03, DEV-10, PDV-09 e FIN-09 (`legacy/core/src/vale.ts:1-12`). Com o recurso Vale-troca
+desligado (§5.4), a devolução como vale é recusada; os vales que já existem continuam valendo
+(`legacy/web/src/demo/apiLocal.ts:1770`).
+
+- **Emissão**: só pela devolução como vale-troca (§10.7) (DaniPets issueVoucher). Número sequencial da loja; código
+  "VT-0001-ABC" = número com 4 dígitos + 3 caracteres sorteados de `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (sem 0, O, 1 e I),
+  sorteio com `crypto.getRandomValues` (`vale.ts:19-20,55-85`; `apiLocal.ts:1096-1097`). Guarda valor, saldo, situação
+  (`aberto` | `usado`), o cliente (o nome da hora, ou nenhum), a origem (venda e devolução), dia, quem emitiu e os usos
+  (`vale.ts:22-53`). Na reconstrução: `SecureRandom`.
+- **Não mexe em conta nenhuma** até ser usado; é crédito do cliente na loja e vale para quem estiver com o código, com ou
+  sem cliente identificado (`vale.ts:6-7`).
+- **Usar na venda** (DaniPets useVoucher) (`vale.ts:95-106`): cada vale é uma parte do pagamento, depois do cashback; não
+  passa do saldo ("O vale <código> tem saldo de <saldo>."); vale usado ou zerado: "Vale-troca inválido ou já usado. Remova o
+  vale do pagamento."; o saldo diminui e, zerado, o vale fica "usado"; a sobra fica para a próxima compra.
+- **Volta** (DaniPets refundPayment VOUCHER) (`vale.ts:108-148`; `apiLocal.ts:1098-1122`): no cancelamento ou na
+  devolução de uma compra paga com vale, o que volta pela forma "vale-troca" vai para os mesmos vales, na ordem do
+  pagamento, cada um até o que pagou naquela venda (correção de um defeito do DaniPets, que podia devolver demais num vale
+  quando a venda usava dois); o vale volta a ficar aberto; uso `estorno` com o rótulo ("Cancelamento" ou "Devolução nº N").
+  Sem o vale: "O vale-troca usado nesta venda não foi encontrado.".
+- **Buscar pelo código** (qualquer logado): o código digitado vira maiúsculas, sem espaços ("vt-0001-abc " →
+  "VT-0001-ABC"); não achou: 404 "Vale não encontrado. Confira o código." (`vale.ts:61-62`; `apiLocal.ts:2402-2409`).
+- **Listas** (qualquer logado) (`apiLocal.ts:2394-2400`; `vale.ts:150-158`): em aberto (padrão) = com saldo, do mais novo
+  para o mais antigo; `todos` = todos, do mais novo. Vales do cliente = os abertos dele e a soma. Linha da escolha na Frente
+  de caixa: "VT-0001-ABC • R$ 30,00 • Maria • 20/11/2026" (`vale.ts:191-193`).
+- **Extrato do cliente** (`vale.ts:160-189`): "Vale-troca VT-0001-ABC" (+, "Devolução nº N • compra #00012"); "Vale-troca
+  usado" (−) / "Vale-troca devolvido" (+), "<código> • compra #00012 • <rótulo>".
+- **LGPD**: na exclusão dos dados do cliente, o vale continua valendo para quem tem o código; só o nome sai (`vale.ts:11`).
+- Histórico: `vale.emitido` (na devolução, §10.7).
+
+---
+
+## 15. Financeiro
+
+Regras do DaniPets V9.3.3 (`legacy/core/src/financeiro.ts:1-17`). Quem: permissão `financeiro` (Dono e Administrador);
+os lançamentos à mão exigem também o recurso Financeiro ligado (§5.4). Só na demonstração.
+
+### 15.1 Contas e nomes
+
+- Duas contas: `caixa` "Caixa físico" e `banco` "Conta bancária"; saldo = soma dos lançamentos; nada é apagado
+  (`financeiro.ts:35-41`).
+- A loja pode dar nome às contas (§5.3); nome vazio = o padrão (`financeiro.ts:43-49`). No meio de uma frase: com o nome
+  padrão, com o artigo ("no Caixa físico", "da Conta bancária", "para o …", "o …"); com o nome da loja, entre aspas curvas e
+  sem artigo ("em “Banco Itaú”", "de “Banco Itaú”") (`financeiro.ts:51-64`).
+
+### 15.2 Tipos de lançamento
+
+| Tipo | Nome na tela | Fonte |
+|---|---|---|
+| `saldo_inicial` | Saldo inicial | `financeiro.ts:82-119` |
+| `venda` | Venda recebida | idem |
+| `estorno_venda` | Estorno de venda | idem |
+| `recebimento_cartao` | Recebimento de cartão | idem |
+| `recebimento_fiado` | Recebimento de fiado | idem |
+| `entrada` | Entrada | idem |
+| `despesa` | Despesa | idem |
+| `retirada` | Retirada do dono | idem |
+| `transferencia_saida` | Transferência (saída) | idem |
+| `transferencia_entrada` | Transferência (entrada) | idem |
+| `pagamento_compra` | Pagamento de compra | idem |
+| `estorno_compra` | Estorno de compra | idem |
+| `pagamento_conta` | Conta paga | idem |
+| `sangria` | Sangria | idem |
+| `deposito_sangria` | Depósito da sangria | idem |
+| `suprimento` | Suprimento | idem |
+| `ajuste_caixa` | Ajuste do fechamento | idem |
+
+Cada lançamento guarda conta, tipo, valor (positivo entra, negativo sai), descrição, quando, venda, recebível, categoria
+(despesas e contas pagas), quem lançou, compra e conta a pagar de origem, o `dia` quando não é o de `criadoEm`, o caixa do
+dia e quem autorizou (`financeiro.ts:121-155`). Dia do lançamento = `dia` gravado ou o dia de `criadoEm` no fuso.
+
+### 15.3 A venda no financeiro
+
+(`financeiro.ts:371-434`)
+- Dinheiro → `venda` no Caixa físico; Pix → `venda` na Conta bancária ("Venda #00012 • <forma>").
+- Cartão → um **recebível** da operadora: vence em dia da venda + dias da maquininha, com a taxa
+  (`round(valor × round(pct × 100) / 10000)`); fica pendente até a operadora depositar (baixa manual) ou entra no banco na
+  hora (baixa automática, 15.6).
+- Fiado → um recebível na conta do cliente, sem taxa, vencendo em dia da venda + prazo da loja (padrão 30).
+- Cashback e vale-troca não entram em conta nenhuma (o cashback é desconto da loja, controlado nos lotes; o vale é crédito
+  do cliente).
+
+### 15.4 Estorno no financeiro (cancelamento e devolução)
+
+(`financeiro.ts:436-509`; `legacy/web/src/demo/apiLocal.ts:1258-1278`)
+- Dinheiro: `estorno_venda` negativo no Caixa físico; com o caixa de hoje aberto não passa do esperado na gaveta (mensagem
+  da gaveta, §11.3); sem caixa aberto não passa do saldo do Caixa físico: "A devolução em dinheiro (<valor>) é maior que o
+  saldo do <caixa> (<saldo>). Confira o caixa ou lance uma entrada no Financeiro antes.".
+- Pix: `estorno_venda` negativo na Conta bancária ("<rótulo> • venda #00012 • <forma>"; rótulo "Cancelamento" ou
+  "Devolução nº N").
+- Cartão e fiado: abatem dos recebíveis da venda daquela forma; taxa estornada proporcional (`round(bruto × taxa /
+  bruto total)`), e o último estorno leva o que sobrou da taxa; recebível já recebido → o líquido sai da conta onde entrou
+  ("… • estorno no <forma>"); pendente estornado por inteiro → `cancelado`. Faltando valor: "Não há valor em <forma>
+  suficiente nesta venda para estornar.".
+- Recebível a receber = bruto − estornado − (taxa − taxa estornada), 0 se não está pendente (`financeiro.ts:243-250`).
+
+### 15.5 Receber cartão (confirmar o depósito, baixa manual)
+
+(`financeiro.ts:511-541`; `apiLocal.ts:2626-2673`)
+- Exige `financeiro`, o recurso Financeiro ligado e o caixa de hoje não fechado; para o Caixa físico, o caixa aberto
+  ("Receber em dinheiro: abra o caixa de hoje (Caixa do dia) primeiro.").
+- "Recebimento não encontrado." (404) · "Este recebimento já foi confirmado." · "Este recebimento foi cancelado (venda
+  cancelada ou devolvida)." · "Escolha a conta onde o dinheiro entrou." · fiado por aqui: 409 "O fiado é recebido na conta
+  do cliente (Clientes → Fiado).".
+- Vários de uma vez (DaniPets "confirmar todos os vencidos"): 1 a 500 ids sem repetir ("Escolha os recebimentos a
+  confirmar."), tudo ou nada.
+- Entra o líquido; lançamento `recebimento_cartao` ("<forma> • venda #00012", ou "<forma> • fiado de <cliente>" no cartão
+  que pagou fiado). Histórico `financeiro.recebimento` (`valorCentavos`, `conta`) para cada um.
+
+### 15.6 Taxas da maquininha e baixa do cartão
+
+(`financeiro.ts:157-174,659-692`; `apiLocal.ts:2723-2749`)
+- Padrão do DaniPets: débito 1,5% em 1 dia, crédito 3% em 30 dias; baixa automática (pedido do Luan de 23/11/2026).
+- Validação: "Informe a taxa e os dias do débito e do crédito." · taxa de 0 a 99,99% com até 2 casas ("A taxa vai de 0 a
+  99,99%, com até 2 casas.") · dias de 0 a 365 ("Os dias vão de 0 a 365.") · "Escolha se a baixa do cartão é automática ou
+  manual." · "Campo não permitido.".
+- Mudar as taxas: `financeiro`; mudar a baixa: só quem tem `financeiro.baixa_cartao` (o Dono) — 403 com a mensagem de
+  permissão; sem `baixaAutomatica` no pedido, fica como está. Histórico `financeiro.taxas` (`debitoPct`, `creditoPct`,
+  `baixaAutomatica`).
+- **Baixa automática**: o cartão da venda ou do fiado entra na Conta bancária na hora, já sem a taxa (a mesma confirmação
+  da baixa manual, feita no pagamento). **Manual**: fica a receber até alguém confirmar.
+- Para receber fiado na Frente de caixa, as taxas são lidas com a permissão `vender` (`apiLocal.ts:2234-2239`).
+
+### 15.7 Lançamentos à mão e saldo inicial
+
+(`financeiro.ts:543-612,644-657`; `apiLocal.ts:2675-2721`)
+- Tipos: `entrada`, `despesa` (categoria; vazia vira "Outras despesas"), `retirada` ("Retirada do dono • <descrição>"),
+  `transferencia` (saída numa conta, entrada na outra).
+- "Envie um objeto com o lançamento." · "Escolha entrada, despesa, retirada ou transferência." · "Escolha a conta." ·
+  "Escolha contas diferentes para a transferência." · "Conta de destino só na transferência." · "Informe um valor maior que
+  zero." · "Descreva o lançamento." · descrição até 120 e categoria até 60 ("Use até <n> caracteres.") · "Texto com
+  caracteres inválidos." · "Campo não permitido.".
+- Exige o caixa de hoje não fechado; a saída do Caixa físico não passa do esperado na gaveta (caixa aberto) ou do saldo
+  (§11.3); o Banco pode ficar negativo. Histórico `financeiro.entrada` / `financeiro.despesa` / `financeiro.retirada`
+  (`valorCentavos`, `conta`, `categoria`) ou `financeiro.transferencia` (`valorCentavos`, `de`, `para`).
+- **Saldo inicial** (implantação), uma vez por conta: "Envie um objeto com a conta e o valor." · "Escolha a conta." · "O
+  saldo inicial desta conta já foi definido." · Caixa ≥ 0 ("Informe quanto dinheiro há no caixa (zero ou mais).") · Banco
+  pode ser negativo ("Informe o saldo da conta."); descrição "Saldo inicial (implantação)"; histórico
+  `financeiro.saldo_inicial` (`valorCentavos`, `conta`).
+
+### 15.8 Leituras
+
+- **Resumo** (`apiLocal.ts:2583-2599`): cada conta com nome, saldo e se já tem saldo inicial; total; a receber do cartão
+  (líquido, quantos, vencidos = vence até hoje); fiado (vencido = venceu antes de hoje); contas a pagar (§9.4); se a baixa é
+  automática.
+- **Lançamentos**: filtro por conta e período (pelo dia do lançamento); mais novos primeiro (`apiLocal.ts:2601-2605`).
+- **Recebíveis**: filtro por situação; ordem de vencimento, depois `criadoEm` (`apiLocal.ts:2607-2613`).
+- **Extrato da conta** (DaniPets FIN-08) (`financeiro.ts:263-330`; `apiLocal.ts:2615-2624`): "Escolha a conta do extrato." ·
+  "Escolha o período do extrato (de e até)." · "A data inicial é depois da final." · período de até um ano ("Escolha um
+  período de até um ano."). Saldo anterior (até o dia antes de "de"), cada lançamento do período na ordem do dia e da hora
+  gravada com o saldo depois dele, entradas, saídas e saldo final; lançamento com data de um dia anterior entra naquele dia.
