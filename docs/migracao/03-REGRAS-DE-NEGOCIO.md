@@ -1260,3 +1260,123 @@ Regras do DaniPets V9.3.3 (`legacy/core/src/cliente.ts:1-12`; `legacy/core/src/f
   e o motivo. O cashback que sobrou é zerado (uso "Exclusão dos dados"). O nome sai também das vendas, dos recebíveis, dos
   vales (que continuam valendo para quem tem o código) e da descrição dos lançamentos. As vendas continuam no histórico
   (obrigação fiscal). Histórico `cliente.dados_excluidos` (`autorizadoPor`).
+
+---
+
+## 13. Fidelidade: cashback, cupom de retorno e lembretes
+
+Regras do DaniPets V9.3.3, CLI-10 a 14, 17 e 18, PDV-04, 08 e 18, DEV-07 (`legacy/core/src/fidelidade.ts:1-20`). Com o
+recurso Fidelidade desligado (§5.4), a compra não gera cashback e os lembretes de retorno e de cashback são recusados e
+somem da Visão geral; o saldo e os cupons que já existem continuam valendo (`legacy/web/src/demo/apiLocal.ts:1649-1650,
+2431-2437,2537`).
+
+### 13.1 Cashback
+
+- **Gera** (DaniPets cbGerar) (`fidelidade.ts:185-232`): cliente identificado com cadastro completo, percentual da loja >
+  0 (§5.3, padrão 3,5%); base = o pago em dinheiro, Pix, débito ou crédito (cashback, vale-troca e fiado não geram, nem o
+  fiado quando é pago); valor = `round(base × round(pct × 100) / 10000)`; menos de 1 centavo não gera. Cada compra vira
+  um **lote** ("Compra #00012", com o percentual) que vence em dia da compra + prazo da loja (padrão 31 dias). A venda
+  guarda o cashback gerado.
+- **Saldo** (DaniPets saldoCb) (`fidelidade.ts:147-183`): soma do restante dos lotes do cliente no prazo (vence hoje ou
+  depois); cadastro incompleto tem saldo 0. Vencendo = vence em até N dias (regra `cashback.avisoDias`, padrão 7). Próximo
+  vencimento = o primeiro dia de vencimento e quanto vence nele. Vencido = restante de lotes já vencidos.
+- **Usar na venda** (DaniPets cbConsumir) (`fidelidade.ts:250-263`): até o saldo ("O cashback disponível de <nome> é
+  <saldo>."); tira primeiro do lote que vence antes (desempate pelo dia e por `criadoEm`); fica registrado um uso do tipo
+  `venda` com os lotes de onde saiu.
+- **Devolução e cancelamento** (DEV-07) (`fidelidade.ts:265-326`; `apiLocal.ts:1205-1256`):
+  - o cashback **usado** na compra que voltou para o cliente vira lote novo `estorno`, com prazo novo ("Cancelamento • venda
+    #00012" ou "Devolução nº N • venda #00012"); sem o cliente (excluído): 409 "O cliente desta venda não foi encontrado para
+    devolver o cashback.";
+  - o cashback **gerado** sai: no cancelamento, tudo o que falta retirar; na devolução, `round(gerado × devolvido agora /
+    total da venda)`, e a devolução que completa a venda leva o resto; nunca mais que o que falta;
+  - sai primeiro do lote da própria compra (mesmo vencido), depois dos outros lotes válidos do cliente (do que vence
+    antes); fica registrado um uso `retirada` com o rótulo; o que não deu para tirar (já usado ou vencido) vai para o
+    histórico como `cliente.cashback_nao_recuperado` (`rotulo`, `numero`, `valorCentavos`);
+  - no cancelamento, o cupom de retorno usado volta a valer (até a validade dele).
+- Exclusão dos dados (LGPD): o cliente perde todo o restante, válido ou vencido (uso `retirada`, "Exclusão dos dados")
+  (`fidelidade.ts:328-340`).
+
+### 13.2 Cupom de retorno
+
+- Dado pela mensagem de **retorno enviada pelo WhatsApp** a cliente com cadastro completo, com o cupom ligado (regra
+  `retorno.cupomPct` > 0, padrão 5%) e validade (padrão 7 dias); se o cliente já tem um cupom valendo, a mensagem fala desse
+  mesmo e não cria outro (`fidelidade.ts:360-383`).
+- **Ativo hoje** (DaniPets cupomAtivo): cadastro completo, cupom ligado nas regras, não usado, no prazo e com % > 0
+  (`fidelidade.ts:342-351`).
+- Na Frente de caixa, identificado o cliente, o desconto entra sozinho nos itens sem desconto manual (§10.3); a venda
+  marca o cupom como usado (`cliente.cupom_usado`, `pct`, `numero`).
+
+### 13.3 Lembretes e mensagens (WhatsApp)
+
+- Tipos: `retorno` "Lembrete de retorno" (`cliente.lembrete_retorno`), `cashback` "Aviso de cashback"
+  (`cliente.aviso_cashback`), `cobranca` "Lembrete de pagamento" (`cliente.lembrete_pagamento`); canal `whatsapp`
+  (mensagem aberta pelo sistema) ou `outro` ("Já falei", pessoalmente ou por telefone) (`fidelidade.ts:113-140`).
+- **Quem pode receber** (DaniPets podeMensagem) (`fidelidade.ts:442-457`): ativo, com WhatsApp e telefone válido; oferta e
+  retorno exigem também a autorização de mensagens; a cobrança só pede o WhatsApp. Motivo do botão desligado: "Cliente
+  desativado." · "O cliente não tem WhatsApp no cadastro." · "O cliente não autorizou mensagens da loja pelo WhatsApp.".
+- **Montar a mensagem** (DaniPets cliMensagem) (`fidelidade.ts:459-496`; `apiLocal.ts:2500-2527`): usa o modelo da loja
+  (§5.3) com `{nome}` = primeiro nome, `{loja}` = nome da loja, `{dias}` = dias desde a última compra, `{desconto}` = % do
+  cupom (o que o cliente já tem ou o da regra, com vírgula), `{validade}` = validade do cupom (retorno) ou o próximo
+  vencimento do cashback, `{valor}` = valor que vence (cashback) ou o devido (cobrança), `{vencimento}` = vencimento do
+  fiado (o do lembrete, ou o da compra mais antiga em aberto). Dinheiro com espaço comum ("R$ 12,50"). Link
+  `https://wa.me/55<telefone>?text=<texto codificado>`. Tipo inválido: 400 "Escolha o tipo de lembrete."; cobrança sem
+  `clientes.fiado`: 403 com a mensagem de permissão; cliente excluído: 404 "Cliente não encontrado."; referência de
+  vencimento inválida: 400 "Vencimento do lembrete inválido."; vencimento já pago: 409 "Este fiado já foi recebido ou mudou.
+  Atualize a lista.".
+- **Registrar o contato** (`apiLocal.ts:2529-2557`): "Lembrete inválido." (400); cobrança exige `clientes.fiado`; retorno
+  e cashback exigem a Fidelidade ligada; pelo WhatsApp, o motivo de bloqueio vira 409 (o "não incomodar" não bloqueia aqui:
+  só tira das listas, decisão do Luan de 23/11/2026); lembrete de um vencimento vale uma vez: 409 "O lembrete deste
+  vencimento já foi registrado."; grava o contato e, no retorno pelo WhatsApp, o cupom novo; histórico com `canal`, o cupom
+  (`cupomPct`, `cupomVenceEm`) e o `vencimento`.
+- **Adiar** (`apiLocal.ts:2559-2569`): tira o cliente das listas por 7 dias (`DIAS_ADIAR_LEMBRETE`); histórico
+  `cliente.lembrete_adiado` (`ate`). **Não incomodar**: marca e registra `cliente.nao_incomodar` (`ativo: true`); já
+  marcado não grava (`apiLocal.ts:2571-2580`).
+
+### 13.4 Lista de retorno (aba Retorno) e resultado
+
+- **Quem lembrar hoje** (DaniPets cliAnaliseRetorno) (`fidelidade.ts:526-576`; `apiLocal.ts:1150-1191`): só ativos e não
+  excluídos; "sumido" = cadastro completo e sem comprar há N dias ou mais (regra `retorno.diasSemComprar`, padrão 30; conta
+  a última compra não cancelada); "cashback vencendo" = algo vence em até `avisoDias`. Ficam de fora: "Pediu para não
+  receber lembretes" (não incomodar), "Adiado até dd/mm/aaaa", "Já lembrado em dd/mm/aaaa (cupom até dd/mm/aaaa)" (um
+  lembrete de retorno por ciclo: depois da última compra, uma vez só) e "Cashback já avisado em dd/mm/aaaa" (aviso de
+  cashback há menos de max(avisoDias, 1) dias). Retorno do mais sumido para o menos; cashback do que vence antes. Cada
+  linha traz o telefone, o motivo de bloqueio, a última compra com os itens ("Ração, Areia") e o cashback.
+- **Resultado dos lembretes** (DaniPets cliResultadoRetorno) (`fidelidade.ts:578-614`): para cada lembrete de retorno
+  (mais novo primeiro), "voltou" se o cliente comprou em até 15 dias (`DIAS_PARA_VOLTAR`); "não voltou" passado esse
+  prazo; senão "aguardando"; taxa = `round(voltaram / enviados × 100)`; a tela mostra até 100 linhas.
+- **Pendências de clientes da Visão geral** (arquivo do Luan de 23/11/2026) (`apiLocal.ts:2418-2439`): fiado a vencer
+  (só para `clientes.fiado`), cashback a vencer e promoções exclusivas (clientes sumidos que podem receber a mensagem, com
+  o % do cupom), as duas últimas só para quem tem `clientes` e com a Fidelidade ligada; promoções só com o cupom ligado.
+- **Fiado a vencer** (`fidelidade.ts:385-440`): fiado em aberto que vence de hoje até daqui a 7 dias
+  (`DIAS_FIADO_A_VENCER`), por cliente e vencimento; fora quem está desativado, pediu "não incomodar" ou adiou; marca se o
+  lembrete daquele vencimento já foi mandado; do que vence antes, empate por nome.
+
+### 13.5 Resumo do cashback (Relatórios) e regulamento
+
+- Resumo (qualquer logado) (`apiLocal.ts:2441-2498`): por cliente ativo com cashback ganho ou devolvido: gerado
+  (ganho + devolvido), usado (usado + retirado), vencido, em aberto e o próximo vencimento; totais; quantos têm saldo; os
+  lotes que vencem em até `avisoDias`; ordem do maior saldo, empate por nome.
+- Regulamento para deixar na loja (DaniPets cliRegulamento) (`fidelidade.ts:616-637`), texto exato com o nome e as regras
+  da loja:
+
+```
+Programa de cashback <nome da loja>
+
+1. Participa quem se cadastra com nome, telefone e CPF. A participação é voluntária.
+2. A cada compra, o cliente recebe <pct>% do valor pago como cashback.
+   (com 0%: "2. No momento, as compras não geram cashback.")
+3. O cashback pode ser usado em compras na loja em até <N dia|dias> a partir da data da compra. Depois desse prazo, ele vence.
+4. Não há valor mínimo de compra nem limite de uso por compra.
+5. A parte da compra paga com cashback, vale-troca ou fiado não gera cashback.
+6. Em devoluções e cancelamentos, o cashback daquela compra é retirado.
+7. O cashback não pode ser trocado por dinheiro.
+8. Os dados do cadastro são usados só para o programa e, se o cliente autorizar, para mensagens da loja. O cliente pode pedir a exclusão dos dados quando quiser.
+```
+
+### 13.6 Extrato da fidelidade (na conta do cliente)
+
+(`fidelidade.ts:639-718`) "Cashback ganho" / "Cashback devolvido" (+, "<origem> • usar até dd/mm/aaaa"); "Cashback
+vencido" (−, no dia seguinte ao vencimento, "Ganho em dd/mm/aaaa e não usado até dd/mm/aaaa"); "Cashback usado" (−, "Na
+compra #00012") / "Cashback retirado" (−, "<rótulo> da compra #00012" ou o rótulo); "Cupom de retorno" ("<pct> até
+dd/mm/aaaa • usado na compra #N | venceu sem uso | ainda não usado"); os contatos ("Mensagem pelo WhatsApp" ou "Contato
+sem mensagem" • quem). Junto com compras, fiado e vale-troca, do mais novo para o mais antigo.
