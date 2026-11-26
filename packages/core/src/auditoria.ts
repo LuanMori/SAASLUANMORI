@@ -11,6 +11,7 @@ import { ehObjeto } from './interno';
 import { ehPapelDeLoja, NOME_PAPEL } from './papeis';
 import { formatarQuantidade, unidadeDe } from './quantidade';
 import { resumoDosAjustes } from './recursosDaLoja';
+import { BASES_DAS_VISOES, ehBaseDaVisao } from './visoes';
 
 /** Ações registradas no histórico, com o texto que aparece na tela (nomes do DaniPets V9.3.3). */
 export const ACOES_AUDITORIA = {
@@ -62,6 +63,8 @@ export const ACOES_AUDITORIA = {
   'suporte.aviso_publicado': 'Aviso para a equipe publicado',
   'suporte.aviso_encerrado': 'Aviso para a equipe encerrado',
   'suporte.ajustes_alterados': 'Ajustes da loja alterados (recursos e limites)',
+  'suporte.visao_salva': 'Visão sob medida salva (Relatórios)',
+  'suporte.visao_excluida': 'Visão sob medida excluída (Relatórios)',
   'dados.copia_gerada': 'Cópia de segurança baixada',
   'dados.copia_restaurada': 'Cópia de segurança restaurada',
   // caixa do dia
@@ -288,6 +291,10 @@ export function resumirAuditoria(
     }
     case 'suporte.ajustes_alterados':
       partes.push(resumoDosAjustes(d) || null);
+      break;
+    case 'suporte.visao_salva':
+    case 'suporte.visao_excluida':
+      partes.push(ehBaseDaVisao(d.base) ? BASES_DAS_VISOES[d.base] : null, acao === 'suporte.visao_salva' ? (d.nova === true ? 'nova' : d.nova === false ? 'alterada' : null) : null);
       break;
     case 'suporte.aviso_publicado':
       partes.push(d.importancia === 'atencao' ? 'atenção' : d.importancia === 'info' ? 'informação' : null, diaBr(d.ate) ? `até ${diaBr(d.ate)}` : null);

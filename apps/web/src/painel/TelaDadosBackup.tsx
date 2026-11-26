@@ -9,7 +9,7 @@
 // (permissão 'suporte.ferramentas'). Parte ainda não trabalhada fica em branco até chegar a vez dela.
 import { type AjustesDaLoja, type DadosDaLoja, FUSO_PADRAO, LIMITES_LOJA, LIMITES_REGRAS, pode, type RegrasDaLoja, type QuemAcessa } from '@saas/core';
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react';
-import { type ApiLoja, type ApiPainel, type ApiUsuarios, ErroApi } from '../api';
+import { type ApiLoja, type ApiSistema, ErroApi } from '../api';
 import type { Baixar } from '../relatorios/baixar';
 import { iniciais } from './BarraLateral';
 import { prepararImagem, TIPOS_DE_IMAGEM } from './imagem';
@@ -18,8 +18,8 @@ import { ParteImportarExportar } from './dados/ParteImportarExportar';
 import { usarCarga } from './usarCarga';
 
 interface Props {
-  /** listarUsuarios: os ajustes do Adm. Sup mostram quantos usuários ativos a loja tem. */
-  api: ApiPainel & Pick<ApiUsuarios, 'listarUsuarios'>;
+  /** O sistema todo: o Adm. Sup conta os usuários ativos (ajustes) e monta as visões com os dados dos Relatórios. */
+  api: ApiSistema;
   papel: QuemAcessa;
   /** Os dados ou as regras mudaram (ou uma cópia foi restaurada): a área logada recarrega (barra lateral, Frente de caixa). */
   aoMudar?: () => void;

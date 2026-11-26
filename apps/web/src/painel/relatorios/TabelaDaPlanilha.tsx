@@ -37,6 +37,7 @@ export function TabelaDaPlanilha({
   limite = 300,
   acoes,
   classe = '',
+  sub,
 }: {
   planilha: Planilha;
   titulo: string;
@@ -46,6 +47,8 @@ export function TabelaDaPlanilha({
   limite?: number;
   acoes?: ReactNode;
   classe?: string;
+  /** Uma linha abaixo do título (a descrição de uma visão sob medida e o que ficou de fora dela). */
+  sub?: ReactNode;
 }) {
   const linhas = planilha.linhas.slice(0, limite);
   return (
@@ -57,6 +60,7 @@ export function TabelaDaPlanilha({
           {acoes}
         </span>
       </div>
+      {sub}
       {planilha.linhas.length === 0 ? (
         <p className="vazio">{vazio}</p>
       ) : (

@@ -260,6 +260,9 @@ import {
   type RecursoDaLoja,
   recursoLigado,
   validarAjustes,
+  LIMITES_VISOES,
+  validarVisao,
+  type VisaoSobMedida,
 } from '@saas/core';
 import {
   type ApiSistema,
@@ -333,6 +336,8 @@ const CHAVES_DO_SUPORTE = {
   vistos: 'saas-demo:comunicados-vistos:v1',
   /** loja -> os ajustes do suporte (módulo 13f): recursos desligados e limites. */
   ajustes: 'saas-demo:ajustes-loja:v1',
+  /** loja -> as visões sob medida dos Relatórios (módulo 13g). */
+  visoes: 'saas-demo:visoes:v1',
 } as const;
 
 /** Os ajustes que o suporte fez na loja; sem nenhum, o padrão (tudo ligado e sem limite). */
@@ -1367,6 +1372,7 @@ export function criarApiLocal({
   const exigirRecurso = (recurso: RecursoDaLoja) => {
     if (!recursoLigado(ajustesDaLoja(), recurso)) throw new ErroApi(403, mensagemRecursoDesligado(recurso), [], 'recurso_desligado');
   };
+  const visoesDaLoja = () => lerDaLoja<VisaoSobMedida>(CHAVES_DO_SUPORTE.visoes, lojaId);
   /** Mais `novos` produtos ativos cabem no limite que o suporte deu à loja? */
   const exigirLimiteDeProdutos = (novos = 1) => {
     const m = conferirLimiteDaLoja('produtosAtivos', ajustesDaLoja(), produtosDaLoja().filter((p) => p.ativo).length, novos);
@@ -1385,7 +1391,9 @@ export function criarApiLocal({
           ? (clientesDaLoja().find((c) => c.id === id)?.nome ?? null)
           : tipo === 'fornecedor'
             ? (lerDaLoja<Fornecedor>(CHAVES.fornecedores, lojaId).find((f) => f.id === id)?.nome ?? null)
-            : null,
+            : tipo === 'visao'
+              ? (visoesDaLoja().find((v) => v.id === id)?.nome ?? null)
+              : null,
     nomesDasContas: () => nomesContas(),
     ajustesDaLoja,
   });
@@ -3397,6 +3405,46 @@ export function criarApiLocal({
         gravarDaLoja(CHAVES_DO_SUPORTE.avisos, lojaId, lista.map((a, j) => (j === i ? encerrado : a)));
         auditar('suporte.aviso_encerrado', null, {});
         return encerrado;
+      });
+    },
+
+    // ---------------------------------------------------------------- visões sob medida (Adm. Sup, módulo 13g)
+    async listarVisoes() {
+      await preparar();
+      exigir('relatorios');
+      return [...visoesDaLoja()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    },
+
+    async salvarVisao(pedido) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        const quem = exigir('suporte.ferramentas');
+        const { id = null, ...dados } = (pedido ?? {}) as unknown as { id?: string | null } & Record<string, unknown>;
+        const lista = visoesDaLoja();
+        const atual = id ? lista.find((v) => v.id === id) : undefined;
+        if (id && !atual) throw new ErroApi(404, 'Visão não encontrada.');
+        if (!atual && lista.length >= LIMITES_VISOES.porLoja) throw new ErroApi(409, `Esta loja já tem ${LIMITES_VISOES.porLoja} visões. Exclua uma para criar outra.`);
+        const v = validarVisao(dados, { outras: lista, id });
+        if (!v.ok) throw new ErroApi(400, v.erros[0]!.mensagem, v.erros);
+        const em = agora().toISOString();
+        const salva: VisaoSobMedida = atual
+          ? { ...atual, ...v.valor, alteradaEm: em, alteradaPor: pessoa(quem) }
+          : { id: novoId(), ...v.valor, criadaEm: em, criadaPor: pessoa(quem), alteradaEm: null, alteradaPor: null };
+        gravarDaLoja(CHAVES_DO_SUPORTE.visoes, lojaId, atual ? lista.map((x) => (x.id === salva.id ? salva : x)) : [...lista, salva]);
+        auditar('suporte.visao_salva', { tipo: 'visao', id: salva.id }, { base: salva.base, nova: !atual });
+        return salva;
+      });
+    },
+
+    async excluirVisao(id) {
+      await preparar(atrasoMs * 2);
+      return gravarOperacao(() => {
+        exigir('suporte.ferramentas');
+        const lista = visoesDaLoja();
+        const v = lista.find((x) => x.id === id);
+        if (!v) throw new ErroApi(404, 'Visão não encontrada.');
+        gravarDaLoja(CHAVES_DO_SUPORTE.visoes, lojaId, lista.filter((x) => x.id !== id));
+        auditar('suporte.visao_excluida', null, { base: v.base });
       });
     },
 

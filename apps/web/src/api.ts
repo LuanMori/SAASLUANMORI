@@ -6,6 +6,8 @@
 import type {
   AcessoDoUsuario,
   AjustesDaLoja,
+  DefinicaoDaVisao,
+  VisaoSobMedida,
   MudancaDosAjustes,
   Atualizacao,
   AvisoDaEquipe,
@@ -807,6 +809,17 @@ export interface ApiAjustes {
   salvarAjustesDaLoja(ajustes: MudancaDosAjustes): Promise<AjustesDaLoja>;
 }
 
+// ---- Visões sob medida (Adm. Sup, módulo 13g): tabelas dos Relatórios montadas pelo suporte para a loja.
+
+export interface ApiVisoes {
+  /** As visões desta loja (Relatórios → Visões), na ordem do nome. Quem vê os Relatórios. */
+  listarVisoes(): Promise<VisaoSobMedida[]>;
+  /** Só o Adm. Sup. Sem `id`, cria; com `id`, altera a visão. */
+  salvarVisao(visao: DefinicaoDaVisao & { id?: string | null }): Promise<VisaoSobMedida>;
+  /** Só o Adm. Sup. */
+  excluirVisao(id: string): Promise<void>;
+}
+
 export type ApiPainel = ApiProdutos &
   ApiVendas &
   ApiEstoque &
@@ -821,7 +834,8 @@ export type ApiPainel = ApiProdutos &
   ApiRelatorios &
   ApiDados &
   ApiComunicados &
-  ApiAjustes;
+  ApiAjustes &
+  ApiVisoes;
 
 // ---- Usuários da loja e a própria conta (item 5.4: login próprio; o Dono cadastra a equipe)
 

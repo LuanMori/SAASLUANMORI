@@ -7,11 +7,12 @@
 //     (lançamentos, despesas por categoria, a receber e a pagar), Caixa (cada dia), Compras e Histórico (quem fez o quê);
 //   - cada aba tem os filtros dela e "Exportar esta aba (Excel)", que leva o que a tabela mostra;
 //   - "Exportar tudo (Excel)" gera um arquivo com um resumo e uma aba do Excel para cada assunto, no período escolhido;
-//   - "Vendas antigas" (módulo 13): aparece só quando a loja importou vendas de outro sistema, que ficam à parte.
+//   - "Vendas antigas" (módulo 13): aparece só quando a loja importou vendas de outro sistema, que ficam à parte;
+//   - "Visões" (módulo 13g): as tabelas que o suporte montou para a loja; aparece só quando ela tem alguma.
 // O arquivo é feito no navegador (relatorios/xlsx.ts) e o histórico registra quem exportou, o assunto e o período.
 import { diaNoFuso, somarDias } from '@saas/core';
 import { useState } from 'react';
-import type { ApiFinanceiro, ApiRelatorios as ApiRegistro, ApiVendas } from '../api';
+import type { ApiFinanceiro, ApiRelatorios as ApiRegistro, ApiVendas, ApiVisoes } from '../api';
 import { type Baixar, baixarArquivo } from '../relatorios/baixar';
 import { type ApiRelatorios, carregarRelatorios, nomeDoArquivo, type Periodo, planilhasDeTudo } from '../relatorios/planilhas';
 import { gerarXlsx, type Planilha } from '../relatorios/xlsx';
@@ -21,12 +22,13 @@ import { usarNomesDasContas } from './nomesDasContas';
 import { AbaVendas } from './relatorios/AbaVendas';
 import { AbaCaixa, AbaClientes, AbaCompras, AbaEstoque, AbaFinanceiro, AbaHistorico, AbaProdutos, AbaVendasAntigas } from './relatorios/AbasRelatorios';
 import { AbaTudo, type AssuntoDoTudo } from './relatorios/AbaTudo';
+import { AbaVisoes } from './relatorios/AbaVisoes';
 import { BotaoExportar } from './relatorios/TabelaDaPlanilha';
 import { usarCarga } from './usarCarga';
 
 interface Props {
   /** Sem alguma parte (servidor que ainda não a tem), a aba dela avisa e o resto continua. */
-  api: ApiVendas & Partial<Pick<ApiFinanceiro, 'listarRecebiveis'>> & Partial<ApiRelatorios> & Partial<ApiRegistro>;
+  api: ApiVendas & Partial<Pick<ApiFinanceiro, 'listarRecebiveis'>> & Partial<ApiRelatorios> & Partial<ApiRegistro> & Partial<Pick<ApiVisoes, 'listarVisoes'>>;
   fuso: string;
   agora?: () => Date;
   /** Como o arquivo chega à pessoa (nos testes, uma função que guarda o arquivo). */
@@ -58,7 +60,7 @@ const ATALHOS: { id: Atalho; rotulo: string }[] = [
   { id: 'mes', rotulo: 'Este mês' },
 ];
 
-type IdAba = 'tudo' | AssuntoDoTudo | 'antigas';
+type IdAba = 'tudo' | AssuntoDoTudo | 'antigas' | 'visoes';
 // "Tudo" (pedido do Luan, 25/11/2026): o resumo de todos os assuntos; é a primeira e a que abre
 const ABAS: { id: IdAba; rotulo: string }[] = [
   { id: 'tudo', rotulo: 'Tudo' },
@@ -73,6 +75,8 @@ const ABAS: { id: IdAba; rotulo: string }[] = [
 ];
 /** Só aparece quando a loja tem vendas antigas importadas (módulo 13). */
 const ABA_VENDAS_ANTIGAS = { id: 'antigas' as const, rotulo: 'Vendas antigas' };
+/** Só aparece quando o suporte montou alguma visão para a loja (módulo 13g). */
+const ABA_VISOES = { id: 'visoes' as const, rotulo: 'Visões' };
 
 /** Os relatórios precisam de todas estas partes para as outras abas e o "Exportar tudo". */
 const temTudo = (api: Props['api']): api is Props['api'] & ApiRelatorios =>
@@ -102,7 +106,13 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
     () => (completa && api.listarVendasAntigas ? api.listarVendasAntigas().then((v) => v.length > 0, () => false) : Promise.resolve(false)),
     [api, completa],
   );
-  const abas = antigas.tipo === 'pronto' && antigas.dados ? [...ABAS, ABA_VENDAS_ANTIGAS] : ABAS;
+  // as visões sob medida da loja (sem essa parte no servidor, nenhuma)
+  const { estado: estadoVisoes } = usarCarga(
+    () => (completa && api.listarVisoes ? api.listarVisoes().catch(() => []) : Promise.resolve([])),
+    [api, completa],
+  );
+  const visoes = estadoVisoes.tipo === 'pronto' ? estadoVisoes.dados : [];
+  const abas = [...ABAS, ...(antigas.tipo === 'pronto' && antigas.dados ? [ABA_VENDAS_ANTIGAS] : []), ...(visoes.length > 0 ? [ABA_VISOES] : [])];
   const atalhoAtivo = ATALHOS.find((a) => {
     const p = periodoDo(a.id, hoje);
     return p.de === de && p.ate === ate;
@@ -221,6 +231,8 @@ export function TelaRelatorios({ api, fuso, agora = () => new Date(), baixar = b
         <AbaCompras {...props} />
       ) : aba === 'antigas' ? (
         <AbaVendasAntigas {...props} />
+      ) : aba === 'visoes' ? (
+        <AbaVisoes {...props} visoes={visoes} />
       ) : (
         <AbaHistorico {...props} />
       )}

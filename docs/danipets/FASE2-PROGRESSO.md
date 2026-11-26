@@ -1358,3 +1358,41 @@ plano dela inclui).
   - o produto novo foi recusado com a mensagem do limite;
   - a Frente de caixa ficou sem Fiado e sem F7;
   - celular sem rolagem para o lado, console sem erros.
+
+### 13g (26/11/2026): Adm. Sup — visões sob medida
+
+A parte **Adm. Sup** ganhou o cartão **Visões sob medida**: o suporte monta, para cada loja, tabelas dos Relatórios do
+jeito que ela precisa, e a equipe vê em **Relatórios → Visões**.
+
+- **A base** é uma das 18 tabelas que os Relatórios já mostram e exportam: vendas, itens vendidos, pagamentos,
+  devoluções, produtos vendidos, estoque, movimentos, clientes, vales-troca, lançamentos, a receber, a pagar, caixas,
+  compras, itens comprados, histórico e as vendas antigas (com os itens).
+- **O que o suporte escolhe:**
+  - o nome (não repete na loja) e as colunas (todas, ou só as marcadas);
+  - até 3 filtros, que precisam valer juntos. Em texto: contém, é igual, é diferente, está vazio, está preenchido.
+    Em dinheiro, número e data: também "maior ou igual" e "menor ou igual". O texto vale sem acento e sem diferença de
+    maiúsculas; o dinheiro vai em reais ("19,90"); a data, em dd/mm/aaaa;
+  - agrupar e somar por uma coluna: uma linha por valor, com a quantidade de linhas e a soma das colunas de número
+    marcadas (o percentual não se soma). Ex.: "Vendas por vendedor" = vendedor, quantidade e total;
+  - a ordem (do maior para o menor ou o contrário); as linhas vazias ficam por último.
+- **Prévia:** enquanto monta, o formulário mostra a tabela com os dados da loja (todo o período), igual ao que a equipe
+  vai ver.
+- **Lista:** cada visão com o que ela mostra ("Vendas · 2 colunas · Situação é diferente de "Cancelada" · agrupada por
+  Vendido por · ordem: Total (decrescente)"), "Editar" e "Excluir" (com "Sim, excluir"). Até 30 visões por loja.
+- **Relatórios → Visões:** aparece só quando a loja tem alguma visão. Cada visão segue o período escolhido no alto e tem
+  "Exportar esta aba (Excel)"; "Exportar as visões (Excel)" leva todas, uma aba do Excel para cada. Se a base mudar e
+  uma coluna da visão não existir mais, ela fica de fora com um aviso embaixo do título.
+- **Quem:** quem vê os Relatórios vê as visões; só o Adm. Sup cria, altera e exclui (`suporte.ferramentas`).
+- **Histórico:** "Visão sob medida salva (Relatórios) • Vendas • nova" (ou "alterada"), com o nome da visão, e "Visão
+  sob medida excluída (Relatórios) • Vendas".
+- **Regras:** `packages/core/src/visoes.ts` (a conferência e a conta); as bases ficam em `apps/web/src/relatorios/visoes.ts`.
+- **Cópia de segurança:** as visões são do suporte e ficam fora dela.
+- **Servidor:** responde 501. No sistema real, a aba Visões não aparece por enquanto.
+- **Testes:**
+  - núcleo 477 (+9): a conferência, cada filtro, o que fica de fora com aviso, a ordem, o agrupamento e a descrição;
+  - tela 501 (+9): a API da demonstração (só o Adm. Sup; nome repetido; alterar e excluir; fora da cópia; até 30), as
+    bases, o formulário com a prévia, editar e excluir, e a aba Visões dos Relatórios com a exportação.
+- **Navegador:**
+  - o Adm. Sup montou "Vendas por vendedor" (sem as canceladas, agrupada e somada, do maior para o menor) e viu a prévia;
+  - a Ana viu a mesma tabela em Relatórios → Visões e exportou para o Excel;
+  - celular sem rolagem para o lado, console sem erros.

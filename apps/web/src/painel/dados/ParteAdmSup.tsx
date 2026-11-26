@@ -4,9 +4,10 @@
 //   - ATUALIZAÇÕES DO SISTEMA (13e): publicar a versão nova e as novidades dela, para todas as lojas; o que já saiu;
 //   - AVISOS PARA A EQUIPE (13e): um recado para a equipe desta loja, com a importância e o último dia; encerrar;
 //   - AJUSTES DESTA LOJA (13f): ligar e desligar recursos (o que o plano da loja inclui) e os limites de usuários e
-//     de produtos ativos, com quantos ela tem hoje.
-// As regras ficam no @saas/core (comunicados.ts e recursosDaLoja.ts). As outras ferramentas (visões sob medida e
-// manutenção) entram aqui, nas partes seguintes do módulo.
+//     de produtos ativos, com quantos ela tem hoje;
+//   - VISÕES SOB MEDIDA (13g): tabelas dos Relatórios montadas para a loja (CartaoVisoes.tsx).
+// As regras ficam no @saas/core (comunicados.ts, recursosDaLoja.ts e visoes.ts). A manutenção entra aqui, na parte
+// seguinte do módulo.
 import {
   type AjustesDaLoja,
   type Atualizacao,
@@ -25,11 +26,12 @@ import {
 } from '@saas/core';
 import { type FormEvent, useState } from 'react';
 import { type ApiAjustes, type ApiComunicados, type ApiProdutos, type ApiUsuarios, ErroApi } from '../../api';
+import { type ApiDasVisoes, CartaoVisoes } from './CartaoVisoes';
 import { dataNoFuso, horaNoFuso } from '../formato';
 import { usarCarga } from '../usarCarga';
 
 interface Props {
-  api: ApiComunicados & ApiAjustes & Pick<ApiUsuarios, 'listarUsuarios'> & Pick<ApiProdutos, 'listarProdutos'>;
+  api: ApiComunicados & ApiAjustes & Pick<ApiUsuarios, 'listarUsuarios'> & Pick<ApiProdutos, 'listarProdutos'> & ApiDasVisoes;
   fuso: string;
   agora?: () => Date;
   /** Publicou algo: a área logada lê de novo (a versão do rodapé e os avisos do alto da tela). */
@@ -51,6 +53,7 @@ export function ParteAdmSup({ api, fuso, agora = () => new Date(), aoMudar }: Pr
       <CartaoAtualizacoes api={api} fuso={fuso} aoMudar={aoMudar} />
       <CartaoAvisos api={api} fuso={fuso} agora={agora} aoMudar={aoMudar} />
       <CartaoAjustes api={api} fuso={fuso} aoMudar={aoMudar} />
+      <CartaoVisoes api={api} fuso={fuso} aoMudar={aoMudar} />
     </>
   );
 }
