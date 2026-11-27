@@ -28,7 +28,7 @@ public final class Subdominio {
     }
 
     public static Resultado validar(String valor) {
-        String s = valor == null ? "" : valor.strip().toLowerCase(Locale.ROOT);
+        String s = valor == null ? "" : TextoJs.trim(valor).toLowerCase(Locale.ROOT);
         if (!FORMATO.matcher(s).matches()) {
             return new Resultado(null, MENSAGEM_FORMATO);
         }
@@ -43,7 +43,7 @@ public final class Subdominio {
      * deste domínio. "LojaA.NomeDaEmpresa.com.br:443" → "lojaa"; "a.b.nomedaempresa.com.br" → nulo.
      */
     public static String doEndereco(String host, String dominioBase) {
-        String h = (host == null ? "" : host).strip().toLowerCase(Locale.ROOT).replaceFirst(":\\d+$", "").replaceFirst("\\.$", "");
+        String h = TextoJs.trim(host == null ? "" : host).toLowerCase(Locale.ROOT).replaceFirst(":[0-9]+\\z", "").replaceFirst("\\.\\z", "");
         String sufixo = "." + dominioBase.toLowerCase(Locale.ROOT);
         if (!h.endsWith(sufixo)) {
             return null;

@@ -17,7 +17,7 @@ public final class Login {
 
     /** O login é guardado e comparado sempre em minúsculas e sem espaço nas pontas. */
     public static String normalizar(String texto) {
-        return texto.strip().toLowerCase(Locale.ROOT);
+        return TextoJs.trim(texto).toLowerCase(Locale.ROOT);
     }
 
     public static boolean noFormato(String login) {
