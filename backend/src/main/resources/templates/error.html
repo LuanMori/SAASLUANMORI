@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<!--/* Página de erro do servidor (decisão T18 de docs/migracao/06-RISCOS-E-DECISOES.md): o mesmo formato da tela do
+       sistema antigo quando a aplicação não conseguia carregar (legacy/web/src/App.tsx:77-88), com as mensagens do
+       servidor antigo para cada caso (legacy/api/src/http/filtro-erros.ts:60-87). */-->
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragmentos/cabeca :: cabeca}"></head>
+<body>
+<div id="raiz">
+  <div class="carregando-tela">
+    <p role="alert" th:text="${status == 404} ? 'Rota não encontrada.' : (${status == 403} ? 'Você não tem permissão para fazer isso.' : 'Erro interno. Tente novamente.')">Erro interno. Tente novamente.</p>
+    <button type="button" class="botao botao-primario" data-ir="/">Tentar de novo</button>
+  </div>
+</div>
+<script th:src="@{/js/painel.js}"></script>
+</body>
+</html>

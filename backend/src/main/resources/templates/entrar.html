@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<!--/* Tela de entrada (login) com usuário e senha (legacy/web/src/telas/TelaEntrada.tsx:1-194;
+       docs/migracao/01-MAPA-DE-TELAS.md §1). A loja vem do endereço; "Esqueceu a senha?" orienta a pedir a senha nova
+       ao responsável. As mensagens de erro não dizem se o que errou foi o usuário ou a senha. */-->
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragmentos/cabeca :: cabeca}"></head>
+<body>
+<div id="raiz">
+<div th:replace="~{entrada/molde :: molde(loja=${loja}, acoes=~{::acoes}, conteudo=~{::conteudo})}">
+<th:block th:fragment="acoes"><button th:replace="~{fragmentos/icones :: botaoTema('entrada-tema')}"></button><div th:if="${loja != null}" class="entrada-suporte"><button type="button" class="entrada-suporte-botao" aria-expanded="false" aria-controls="entrada-suporte-caixa"><span class="entrada-suporte-icone"><svg th:replace="~{fragmentos/icones :: fone}"></svg></span>Suporte</button></div></th:block>
+
+<th:block th:fragment="conteudo">
+  <form th:if="${loja != null}" class="entrada-form" method="post" th:action="@{/entrar}" novalidate aria-labelledby="entrada-titulo" data-entrada>
+    <input th:if="${lojaInformada != null}" type="hidden" name="loja" th:value="${lojaInformada}">
+    <h1 id="entrada-titulo" class="entrada-titulo">Bem-vindo de volta!</h1>
+    <p class="entrada-subtitulo">Acesse sua conta e gerencie sua loja.</p>
+
+    <p th:if="${erro != null}" class="alerta alerta-erro" role="alert" th:text="${erro}">erro</p>
+
+    <div class="entrada-campo">
+      <div class="entrada-rotulo">
+        <label for="entrada-usuario">Usuário</label>
+      </div>
+      <div class="entrada-caixa">
+        <svg th:replace="~{fragmentos/icones :: usuario}"></svg>
+        <input id="entrada-usuario" name="usuario" th:value="${usuario}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Ex.: maria.silva" maxlength="64" th:autofocus="${focoNaSenha == null}">
+      </div>
+    </div>
+
+    <div class="entrada-campo">
+      <div class="entrada-rotulo">
+        <label for="entrada-senha">Senha</label>
+      </div>
+      <div class="entrada-caixa">
+        <svg th:replace="~{fragmentos/icones :: cadeado}"></svg>
+        <input id="entrada-senha" name="senha" type="password" value="" autocomplete="current-password" placeholder="Digite sua senha" maxlength="128" th:autofocus="${focoNaSenha != null}">
+        <button type="button" class="entrada-olho" aria-label="Mostrar senha" aria-pressed="false"><svg th:replace="~{fragmentos/icones :: olhoAberto}"></svg></button>
+      </div>
+    </div>
+
+    <button type="submit" class="botao botao-primario botao-grande entrada-botao" disabled>Entrar</button>
+
+    <button type="button" class="entrada-link" aria-expanded="false" data-ajuda-senha>Esqueceu a senha?</button>
+  </form>
+  <section th:if="${loja == null}" class="entrada-form" aria-labelledby="entrada-titulo">
+    <h1 id="entrada-titulo" class="entrada-titulo">Endereço não encontrado</h1>
+    <p class="alerta alerta-erro" role="alert">Este endereço não corresponde a nenhuma loja ativa. Confira o link com o responsável pela loja.</p>
+  </section>
+</th:block>
+</div>
+</div>
+
+<template id="tpl-caps"><span id="entrada-caps" class="entrada-caps">Caps Lock ativado</span></template>
+<template id="tpl-ajuda-senha"><p class="alerta" role="status">Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas por e-mail.</p></template>
+<template id="tpl-suporte"><div id="entrada-suporte-caixa" class="entrada-suporte-caixa" role="dialog" aria-label="Suporte"><p th:text="${T(com.saasluanmori.web.Marca).SUPORTE_TEXTO}">texto</p><a th:href="'mailto:' + ${T(com.saasluanmori.web.Marca).SUPORTE_EMAIL}" th:text="${T(com.saasluanmori.web.Marca).SUPORTE_EMAIL}">e-mail</a></div></template>
+<template id="tpl-olho-aberto"><svg th:replace="~{fragmentos/icones :: olhoAberto}"></svg></template>
+<template id="tpl-olho-fechado"><svg th:replace="~{fragmentos/icones :: olhoFechado}"></svg></template>
+<script th:src="@{/js/entrada.js}"></script>
+</body>
+</html>

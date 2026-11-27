@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<!--/* A área logada: a barra lateral copiada do DaniPets V9.3.3 e a parte escolhida
+       (legacy/web/src/painel/TelaPainel.tsx:198-339 e BarraLateral.tsx:40-113; docs/migracao/01-MAPA-DE-TELAS.md §3).
+       Os botões da barra levam às partes (static/js/painel.js); "Sair" envia o formulário escondido. */-->
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragmentos/cabeca :: cabeca}"></head>
+<body th:attr="hx-headers=${cabecalhosHtmx},data-inatividade-min=${inatividadeMin}">
+<div id="raiz">
+  <div class="painel-app">
+    <aside class="sidebar" aria-label="Barra lateral">
+      <div class="brand">
+        <div class="brandmark" aria-hidden="true" th:text="${iniciaisDaLoja}">LA</div>
+        <div class="brandcopy">
+          <strong th:text="${logado.lojaNome()}">Loja</strong>
+        </div>
+      </div>
+
+      <button th:if="${itemCaixa != null}" type="button" th:class="'nav nav-pos' + (${itemCaixa == secao} ? ' active' : '')"
+              th:attr="aria-current=${itemCaixa == secao} ? 'page',data-ir=${itemCaixa.endereco}"><svg th:replace="~{fragmentos/icones :: menu(${itemCaixa.id})}"></svg><span th:text="${itemCaixa.rotulo}">Frente de caixa</span></button>
+
+      <nav class="navlist" aria-label="Menu principal">
+        <div th:each="g : ${grupos}" class="navsec" role="group" th:attr="aria-label=${g.titulo()}">
+          <div class="navgroup" aria-hidden="true" th:text="${g.titulo()}">Grupo</div>
+          <button th:each="i : ${g.itens()}" type="button" th:class="'nav' + (${i == secao} ? ' active' : '')"
+                  th:attr="aria-current=${i == secao} ? 'page',data-ir=${i.endereco}"><svg th:replace="~{fragmentos/icones :: menu(${i.id})}"></svg><span th:text="${i.rotulo}">Item</span></button>
+        </div>
+      </nav>
+
+      <div class="sideuser">
+        <div class="sideuser-id">
+          <button type="button" th:class="'sideuser-perfil' + (${secao.id == 'meu-usuario'} ? ' active' : '')"
+                  th:attr="aria-label=|Meu usuário: ${logado.nome()}, ${logado.papel().rotulo()}|" title="Abrir Meu usuário" data-ir="/meu-usuario">
+            <span class="sideuser-avatar" aria-hidden="true" th:text="${inicialDaPessoa}">A</span>
+            <span class="sideuser-name">
+              <b th:text="${logado.nome()}">Nome</b>
+              <small th:text="${logado.papel().rotulo()}">Papel</small>
+            </span>
+          </button>
+          <button th:replace="~{fragmentos/icones :: botaoTema('sideuser-theme')}"></button>
+        </div>
+        <div class="sideuser-actions">
+          <button type="button" data-sair>Sair</button>
+        </div>
+      </div>
+      <div class="sidefoot" th:text="|${T(com.saasluanmori.web.Marca).VERSAO} • ${T(com.saasluanmori.web.Marca).NOME}|">V0.1 • Nome da empresa</div>
+    </aside>
+    <main class="painel-conteudo" th:attr="aria-label=${secao.rotulo}">
+      <div th:if="${permitido and !reconstruida}" class="rel">
+        <header class="vg-topo">
+          <div>
+            <h1 th:text="${secao.rotulo}">Parte</h1>
+            <p class="alerta" role="status" th:text="${avisoSemServidor}">aviso</p>
+          </div>
+        </header>
+      </div>
+    </main>
+  </div>
+</div>
+<form id="form-sair" method="post" th:action="@{/sair}" hidden></form>
+<form id="form-sair-inatividade" method="post" th:action="@{/sair(aviso='inatividade')}" hidden></form>
+<script th:src="@{/js/painel.js}"></script>
+</body>
+</html>

@@ -85,7 +85,7 @@ public class SecurityConfig {
                 .httpBasic(b -> b.disable())
                 .logout(l -> l.disable())
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/entrar", "/saude", "/erro", "/css/**", "/js/**", "/img/**", "/webjars/**").permitAll()
+                        .requestMatchers("/entrar", "/sair", "/saude", "/error", "/css/**", "/js/**", "/img/**", "/webjars/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(new EntradaEntryPoint(amb)))
                 .headers(h -> h
