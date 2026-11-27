@@ -490,3 +490,154 @@ conta, receber fiado e taxas de Compras e Clientes). Regras: 03 §9.4, §12.4, �
   dd/mm/aaaa." (`:443`).
 - **Confirmar recebimento** (`ModaisFinanceiro.tsx:494-550`): título "Confirmar recebimento" / "Confirmar recebimentos"
   (vários), a conta onde entrou; sucesso "Recebimento confirmado".
+
+## 12. Relatórios
+
+Componentes: `painel/TelaRelatorios.tsx:1-241`, `painel/relatorios/AbaTudo.tsx`, `AbaVendas.tsx`, `AbasRelatorios.tsx`,
+`AbaVisoes.tsx`, `TabelaDaPlanilha.tsx`. Regras: 03 §16.2.
+
+- **Topo** (`TelaRelatorios.tsx:150-200`): título "Relatórios" e "Tudo o que acontece na loja, por assunto, com filtros e
+  exportação para o Excel."; "Exportar tudo (Excel)"; "Período" (`aria-label`): "Todas", "Hoje", "Ontem", "Últimos 7
+  dias", "Este mês", e "De" / "Até"; abas (`aria-label` "Assuntos dos relatórios"): "Tudo", "Vendas", "Produtos",
+  "Estoque", "Clientes", "Financeiro", "Caixa", "Compras", "Histórico", e "Vendas antigas" / "Visões" quando existem
+  (`:55-80`).
+- **Exportar**: "Exportar esta aba (Excel)" em cada aba e "Exportar tudo (Excel)" ("Gerando…") (`TabelaDaPlanilha.tsx:114-
+  122`); sucesso "Arquivo do Excel pronto: <arquivo> (N aba(s))."; falhas "Não foi possível gerar o arquivo do Excel. Tente
+  de novo." · "Não foi possível ler os dados para exportar. Tente de novo." (`TelaRelatorios.tsx:128-143`). As tabelas mostram
+  até 300 linhas: "Mostrando as 300 primeiras de N linhas. O Excel leva todas." (`TabelaDaPlanilha.tsx:37,94`).
+- **Tudo** (`AbaTudo.tsx:162-199`): "O resumo de cada assunto no período escolhido. Para ver a lista completa, use “Ver
+  detalhes”. Para levar tudo para o Excel, use “Exportar tudo (Excel)”."; um cartão por assunto com os números (ex.: "custo
+  médio da hora da venda", "sem custo registrado", "pelo custo médio atual", "vendas com cliente identificado", "entradas −
+  saídas no período", "nada registrado no período", "nenhum produto vendido") e "Ver detalhes" ("Ver detalhes de <assunto>");
+  parte que falhou: "Esta parte ainda não está disponível no sistema da loja.".
+- **Vendas** (`AbaVendas.tsx:41-270`): filtros (`aria-label` "Filtros das vendas"): "Vendido por" ("Todos"), "Cliente" ("Sem
+  cliente identificado"), "Pagamento" ("Todas"); "Resumo do período"; "Por quem vendeu"; "Por forma de pagamento"; "Vendas"
+  (colunas Data, Hora, Venda, Vendido por, Cliente, Itens — "o kg" no kg —, Pagamento, Total; cancelada riscada); vazio:
+  "Nenhuma venda encontrada com esses filtros.". O Vendedor só vê hoje (03 §10.4).
+- **Produtos** (`AbasRelatorios.tsx:78-123`): "Buscar"; "Ordenar por": "Mais vendidos (R$)", "Mais vendidos (quantidade)",
+  "Maior lucro"; "Resumo dos produtos".
+- **Estoque** (`:124-174`): "Situação no fim do período": "Todas", "Abaixo do mínimo", "Zerado", "Negativo"; "Resumo do
+  estoque".
+- **Clientes** (`:175-220`): "Quais clientes": "Todos", "Compraram no período", "Com fiado em aberto"; "Resumo dos
+  clientes".
+- **Financeiro** (`:221-291`): "Conta"; "Mostrar": "Tudo", "Só entradas", "Só saídas"; "Categoria"; "Resumo do
+  financeiro".
+- **Caixa** (`:292-317`): "Resumo do caixa". **Compras** (`:318-361`): "Fornecedor"; "Pagamento": "À vista", "A prazo";
+  "Resumo das compras".
+- **Vendas antigas** (`:362-408`): "Vendas importadas de outro sistema, só como histórico: não entram no estoque, no caixa, no
+  financeiro nem nos números das outras abas."; "Resumo das vendas antigas".
+- **Histórico** (`:409-453`): "Quem"; "O que"; "Resumo do histórico".
+- **Visões** (`AbaVisoes.tsx:9-51`): "Visões montadas pelo suporte para esta loja. Seguem o período escolhido acima.".
+
+## 13. Usuários
+
+Componente: `painel/TelaUsuarios.tsx:1-739`. Regras: 03 §3; quem cria quem: 05 §4.
+
+- **Topo** (`TelaUsuarios.tsx:105-113`): título "Usuários" e "+ Novo usuário".
+- **Equipe da loja** (`:136-215`): colunas Nome, Usuário, Papel, Situação, Último acesso; ações "Editar", "Desativar" /
+  "Reativar", "Nova senha", "Excluir dados" (com `aria-label` "<ação> <nome>"); nota "Desativar tira o acesso na hora (as
+  sessões abertas terminam) e mantém o histórico. Para trocar a sua própria senha, use a aba Meu usuário (ou clique no seu
+  nome, no canto de baixo da barra lateral)." (`:214`).
+- **Histórico** (`:222-250`): colunas Quando, Quem, O quê (texto da ação e resumo, 03 §17); lê as 40 últimas.
+- **O que cada papel pode fazer** (`:300-340`): "Ver" / "Esconder" (`aria-expanded`); tabela por permissão com "pode", "não
+  pode" e "se marcada" (Personalizado) (05 §2).
+- **Novo usuário** (`:500-570`): "Nome", "Usuário (login)" (placeholder "ex.: maria.silva"); "Papel" em cartões (Vendedor ou
+  Personalizado para quem não é o Adm. Sup; Dono e Administrador só pelo suporte, "Só o suporte, na implantação"); no
+  Personalizado, "O que esta pessoa acessa" — "Marque as telas e, em cada uma, o que mais ela pode fazer. A Visão geral, a
+  consulta de produtos e o Suporte são de todos." —, com "Produtos e estoque" ("Todos consultam os produtos e o estoque.") e
+  "Regras da loja" ("Nas telas que têm regras: Caixa do dia, Clientes, Produtos e estoque, Financeiro e Dados e backup.")
+  (05 §4); "Senha provisória" já sorteada, com "Gerar" (10 letras e números de `abcdefghjkmnpqrstuvwxyz23456789`, sem 0/o e
+  1/l/i, sorteados com `crypto.getRandomValues`) (`:59-66,355-360`); botões "Cadastrar" ("Salvando…") e "Cancelar".
+- **Editar** (`:580-650`): nome, papel ("Papel atual") e funções do Personalizado; "Salvar"; sucesso "<nome>: alterações
+  salvas." (`:258`).
+- **Nova senha** (`:650-700`): "Criar senha provisória" (sorteada, com "Gerar").
+- **Usuário criado / Senha provisória criada** (`:262-280`): "Entregue para <nome> o usuário <login> e a senha provisória
+  abaixo. No primeiro acesso, a pessoa cria a própria senha (esta deixa de valer)." com a senha em destaque (`aria-label`
+  "Senha provisória") e "Pronto".
+- **Excluir dados** (`:700-739`): "Para atender um pedido da pessoa (LGPD): o nome, o login e a senha são apagados e não dá
+  para desfazer. O que ela fez continua no histórico, como “Usuário removido”."; "Excluir os dados" ("Excluindo…");
+  sucesso "Dados pessoais excluídos. O histórico continua, como “Usuário removido”." (`:261`).
+
+## 14. Dados e backup
+
+Componentes: `painel/TelaDadosBackup.tsx:1-311`, `painel/dados/ParteImportarExportar.tsx:1-558`,
+`painel/dados/ParteAdmSup.tsx:1-458`, `painel/dados/CartaoVisoes.tsx:1-407`, `painel/dados/CartaoManutencao.tsx:1-334`.
+Regras: 03 §5, §18, §19.
+
+- **Topo e partes** (`TelaDadosBackup.tsx:83-100`): título "Dados e backup" e "Os dados e as regras da loja, as planilhas
+  para importar e exportar e a cópia de segurança."; partes (`aria-label` "Partes de Dados e backup"): "Dados do sistema",
+  "Importar e exportar" e "Adm. Sup" (só para o Adm. Sup) (`:65-67`).
+- **Dados do sistema** (`TelaDadosBackup.tsx:170-310`): **Dados da loja** — logo ("Escolher o logo" / "Trocar o logo",
+  `aria-label` "Escolher a imagem do logo"; "Tirar o logo"; grande demais: "O logo é grande demais. Use uma imagem menor (até
+  200 KB)."), "Nome da loja", "Descrição (abaixo do nome, na barra lateral)" (placeholder "Ex.: Rações, petiscos e
+  acessórios"), "Salvar os dados da loja" ("Salvando…"), sucesso "Dados da loja salvos."; **Regras gerais** — "Desconto que
+  o Vendedor dá sem senha (%)" com "Acima disso, a Frente de caixa pede a senha do Dono ou do Administrador. Brinde (preço R$
+  0,00) sempre pede o Dono. Padrão: 10%.", "Salvar a regra", conferência "Informe um número de 0 a 50 (por exemplo, 10 ou
+  12,5).", sucesso "Regra salva. Vale para as próximas vendas na Frente de caixa."; nota "As outras regras (caixa, fiado,
+  cashback, motivos de ajuste, categorias de despesa) já valem com os padrões do DaniPets e vão poder ser mudadas nas abas
+  onde são usadas, à medida que cada aba ficar pronta." (`:306-307`).
+- **Importar e exportar** (`ParteImportarExportar.tsx:86-558`):
+  - **Importar uma planilha**: o que importar (Produtos, Clientes, Fornecedores, Vendas antigas); "Traga os cadastros de
+    outro sistema ou de uma planilha (.xlsx ou .csv). O que já está cadastrado (mesmo código de barras, CPF ou nome) fica
+    como está: a importação só acrescenta. Antes de gravar, o sistema mostra o que vai entrar."; para vendas antigas: "As
+    vendas antigas entram só como histórico: não mexem em estoque, caixa nem financeiro. Elas aparecem nos Relatórios, na
+    aba Vendas antigas. Uma linha por item (com o produto) ou uma linha por venda (só o total)."; "Escolher a planilha"
+    ("Lendo a planilha…"); "Baixar o modelo"; prévia "O que a planilha traz" ("Colunas usadas: … Ficam de fora: …";
+    colunas Linha, Nome, Situação, O que acontece; o resumo de 03 §18.3); importar ("Importando…") e "Cancelar".
+  - **Exportar para o Excel**: "Os cadastros da loja numa planilha, com as mesmas colunas do modelo de importação. Serve
+    para conferir, guardar ou levar os cadastros para outra loja."; um botão por cadastro ("Gerando…"); sucesso "Planilha de
+    <produtos|clientes|fornecedores> baixada: N linha(s)." (`:375`).
+  - **Cópia de segurança**: "Um arquivo com todos os dados da loja: cadastros, vendas, estoque, caixa, financeiro,
+    fidelidade, vales-troca e o histórico. Guarde em lugar seguro: ele tem os dados pessoais dos clientes, como o CPF
+    (LGPD)."; "Baixar a cópia de segurança" ("Gerando a cópia…"; desativado sem `dados` + `clientes.cpf`); sucesso "Cópia
+    baixada (<arquivo>): N registro(s). Guarde em lugar seguro." (`:420`).
+  - **Restaurar uma cópia** (só o Adm. Sup): "Troca todos os dados da loja pelos de uma cópia de segurança desta loja. Antes
+    de trocar, o sistema baixa uma cópia dos dados de agora. A equipe (usuários e senhas) e o histórico continuam como estão.
+    Só o Adm. Sup vê esta parte."; "Escolher o arquivo da cópia" ("Conferindo o arquivo…"); "O que a cópia leva" ("Cópia de
+    dd/mm/aaaa às HH:MM", os assuntos e as quantidades); aviso "Os dados atuais da loja serão trocados pelos desta cópia. O
+    que foi feito depois de dd/mm/aaaa às HH:MM sai do sistema (fica só no histórico e na cópia que o sistema baixa antes de
+    trocar)."; caixa "Entendi: os dados atuais da loja serão trocados pelos desta cópia."; "Restaurar esta cópia"
+    ("Restaurando…"; só com a caixa marcada) e cancelar; sucesso "Cópia de dd/mm/aaaa restaurada (N registro(s)). Os dados de
+    antes foram baixados no arquivo <arquivo>." (`:493`); arquivo grande: a mensagem de 03 §18.1.
+- **Adm. Sup** (`ParteAdmSup.tsx:51-458`, `CartaoVisoes.tsx:34-407`, `CartaoManutencao.tsx:28-334`):
+  - **Atualizações do sistema**: "Publique a versão nova e as novidades dela. Vale para todas as lojas: a versão aparece no
+    rodapé da barra lateral, e cada pessoa vê as novidades uma vez, no alto da tela, até clicar em “Entendi”."; "Versão de
+    agora: V0.1"; "Versão nova"; "Novidades (uma por linha)"; "Publicar a atualização" ("Publicando…"); "Atualizações
+    publicadas" ("· dd/mm/aaaa · <quem>"); sucesso "Versão V0.2 publicada. A equipe de todas as lojas vê as novidades no alto
+    da tela." (`:85-142`).
+  - **Avisos para a equipe desta loja**: "Aviso"; "Informação" / "Atenção"; "Mostrar até (opcional)"; "Publicar o aviso";
+    "Avisos publicados" ("Encerrado"; "Encerrar" — "Encerrando…"); sucessos "Aviso publicado: aparece no alto da tela de
+    todos desta loja, até cada pessoa clicar em “Entendi”." · "Aviso encerrado: ele sai da tela da equipe." (`:186-270`).
+  - **Ajustes desta loja**: "O que esta loja usa (o que o plano dela inclui). Desligar esconde a aba ou a opção e não deixa
+    criar nada novo dela; nada é apagado, e tudo volta ao ligar de novo. O que o cliente já tem continua valendo. Os ajustes
+    não vão na cópia de segurança da loja."; cada recurso com ligar/desligar ("Desligado." e o que deixa de valer, 03 §5.4);
+    limites com placeholder "Sem limite" e a contagem de hoje ("Contando…"); "Esta loja usa o padrão: tudo ligado e sem
+    limite."; "Salvar os ajustes" ("Salvando…"); sucesso "Ajustes salvos. A equipe desta loja vê a mudança na hora." (`:310-458`).
+  - **Visões sob medida** (`CartaoVisoes.tsx`): "Tabelas dos Relatórios montadas para esta loja: a base, as colunas, os
+    filtros, se agrupa e soma, e a ordem. A equipe vê em Relatórios → Visões, no período que escolher, e exporta para o
+    Excel."; lista "Visões desta loja" (com "Excluir" → "Sim, excluir" / "Não"); "Nova visão": "Nome da visão" (placeholder
+    "Ex.: Vendas por vendedor"), "Base (tabela dos Relatórios)", as colunas, os filtros ("Adicionar filtro", "Tirar";
+    placeholders "dd/mm/aaaa" e "0,00"), "Agrupar e somar por" ("Não agrupar"), "Ordenar por" ("Ordem da base" / "Ordem do
+    grupo"), "Sentido" ("Do maior para o menor" / "Do menor para o maior"); prévia ("Carregando a prévia…"; base indisponível:
+    "A base desta visão ainda não está disponível no sistema da loja."); "Criar a visão" / "Salvar a visão" ("Salvando…") e
+    "Cancelar"; conferência "Marque pelo menos uma coluna."; sucessos "Visão "<nome>" criada: aparece em Relatórios → Visões." ·
+    "Visão "<nome>" salva." · "Visão "<nome>" excluída: ela sai de Relatórios → Visões." (`:53-140,241`).
+  - **Manutenção** (`CartaoManutencao.tsx`): **Diagnóstico da loja** ("Atualizar"; "Gerado em dd/mm/aaaa às HH:MM."; a versão,
+    a equipe, o histórico, o espaço, o caixa e "Registros por assunto" com Assunto e Registros); **Conferir o estoque** ("O
+    saldo de cada produto é sempre recalculado a partir dos movimentos (estoque inicial, entradas, compras, vendas, devoluções
+    e ajustes). Aqui aparecem os que ficaram negativos."; "Nenhum produto com saldo negativo."; "Zerar o saldo" → "Sim, zerar"
+    / "Não"; os movimentos de produto que não existe mais; sucesso "Saldo de <nome> zerado com um ajuste de +<quantidade> (fica
+    no histórico do produto)."); **Registro de erros** ("Os erros inesperados que aconteceram nas telas desta loja (os 100 mais
+    novos): quando, quem, em que aba e a mensagem técnica. O mesmo erro em seguida vira …"; colunas Quando, Quem, Aba, Erro,
+    Vezes; "Nenhum erro registrado."; "Limpar o registro" → confirmação; sucesso "Registro de erros limpo."); a nota sobre
+    reabrir um caixa (03 §19.3).
+
+## 15. Suporte
+
+Em branco, como hoje (`CLAUDE.md`; `painel/TelaPainel.tsx:5-6`): o item fica na barra lateral para todos
+(`painel/menu.tsx:160`) e a tela não mostra conteúdo.
+
+## 16. Erro inesperado numa tela
+
+(`painel/registroDeErros.tsx:64-80`) No lugar da tela que quebrou: cartão "Algo deu errado nesta tela", "O erro foi guardado
+para o suporte. Tente de novo; se continuar, fale com o suporte." e "Tentar de novo". A barra lateral e os avisos continuam.
