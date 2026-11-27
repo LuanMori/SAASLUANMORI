@@ -2,9 +2,9 @@
 
 ## Fase atual
 
-**Fase 2 — Fundação: concluída em 27/11/2026** (branch `migration/fase-2-fundacao`, pull request para o
-`teste-local-windows`). Próxima: **Fase 3 — módulo de referência (Fornecedores)**, que depende da decisão P8 do
-`06-RISCOS-E-DECISOES.md` (como comparar o visual com o sistema antigo).
+**Fase 2 — Fundação: concluída em 27/11/2026** (PR #7), com a comparação lado a lado com a demonstração feita em
+seguida, depois da decisão D5 (branch `migration/fase-2-comparacao-visual`). Próxima: **Fase 3 — módulo de referência
+(Fornecedores)**.
 
 ## Última sessão
 
@@ -27,6 +27,19 @@ O que foi feito:
   - conferido no navegador (Chromium) com o servidor rodando (`mvn spring-boot:run` e `java -jar`), e o RLS conferido
     pelo `psql` no banco de desenvolvimento;
   - decisões T18 a T23 e a pendência P8 registradas no `06-RISCOS-E-DECISOES.md`.
+- Fase 2 juntada ao `teste-local-windows` (PR #7, merge `55e3e48`).
+- P8 decidida pelo Luan (D5): a demonstração pode ser aberta no navegador só para olhar e tirar fotos de tela. Com isso,
+  a comparação lado a lado no Chromium, nos temas claro e escuro: medidas, cores e fontes de cada elemento pelo
+  navegador e as fotos de tela pixel a pixel. A janela é a mesma nos dois: 1440 × 943 na demonstração, que tem a faixa
+  amarela de 43 px no alto; no sistema novo, o tamanho da tela da demonstração sem a faixa (1440 × 900).
+  - Entrada e "Crie a sua senha": iguais. Sobram diferenças de até 1 px na posição e de 0,03 px na fonte, porque a
+    demonstração desconta 44 px da altura por causa da faixa (`legacy/web/src/demo/demo.css`), e o sistema, o antigo e o
+    novo, usa a altura toda (`legacy/web/src/estilos.css:286`).
+  - Ilustração da loja: o SVG gerado em Java é igual byte a byte ao da demonstração (teste `IlustracaoLojaTest`).
+  - Moldura (barra lateral, tema, nome e papel, Sair): igual. A loja da demonstração tem a descrição "Rações, petiscos e
+    acessórios" embaixo do nome (`legacy/web/src/painel/BarraLateral.tsx:66`); no sistema novo a descrição e o logo da
+    loja chegam com os dados da loja (módulo Dados e backup) e, até lá, a barra mostra as iniciais e o nome, como o
+    antigo mostra numa loja sem logo e sem descrição.
 
 O que ficou pendente: ver Pendências abertas.
 
@@ -46,7 +59,7 @@ tela mostra número inventado.
 |---|---|---|---|---|---|---|
 | Preparação (Fase 0) | ✅ concluída | #3 | — | — | — | — |
 | Especificação (Fase 1) | ✅ concluída | #6 | — | — | — | — |
-| Fundação (Fase 2): lojas, usuários e permissões, entrada, primeiro acesso, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), conferência ao subir, comandos de administração | ✅ concluída | ver o PR da Fase 2 | 51 | ✅ | ✅ | ✅ conferido com o `04` e o `01`; lado a lado com a demonstração: P8 |
+| Fundação (Fase 2): lojas, usuários e permissões, entrada, primeiro acesso, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), conferência ao subir, comandos de administração | ✅ concluída | #7 e o PR da comparação | 53 | ✅ | ✅ | ✅ conferido com o `04` e o `01` e lado a lado com a demonstração (D5), nos temas claro e escuro |
 | Fornecedores (módulo de referência, Fase 3; fica na aba Compras) | ⏳ pendente | — | — | — | — | — |
 | Meu usuário | ⏳ pendente | — | — | — | — | — |
 | Usuários (com o Histórico e "O que cada papel pode fazer") | ⏳ pendente | — | — | — | — | — |
@@ -60,7 +73,7 @@ tela mostra número inventado.
 | Financeiro | ⏳ pendente | — | — | — | — | — |
 | Visão geral (cartões do dia e pendências) | ⏳ pendente | — | — | — | — | — |
 | Relatórios (com o Excel) | ⏳ pendente | — | — | — | — | — |
-| Dados e backup (dados e regras da loja, planilhas, cópia de segurança, vendas antigas) | ⏳ pendente | — | — | — | — | — |
+| Dados e backup (dados e regras da loja, com o logo e a descrição na barra lateral; planilhas, cópia de segurança, vendas antigas) | ⏳ pendente | — | — | — | — | — |
 | Ferramentas do Adm. Sup (atualizações e avisos, ajustes da loja, visões sob medida, manutenção, registro de erros) | ⏳ pendente | — | — | — | — | — |
 | Suporte (em branco, como no sistema antigo: `legacy/web/src/painel/TelaPainel.tsx:5-6`) | ⏳ pendente | — | — | — | — | — |
 | Testes E2E (Fase 5) | ⏳ pendente | — | — | — | — | — |
@@ -82,9 +95,6 @@ tela mostra número inventado.
   decisão, menos retrabalho.
 - [ ] **Pendências da Visão geral** (`docs/PENDENCIAS.md`, "Status: A DEFINIR"): a reconstrução repete o que estiver
   ligado (hoje 1, 2, 3, 16, 17, 18 e 19).
-- [ ] **Como comparar o visual com o sistema antigo** (P8 do `06`): o CLAUDE.md diz que o `legacy/` nunca é executado e
-  que a demonstração é a referência para comparar o visual; abrir a demonstração no navegador executa o JavaScript dela.
-  Falta o Luan dizer se a demonstração pode ser aberta no navegador só para a comparação (ou outro jeito de comparar).
 
 ## Decisões tomadas
 
@@ -109,3 +119,6 @@ tela mostra número inventado.
   banco; relatórios, Excel e importação no servidor; cópia de segurança conferida com chave do servidor; carrinho no
   navegador; os mesmos arredondamentos e textos; sorteios com `SecureRandom`; travas por loja; ids UUID versão 7.
 - 27/11: **Fornecedores é o módulo de referência** da Fase 3, e a ordem dos demais é a da tabela de módulos.
+- 27/11: **a demonstração pode ser aberta no navegador** só para olhar e tirar fotos de tela ao lado do sistema novo, na
+  comparação de cada módulo; nada nela é alterado, e o resto do `legacy/` continua sem ser executado (resposta do Luan à
+  P8, decisão D5; registrado no CLAUDE.md).
