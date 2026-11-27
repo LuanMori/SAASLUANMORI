@@ -539,22 +539,22 @@ Componente: `painel/TelaUsuarios.tsx:1-739`. Regras: 03 §3; quem cria quem: 05 
   sessões abertas terminam) e mantém o histórico. Para trocar a sua própria senha, use a aba Meu usuário (ou clique no seu
   nome, no canto de baixo da barra lateral)." (`:214`).
 - **Histórico** (`:222-250`): colunas Quando, Quem, O quê (texto da ação e resumo, 03 §17); lê as 40 últimas.
-- **O que cada papel pode fazer** (`:300-340`): "Ver" / "Esconder" (`aria-expanded`); tabela por permissão com "pode", "não
+- **O que cada papel pode fazer** (`:296-351`): "Ver" / "Esconder" (`aria-expanded`); tabela por permissão com "pode", "não
   pode" e "se marcada" (Personalizado) (05 §2).
-- **Novo usuário** (`:500-570`): "Nome", "Usuário (login)" (placeholder "ex.: maria.silva"); "Papel" em cartões (Vendedor ou
+- **Novo usuário** (`:497-576`; papel em `:383-435`; acesso do Personalizado em `:436-496`): "Nome", "Usuário (login)" (placeholder "ex.: maria.silva"); "Papel" em cartões (Vendedor ou
   Personalizado para quem não é o Adm. Sup; Dono e Administrador só pelo suporte, "Só o suporte, na implantação"); no
   Personalizado, "O que esta pessoa acessa" — "Marque as telas e, em cada uma, o que mais ela pode fazer. A Visão geral, a
   consulta de produtos e o Suporte são de todos." —, com "Produtos e estoque" ("Todos consultam os produtos e o estoque.") e
   "Regras da loja" ("Nas telas que têm regras: Caixa do dia, Clientes, Produtos e estoque, Financeiro e Dados e backup.")
   (05 §4); "Senha provisória" já sorteada, com "Gerar" (10 letras e números de `abcdefghjkmnpqrstuvwxyz23456789`, sem 0/o e
-  1/l/i, sorteados com `crypto.getRandomValues`) (`:59-66,355-360`); botões "Cadastrar" ("Salvando…") e "Cancelar".
-- **Editar** (`:580-650`): nome, papel ("Papel atual") e funções do Personalizado; "Salvar"; sucesso "<nome>: alterações
+  1/l/i, sorteados com `crypto.getRandomValues`) (`:59-66,352-368`); botões "Cadastrar" ("Salvando…") e "Cancelar".
+- **Editar** (`:577-654`): nome, papel ("Papel atual") e funções do Personalizado; "Salvar"; sucesso "<nome>: alterações
   salvas." (`:258`).
-- **Nova senha** (`:650-700`): "Criar senha provisória" (sorteada, com "Gerar").
+- **Nova senha** (`:655-698`): "Criar senha provisória" (sorteada, com "Gerar").
 - **Usuário criado / Senha provisória criada** (`:262-280`): "Entregue para <nome> o usuário <login> e a senha provisória
   abaixo. No primeiro acesso, a pessoa cria a própria senha (esta deixa de valer)." com a senha em destaque (`aria-label`
   "Senha provisória") e "Pronto".
-- **Excluir dados** (`:700-739`): "Para atender um pedido da pessoa (LGPD): o nome, o login e a senha são apagados e não dá
+- **Excluir dados** (`:699-739`): "Para atender um pedido da pessoa (LGPD): o nome, o login e a senha são apagados e não dá
   para desfazer. O que ela fez continua no histórico, como “Usuário removido”."; "Excluir os dados" ("Excluindo…");
   sucesso "Dados pessoais excluídos. O histórico continua, como “Usuário removido”." (`:261`).
 
