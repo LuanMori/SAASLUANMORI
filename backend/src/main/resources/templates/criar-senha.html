@@ -13,7 +13,7 @@
   <section class="entrada-form" aria-labelledby="cs-titulo">
     <h1 id="cs-titulo" class="entrada-titulo">Crie a sua senha</h1>
     <p class="entrada-subtitulo cs-texto" th:text="|Olá, ${logado.nome()}. Por segurança, troque a senha provisória por uma senha pessoal, que só você vai saber. Ela vale para entrar no sistema e para autorizar operações no caixa.|">texto</p>
-    <form class="modal-form" novalidate th:attr="hx-post=@{/criar-senha}" hx-swap="none" data-criar-senha>
+    <form class="modal-form" method="post" th:action="@{/criar-senha}" novalidate th:attr="hx-post=@{/criar-senha}" hx-swap="none" data-criar-senha>
       <div class="campo">
         <label for="ts-atual">Senha provisória que você recebeu</label>
         <input id="ts-atual" name="atual" type="password" value="" autocomplete="current-password" maxlength="128" data-senha>

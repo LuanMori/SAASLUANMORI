@@ -42,7 +42,7 @@
           <button type="button" data-sair>Sair</button>
         </div>
       </div>
-      <div class="sidefoot" th:text="|${T(com.saasluanmori.web.Marca).VERSAO} • ${T(com.saasluanmori.web.Marca).NOME}|">V0.1 • Nome da empresa</div>
+      <div class="sidefoot" th:text="|${marca.versao} • ${marca.nome}|">V0.1 • Nome da empresa</div>
     </aside>
     <main class="painel-conteudo" th:attr="aria-label=${secao.rotulo}">
       <div th:if="${permitido and !reconstruida}" class="rel">

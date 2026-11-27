@@ -52,7 +52,7 @@
 
 <template id="tpl-caps"><span id="entrada-caps" class="entrada-caps">Caps Lock ativado</span></template>
 <template id="tpl-ajuda-senha"><p class="alerta" role="status">Solicite uma nova senha ao responsável pela loja. Por segurança, as senhas não são enviadas por e-mail.</p></template>
-<template id="tpl-suporte"><div id="entrada-suporte-caixa" class="entrada-suporte-caixa" role="dialog" aria-label="Suporte"><p th:text="${T(com.saasluanmori.web.Marca).SUPORTE_TEXTO}">texto</p><a th:href="'mailto:' + ${T(com.saasluanmori.web.Marca).SUPORTE_EMAIL}" th:text="${T(com.saasluanmori.web.Marca).SUPORTE_EMAIL}">e-mail</a></div></template>
+<template id="tpl-suporte"><div id="entrada-suporte-caixa" class="entrada-suporte-caixa" role="dialog" aria-label="Suporte"><p th:text="${marca.suporteTexto}">texto</p><a th:href="'mailto:' + ${marca.suporteEmail}" th:text="${marca.suporteEmail}">e-mail</a></div></template>
 <template id="tpl-olho-aberto"><svg th:replace="~{fragmentos/icones :: olhoAberto}"></svg></template>
 <template id="tpl-olho-fechado"><svg th:replace="~{fragmentos/icones :: olhoFechado}"></svg></template>
 <script th:src="@{/js/entrada.js}"></script>

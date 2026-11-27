@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Set;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,12 +20,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class SenhaProvisoriaFilter extends OncePerRequestFilter {
 
     static final String MENSAGEM = "Crie a sua senha antes de continuar.";
-    private static final Set<String> LIBERADAS = Set.of("/criar-senha", "/sair");
+    private static final Set<String> LIBERADAS = Set.of("/criar-senha", "/sair", "/entrar", "/saude", "/error");
+    /** Os arquivos da página (CSS, scripts, imagens) servem também à tela "Crie a sua senha". */
+    private static final List<String> ARQUIVOS = List.of("/css/", "/js/", "/img/", "/webjars/");
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
-        if (a != null && a.getPrincipal() instanceof UsuarioLogado logado && logado.senhaProvisoria() && !LIBERADAS.contains(req.getServletPath())) {
+        String caminho = req.getRequestURI().substring(req.getContextPath().length());
+        boolean liberado = LIBERADAS.contains(caminho) || ARQUIVOS.stream().anyMatch(caminho::startsWith);
+        if (!liberado && a != null && a.getPrincipal() instanceof UsuarioLogado logado && logado.senhaProvisoria()) {
             boolean pagina = "GET".equals(req.getMethod()) && !"true".equals(req.getHeader("HX-Request"));
             if (pagina) {
                 res.sendRedirect("/criar-senha");

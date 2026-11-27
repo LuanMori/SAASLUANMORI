@@ -10,15 +10,15 @@
   <section class="entrada-vitrine" aria-label="Apresentação">
     <div class="entrada-vitrine-marca">
       <span th:replace="~{fragmentos/icones :: logo('grande')}"></span>
-      <p class="entrada-vitrine-linha" th:text="${T(com.saasluanmori.web.Marca).LINHA}">PDV · Estoque · Financeiro</p>
+      <p class="entrada-vitrine-linha" th:text="${marca.linha}">PDV · Estoque · Financeiro</p>
     </div>
     <div class="entrada-vitrine-corpo">
       <div class="entrada-vitrine-texto">
-        <p class="entrada-vitrine-chamada"><span th:each="linha, i : ${T(com.saasluanmori.web.Marca).CHAMADA}"><br th:if="${!i.first}"><th:block th:text="${linha}">linha</th:block></span></p>
+        <p class="entrada-vitrine-chamada"><span th:each="linha, i : ${marca.chamada}"><br th:if="${!i.first}"><th:block th:text="${linha}">linha</th:block></span></p>
         <span class="entrada-vitrine-traco" aria-hidden="true"></span>
-        <p class="entrada-vitrine-descricao" th:text="${T(com.saasluanmori.web.Marca).DESCRICAO}">descrição</p>
+        <p class="entrada-vitrine-descricao" th:text="${marca.descricao}">descrição</p>
         <ul class="entrada-vitrine-recursos" aria-label="Recursos do sistema">
-          <li th:each="r : ${T(com.saasluanmori.web.Marca).RECURSOS}"><span class="entrada-vitrine-icone"><svg th:replace="~{fragmentos/icones :: recurso(${r.icone()})}"></svg></span><th:block th:text="${r.texto()}">recurso</th:block></li>
+          <li th:each="r : ${marca.recursos}"><span class="entrada-vitrine-icone"><svg th:replace="~{fragmentos/icones :: recurso(${r.icone()})}"></svg></span><th:block th:text="${r.texto()}">recurso</th:block></li>
         </ul>
       </div>
       <div class="entrada-vitrine-ilustracao" aria-hidden="true">
