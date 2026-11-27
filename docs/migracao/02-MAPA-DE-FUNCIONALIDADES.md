@@ -104,7 +104,7 @@ Na demonstração, o carrinho da venda em andamento fica guardado no navegador, 
 `saas-demo:pdv:<loja>:<pessoa>`; recarregar a página não perde a venda; a autorização dada com senha não é guardada)
 (`legacy/web/src/demo/DemoApp.tsx:158`; `legacy/web/src/painel/TelaFrenteCaixa.tsx:121,140`;
 `legacy/web/src/painel/caixa/carrinho.ts:10-13`); no sistema real antigo a chave não era passada (`legacy/web/src/App.tsx:
-121-133`). Decisão em `06-RISCOS-E-DECISOES.md`.
+121-133`). Decisão T12 de `06-RISCOS-E-DECISOES.md`: o carrinho continua no navegador, por loja e pessoa.
 
 ### 3.5 Caixa do dia
 
@@ -162,7 +162,7 @@ não.
 |---|---|---|
 | `listarVendas`, `listarDevolucoes`, `listarRecebiveis`, `listarProdutos`, `listarEstoque`, `listarMovimentosEstoque`, `listarClientes`, `listarFiado`, `listarVales`, `listarLancamentos`, `listarContasAPagar`, `lerCaixa`, `listarCompras`, `listarAuditoria(2000)`, `listarVendasAntigas`, `listarVisoes` (`planilhas.ts:94-137`) | exportar uma aba ou tudo para o Excel (arquivo feito na tela), `registrarExportacao` | §16.2, §17, §18.4, §19.2 de 03 |
 
-Na reconstrução, as tabelas e o arquivo .xlsx são montados no servidor (decisão em `06-RISCOS-E-DECISOES.md`), com as
+Na reconstrução, as tabelas e o arquivo .xlsx são montados no servidor (decisão T9 de `06-RISCOS-E-DECISOES.md`), com as
 mesmas colunas e o mesmo formato.
 
 ### 3.11 Usuários

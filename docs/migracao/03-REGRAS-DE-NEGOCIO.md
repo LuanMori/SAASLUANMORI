@@ -38,7 +38,7 @@ O login é próprio: usuário e senha guardados no banco da loja, sem provedor e
 
 Na reconstrução, o `SCryptPasswordEncoder` do Spring guarda o hash em outro formato (o dele); para replicar exatamente
 este formato e aceitar as senhas já guardadas, o codificador do Java precisa ler e gravar
-`scrypt$15$8$1$<sal>$<hash>` com base64url sem preenchimento. Ver `06-RISCOS-E-DECISOES.md`.
+`scrypt$15$8$1$<sal>$<hash>` com base64url sem preenchimento. Decisão T1 de `06-RISCOS-E-DECISOES.md`.
 
 ### 1.2 Regras da senha nova (criar, redefinir ou trocar)
 
@@ -255,9 +255,9 @@ tabela de negócio, com `SET LOCAL app.tenant_id` no início de cada transação
 |---|---|
 | coluna `loja_id` | coluna `tenant_id` |
 | `set_config('app.loja_id', ..., true)` por transação | `SET LOCAL app.tenant_id = ...` por transação |
-| `app_loja_atual()` com `current_setting('app.loja_id', true)`: sem a loja, zero linhas | `current_setting('app.tenant_id')` sem o segundo argumento: sem a loja, a consulta dá erro. As duas formas falham fechadas; a diferença está registrada em `06-RISCOS-E-DECISOES.md` |
+| `app_loja_atual()` com `current_setting('app.loja_id', true)`: sem a loja, zero linhas | `current_setting('app.tenant_id')` sem o segundo argumento: sem a loja, a consulta dá erro. As duas formas falham fechadas; a escolha está na decisão T2 de `06-RISCOS-E-DECISOES.md` |
 | `app.usuario_id` (quem fez) | o usuário da auditoria (`criadoPor`, `atualizadoPor`) |
-| Adm. Sup sem loja, lido só por funções do banco | precisa de um caminho equivalente: a entidade base exige `tenantId`, e o Adm. Sup não tem loja. Decisão da Fase 2, registrada em `06-RISCOS-E-DECISOES.md` |
+| Adm. Sup sem loja, lido só por funções do banco | o mesmo desenho: linha sem loja só para o `super_admin`, lida só pelas três funções do banco (decisão T3 de `06-RISCOS-E-DECISOES.md`) |
 
 ---
 
@@ -925,8 +925,8 @@ hoje: 403 "Vendas de outros dias: só o Dono ou o Administrador (Relatórios).";
 - A autorização guarda quem autorizou, a ação exata (`desconto` com produto e preço final; `cancelamento`/`devolucao`
   com a venda; `retirada` com o valor; `fechamento` com o dia e o contado; `dia_fechado` com o dia; `fiado` com o cliente
   e o valor; `excluir_dados_cliente` com o cliente) e quando (`legacy/core/src/venda.ts:262-288`). Fica só na memória
-  (recarregar a página perde), por loja; vale 4 horas; é gasta no uso (`apiLocal.ts:568-570,986`; `venda.ts:91-92`).
-  Na reconstrução: guardar no servidor (tabela com loja, expiração e uso único) — decisão para o
+  (recarregar a página perde), por loja; vale 4 horas; é gasta no uso (`apiLocal.ts:570-572,986`; `venda.ts:91-92`).
+  Na reconstrução: guardar no servidor (tabela com loja, expiração e uso único) — decisão T7 de
   `06-RISCOS-E-DECISOES.md`.
 
 ### 10.6 Cancelar a venda inteira
@@ -1615,7 +1615,7 @@ fornecedor e da visão são buscados na hora de mostrar, e a exclusão da LGPD v
   auditoria.controller.ts:1-82`); na demonstração, padrão 40 e os Relatórios pedem 2000 (`usuariosDemo.ts:534-555`). Cada
   item: texto da ação, quem (o Adm. Sup aparece como "Suporte", `legacy/core/src/papeis.ts:29`), alvo com o nome de hoje,
   detalhes e o resumo. A demonstração guarda só as últimas 2000 linhas por loja (`usuariosDemo.ts:65,232`); o servidor
-  guarda tudo (decisão em `06-RISCOS-E-DECISOES.md`).
+  guarda tudo (decisão T8 de `06-RISCOS-E-DECISOES.md`).
 - **Textos das ações** (`auditoria.ts:16-119`) e **resumo** (partes separadas por " • ", sem as vazias; com quem autorizou,
   " • autorizado por <nome>" no fim, menos onde diz "liberado por") (`auditoria.ts:184-471`):
 
@@ -1719,8 +1719,8 @@ Administrador). Só na demonstração.
   `dados.copia_gerada` (`registros`).
 - **Conferência**: SHA-256 (hexadecimal minúsculo) do JSON canônico (chaves em ordem, sem as `undefined`) de tudo menos a
   própria conferência (`copiaDaLoja.ts:88-101,138-142`). Pega arquivo corrompido ou mexido à mão; não é assinatura. O próprio
-  core prevê que, no servidor, a conferência ganhe uma chave que só o servidor tem (`copiaDaLoja.ts:10-12`) — decisão em
-  `06-RISCOS-E-DECISOES.md`.
+  core prevê que, no servidor, a conferência ganhe uma chave que só o servidor tem (`copiaDaLoja.ts:10-12`) — decisão T10
+  de `06-RISCOS-E-DECISOES.md`.
 - **Conferir e restaurar** (só `dados.restaurar`, o Adm. Sup): a tela baixa antes uma cópia dos dados de agora (DAT-05)
   (`copiaDaLoja.ts:7`). Leitura (`copiaDaLoja.ts:158-222`), ignorando o BOM: vazio, JSON inválido ou outro formato → "Este
   arquivo não é uma cópia de segurança do sistema."; maior que 50 MB → "O arquivo passa do tamanho máximo de uma cópia de
@@ -1930,8 +1930,8 @@ reconstrução troca cada peça pelo equivalente no PostgreSQL:
 | `exigirOperador` relê a pessoa a cada pedido | desativado perde o acesso na hora (401 "Seu acesso a esta loja foi desativado. Fale com o Dono da loja.", `sessao_encerrada`); papel mudado vale na hora | a guarda da sessão relê o usuário a cada requisição (§1.5) | `apiLocal.ts:934-947` |
 | navegador recusou gravar (cheio): 507 `gravacao_recusada` "<mensagem> Veja o aviso vermelho no alto da tela." | nada fica pela metade | erro do banco desfaz a transação; a tela recebe o erro padrão | `armazenamento.ts:16-32,206-219` |
 | aviso às outras abas (evento "storage"); `avisarQueOsDadosMudaram` depois de cada ação | as telas recarregam sozinhas, mantendo o que a pessoa digita | depois de cada ação HTMX, as partes da tela que mostram aqueles dados são recarregadas | `armazenamento.ts:233-257`; `legacy/web/src/sincronizacao.ts:1-17` |
-| autorizações dadas com senha guardadas na memória da aba | uso único, 4 horas, por loja | guardadas no banco, com a loja, a expiração e o uso único (§10.5) | `apiLocal.ts:568-570` |
-| `preparar`: espera artificial (`atrasoMs`) e, na primeira vez, monta os exemplos da loja | parecer um servidor; ter dados para mostrar | não existe na reconstrução: sem atraso artificial e sem dados de exemplo em produção (decisão em `06-RISCOS-E-DECISOES.md`) | `apiLocal.ts:905-924` |
+| autorizações dadas com senha guardadas na memória da aba | uso único, 4 horas, por loja | guardadas no banco, com a loja, a expiração e o uso único (§10.5) | `apiLocal.ts:570-572` |
+| `preparar`: espera artificial (`atrasoMs`) e, na primeira vez, monta os exemplos da loja | parecer um servidor; ter dados para mostrar | não existe na reconstrução: sem atraso artificial e sem dados de exemplo em produção (decisão T11 de `06-RISCOS-E-DECISOES.md`) | `apiLocal.ts:905-924` |
 
 Toda mensagem de erro de regra chega à tela como `{ mensagem, erros: [{ campo, mensagem }], codigo? }` com o status
 (400 validação, 401 sessão, 403 permissão ou recurso desligado, 404 não encontrado, 409 conflito de regra, 429 bloqueio)
@@ -1941,8 +1941,8 @@ Toda mensagem de erro de regra chega à tela como `{ mensagem, erros: [{ campo, 
 
 ## 21. Casos-limite conhecidos
 
-Comportamentos do sistema antigo que a reconstrução precisa repetir (ou decidir de forma registrada em
-`06-RISCOS-E-DECISOES.md`):
+Comportamentos do sistema antigo que a reconstrução repete como estão (`06-RISCOS-E-DECISOES.md` §4; mudar qualquer um é
+decisão do Luan):
 
 1. **Personalizado como autorizador**: aparece na lista de quem autoriza quem tem `desconto.acima_do_limite`
    (`legacy/web/src/demo/usuariosDemo.ts:334-339`), mas a autorização de desconto acima do limite só vale de quem tem também
@@ -1970,13 +1970,13 @@ Comportamentos do sistema antigo que a reconstrução precisa repetir (ou decidi
 9. **Histórico da demonstração** guarda só as últimas 2000 linhas por loja (`usuariosDemo.ts:65,232`), mas a regra do core
    é nunca apagar (`legacy/core/src/auditoria.ts:4`); o servidor antigo guardava tudo.
 10. **Autorização perdida ao recarregar**: na demonstração, recarregar a página entre "autorizar" e "confirmar" perde a
-    autorização (`apiLocal.ts:568-570`); no servidor, a autorização vive 4 horas.
+    autorização (`apiLocal.ts:570-572`); na reconstrução, guardada no banco, ela vale as 4 horas mesmo que a página recarregue.
 11. **Arredondamentos**: todas as contas usam `Math.round` do JavaScript (meio para cima, em direção a +∞) sobre números
     exatos em centavos ou em centésimos de %; o desconto compara o % com folga de 1e-9 (`venda.ts:343-354`). Em Java,
     `Math.round(double)` tem o mesmo comportamento; não usar `BigDecimal` com HALF_EVEN.
 12. **Ordem alfabética e moeda**: listas por nome usam `localeCompare('pt-BR')` e o dinheiro sai de
     `Intl.NumberFormat('pt-BR', BRL)` (U+00A0 depois de "R$"); a reconstrução usa `Collator` e `NumberFormat` do Java para
-    pt-BR, conferidos por testes contra os textos do sistema antigo (risco em `06-RISCOS-E-DECISOES.md`).
+    pt-BR, conferidos por testes contra os textos do sistema antigo (decisão T13 e risco R5 de `06-RISCOS-E-DECISOES.md`).
 13. **Vendedor só hoje**: o Vendedor (quem não tem `relatorios`) só lista vendas e devoluções de hoje (403 "Vendas de outros
     dias: só o Dono ou o Administrador (Relatórios).") (`apiLocal.ts:962-968`).
 14. **"Não incomodar" não bloqueia o envio manual**: tira o cliente das listas de lembrete, mas a mensagem pela conta do
