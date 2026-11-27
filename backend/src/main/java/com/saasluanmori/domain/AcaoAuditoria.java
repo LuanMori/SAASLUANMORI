@@ -9,7 +9,12 @@ public enum AcaoAuditoria {
     SESSAO_SAIU("sessao.saiu", "Saiu do sistema"),
     SESSAO_SENHA_ERRADA("sessao.senha_errada", "Senha errada"),
     SESSAO_BLOQUEADO("sessao.bloqueado", "Bloqueado por senhas erradas"),
-    USUARIO_SENHA_TROCADA("usuario.senha_trocada", "Trocou a própria senha");
+    USUARIO_SENHA_TROCADA("usuario.senha_trocada", "Trocou a própria senha"),
+    // fornecedores (legacy/core/src/auditoria.ts:83-87); alterado leva os campos que mudaram
+    FORNECEDOR_CADASTRADO("fornecedor.cadastrado", "Fornecedor cadastrado"),
+    FORNECEDOR_ALTERADO("fornecedor.alterado", "Fornecedor alterado"),
+    FORNECEDOR_DESATIVADO("fornecedor.desativado", "Fornecedor desativado"),
+    FORNECEDOR_REATIVADO("fornecedor.reativado", "Fornecedor reativado");
 
     private final String chave;
     private final String texto;

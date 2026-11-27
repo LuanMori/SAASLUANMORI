@@ -53,11 +53,13 @@
           </div>
         </header>
       </div>
+      <th:block th:if="${permitido and reconstruida and conteudo != null}"><div th:replace="~{${conteudo} :: conteudo}"></div></th:block>
     </main>
   </div>
 </div>
 <form id="form-sair" method="post" th:action="@{/sair}" hidden></form>
 <form id="form-sair-inatividade" method="post" th:action="@{/sair(aviso='inatividade')}" hidden></form>
 <script th:src="@{/js/painel.js}"></script>
+<script th:each="s : ${scripts}" th:src="@{${s}}"></script>
 </body>
 </html>

@@ -23,6 +23,10 @@ public class HistoricoService {
         public static Alvo usuario(UUID id) {
             return new Alvo("usuario", id);
         }
+
+        public static Alvo fornecedor(UUID id) {
+            return new Alvo("fornecedor", id);
+        }
     }
 
     private final AuditoriaRepository auditoria;
