@@ -13,6 +13,7 @@ chegar a vez dela.
 | D2 | 26/11/2026 | **Demonstração offline mantida**: `legacy/demo/` fica durante toda a reconstrução como referência visual e, depois do deploy em produção, por no mínimo 30 dias. Só sai com autorização do Luan, registrada aqui | decisão 2.6 do prompt mestre; CLAUDE.md ("referência congelada para comparar o visual: não se regera") |
 | D3 | 26/11/2026 | **Seguir as fases sem parar entre elas**, menos a Fase 6 (deploy), que continua só com autorização expressa. As paradas por falta de informação, ambiguidade ou comportamento não documentado continuam valendo | mensagem do Luan: "pode seguir todas as fases"; regras 1.8 e Fase 6 do prompt mestre |
 | D4 | 26/11/2026 | **Ajustes do CLAUDE.md**: `mvn -f backend/pom.xml verify` antes de cada commit, branches `migration/*` com pull request para o `teste-local-windows`, demonstração congelada, aba Suporte em branco | `07-STATUS-MODULOS.md`, Decisões tomadas; o CLAUDE.md vale sobre o prompt mestre (regra 1.9) |
+| D5 | 27/11/2026 | **A demonstração pode ser aberta no navegador para a comparação visual**: só para olhar e tirar fotos de tela ao lado do sistema novo; nada nela é alterado, e o resto do `legacy/` continua sem ser executado | resposta do Luan à pendência P8 ("Pode abrir a demo"); registrado no CLAUDE.md |
 
 ## 2. Decisões técnicas da reconstrução
 
@@ -291,7 +292,7 @@ importa se essas pendências forem ligadas (seção 6).
 | R10 | A `main` diverge do `teste-local-windows` (ensaio Java com Auth0) | decisão pendente P3, antes da Fase 6 |
 | R11 | Tag `pre-demolicao` fora do GitHub | P1: o snapshot está no commit `a7979e3`, mas a tag só existe na cópia local desta sessão |
 | R12 | Na Fase 2, as migrações rodam ao subir, com a senha da role dona no mesmo processo do sistema | basta para desenvolvimento e teste; no deploy (Fase 6) as migrações viram um passo separado e o sistema fica só com a senha da `saas_app`, como o serviço `migracao` do antigo (`legacy/raiz/docker-compose.prod.yml`) |
-| R13 | A comparação visual com a demonstração precisa abrir o arquivo antigo no navegador, o que executa o JavaScript dele | decisão pendente P8 |
+| R13 | A comparação visual com a demonstração precisa abrir o arquivo antigo no navegador, o que executa o JavaScript dele | decidido em D5: só para olhar e tirar fotos de tela, sem alterar nada |
 
 ## 6. Decisões pendentes (dependem do Luan)
 
@@ -304,4 +305,4 @@ importa se essas pendências forem ligadas (seção 6).
 | P5 | As pendências da Visão geral (`docs/PENDENCIAS.md`, "Status: A DEFINIR"): hoje estão ligadas a 1, 2, 3, 16, 17, 18 e 19; a 6, 7, 10, 11 e 12 estão prontas e desligadas. Ligar a 6 ou a 7 pede decidir o texto do produto por kg | quando o Luan escolher; a reconstrução repete o que estiver ligado |
 | P6 | Se existe produção com dados reais no sistema antigo (para o script de migração de dados da Fase 6) | na Fase 6 |
 | P7 | Descontinuar a demonstração offline | só 30 dias depois do deploy, com autorização (D2) |
-| P8 | Como comparar o visual com o sistema antigo. O CLAUDE.md diz que o `legacy/` nunca é executado e também que a demonstração é a referência para comparar o visual; o prompt mestre (Fase 3) pede a comparação lado a lado "rodando legacy/web/ em porta separada ou usando legacy/demo/". Abrir a demonstração no navegador executa o JavaScript dela, e o ambiente desta sessão recusou fazer isso sem autorização. Enquanto isso, o visual novo é conferido contra o `04-DESIGN-SYSTEM.md` e o `01-MAPA-DE-TELAS.md`, e a ilustração da entrada não pôde ser comparada byte a byte com a da demonstração | antes da Fase 3 (o módulo de referência pede a comparação lado a lado) |
+| P8 | ~~Como comparar o visual com o sistema antigo~~ — decidido em 27/11/2026 (D5): a demonstração pode ser aberta no navegador só para a comparação | — |

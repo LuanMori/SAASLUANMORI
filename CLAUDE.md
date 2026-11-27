@@ -11,6 +11,9 @@
   branch `migration/*` que sai do `teste-local-windows`, e pull request de volta para o `teste-local-windows`.
   O `main` só quando o Luan pedir.
 - A demonstração `legacy/demo/sistema-padrao-demo.html` é a referência congelada para comparar o visual: não se regera.
+  **Exceção autorizada pelo Luan (27/11/2026):** ela pode ser aberta no navegador só para olhar e tirar fotos de tela ao
+  lado do sistema novo (a comparação lado a lado de cada módulo). Nada nela é alterado, e o resto do `legacy/` continua
+  sem ser executado.
 - Cor principal: verde `#0b7f55`. A barra lateral é cópia da do DaniPets V9.3.3. Abas que ainda não
   foram trabalhadas ficam em branco até chegar a vez delas. Hoje é o caso da aba Suporte, e a reconstrução a mantém
   igual, em branco (vale sobre a regra "nenhuma tela em branco" do prompt mestre).
