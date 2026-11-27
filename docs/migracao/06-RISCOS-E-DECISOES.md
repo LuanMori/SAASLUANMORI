@@ -82,8 +82,9 @@ chegar a vez dela.
 - **Prompt mestre (2.4)**: "CSRF habilitado; compatível com HTMX (token nos headers via hx-headers no layout, ou exclusão
   pontual documentada)".
 - **Decisão**: as três camadas. O token do Spring Security vai no `hx-headers` do layout e num campo escondido de cada
-  formulário; ele fica ligado à sessão do banco (calculado a partir dela com a chave do servidor), sem cookie novo e sem
-  coluna nova. **Exclusão pontual**: o envio da tela de entrada (antes de existir sessão) não leva token e continua
+  formulário; ele fica ligado à sessão do banco: é o SHA-256 de "csrf:" + o segredo do cookie da sessão, que só o
+  navegador da pessoa tem (o banco guarda outro hash, o do segredo puro). Sem cookie novo, sem coluna nova e sem chave
+  nova do servidor (`backend/.../config/SessaoCsrfTokenRepository.java`). **Exclusão pontual**: o envio da tela de entrada (antes de existir sessão) não leva token e continua
   protegido como no antigo, pelo `SameSite=Strict` e pela conferência de origem, que vale para todo pedido que não é
   `GET`, `HEAD` ou `OPTIONS`.
 
@@ -200,6 +201,54 @@ do vale) e `SELECT … FOR UPDATE` no que muda saldo (03 §20).
 As tabelas antigas usam UUID versão 7 (`legacy/api/prisma/schema.prisma:35,59,89`), que cresce com o tempo. A
 reconstrução gera os ids no mesmo formato, na aplicação.
 
+### T18. Página de erro do servidor
+
+O sistema antigo era uma página só: o erro de uma tela virava um aviso dentro dela, e o erro do servidor, uma mensagem
+na tela. Com as páginas montadas no servidor, um endereço que não existe ou uma falha do servidor precisam de uma página.
+**Decisão**: o formato da tela do sistema antigo quando a aplicação não conseguia carregar (`legacy/web/src/App.tsx:77-88`:
+a mensagem e "Tentar de novo"), com as mensagens do servidor antigo: "Rota não encontrada." (404), "Você não tem permissão
+para fazer isso." (403) e "Erro interno. Tente novamente." (500) (`legacy/api/src/http/filtro-erros.ts:60-87`). O cartão
+"Algo deu errado nesta tela" vem com o registro de erros das ferramentas do Adm. Sup (03 §19.3).
+
+### T19. A loja no desenvolvimento
+
+Sem `DOMINIO_BASE`, a tela antiga mandava a loja de teste de `VITE_LOJA` ou de `?loja=` no endereço
+(`legacy/web/src/configuracao.ts:14-21`). **Decisão**: `LOJA_DEV` (o mesmo papel do `VITE_LOJA`) ou `?loja=`, só sem
+`DOMINIO_BASE`; com ele, a loja vem sempre do endereço.
+
+### T20. A barra lateral leva a endereços
+
+A barra antiga trocava a parte sem recarregar (`legacy/web/src/painel/BarraLateral.tsx:41-52`). **Decisão**: os itens
+continuam sendo `<button>` com as mesmas classes (o CSS é o mesmo); cada um leva ao endereço da parte (`/caixa-do-dia`,
+`/financeiro`...) e a página é montada no servidor (`backend/src/main/resources/static/js/painel.js`). "Sair" e a saída
+por inatividade enviam um formulário escondido com o token de CSRF.
+
+### T21. Os comandos de administração com os nomes antigos
+
+Os scripts `db:seed`, `db:usuario`, `db:suporte` e `db:app-role` (`legacy/api/package.json:16-20`) viraram comandos do
+próprio sistema, com as mesmas opções e mensagens (`java -jar backend.jar db:usuario --loja lojaa ...`). Os nomes ficam
+iguais porque as telas citam um deles: "A senha do suporte é trocada pelo script db:suporte, não pela loja."
+(`legacy/api/src/auth/sessao.service.ts:398`).
+
+### T22. Formulários pelo HTMX e o que aparece só às vezes
+
+- O que a tela antiga mostrava só às vezes (o aviso de Caps Lock, a explicação de "Esqueceu a senha?", a caixa do
+  Suporte, o ícone do olho) fica num `<template>` da página e entra na tela quando precisa, como no React (o elemento
+  nem existia); assim nenhum `[hidden]` briga com o CSS copiado.
+- Formulários que mostram avisos sem perder o que foi digitado (como "Crie a sua senha") vão pelo HTMX: o servidor
+  confere as mesmas regras, na mesma ordem, e devolve só os avisos, que entram no lugar dos marcadores
+  (`hx-swap-oob`). Recusa de regra volta com 400, 403, 409, 422 ou 429 e aparece na tela
+  (`backend/src/main/resources/static/js/htmx-config.js`); deu certo, o servidor manda para a próxima página
+  (`HX-Redirect`).
+
+### T23. As partes ainda não reconstruídas
+
+Até cada módulo chegar, a parte dele mostra o mesmo aviso que o sistema real antigo mostrava nas partes que o servidor
+ainda não atendia: "Esta parte ainda não está ligada ao servidor. Por enquanto ela funciona na demonstração
+(sistema-padrao-demo.html)." (`legacy/web/src/api.ts:956`; `legacy/web/src/App.tsx:15-19`;
+`legacy/web/src/painel/TelaPainel.tsx:268-279`). Cada módulo, ao chegar, entra na lista de partes reconstruídas
+(`backend/.../web/PainelController.java`). A aba Suporte é em branco de propósito (CLAUDE.md).
+
 ## 3. Divergências entre as fontes do sistema antigo
 
 Ordem que vale (decisão 2.3): `legacy/core` → `apiLocal.ts` (demonstração) → `api.ts` → `legacy/api`. Encontradas na
@@ -241,6 +290,8 @@ importa se essas pendências forem ligadas (seção 6).
 | R9 | Dados do servidor antigo em produção (Fase 6) | o servidor antigo só guardava lojas, usuários, sessões, histórico e produtos (`00` §2); as senhas continuam valendo (T1) e as sessões não migram (todo mundo entra de novo). Se existe produção com dados reais é pergunta da Fase 6 (P6) |
 | R10 | A `main` diverge do `teste-local-windows` (ensaio Java com Auth0) | decisão pendente P3, antes da Fase 6 |
 | R11 | Tag `pre-demolicao` fora do GitHub | P1: o snapshot está no commit `a7979e3`, mas a tag só existe na cópia local desta sessão |
+| R12 | Na Fase 2, as migrações rodam ao subir, com a senha da role dona no mesmo processo do sistema | basta para desenvolvimento e teste; no deploy (Fase 6) as migrações viram um passo separado e o sistema fica só com a senha da `saas_app`, como o serviço `migracao` do antigo (`legacy/raiz/docker-compose.prod.yml`) |
+| R13 | A comparação visual com a demonstração precisa abrir o arquivo antigo no navegador, o que executa o JavaScript dele | decisão pendente P8 |
 
 ## 6. Decisões pendentes (dependem do Luan)
 
@@ -253,3 +304,4 @@ importa se essas pendências forem ligadas (seção 6).
 | P5 | As pendências da Visão geral (`docs/PENDENCIAS.md`, "Status: A DEFINIR"): hoje estão ligadas a 1, 2, 3, 16, 17, 18 e 19; a 6, 7, 10, 11 e 12 estão prontas e desligadas. Ligar a 6 ou a 7 pede decidir o texto do produto por kg | quando o Luan escolher; a reconstrução repete o que estiver ligado |
 | P6 | Se existe produção com dados reais no sistema antigo (para o script de migração de dados da Fase 6) | na Fase 6 |
 | P7 | Descontinuar a demonstração offline | só 30 dias depois do deploy, com autorização (D2) |
+| P8 | Como comparar o visual com o sistema antigo. O CLAUDE.md diz que o `legacy/` nunca é executado e também que a demonstração é a referência para comparar o visual; o prompt mestre (Fase 3) pede a comparação lado a lado "rodando legacy/web/ em porta separada ou usando legacy/demo/". Abrir a demonstração no navegador executa o JavaScript dela, e o ambiente desta sessão recusou fazer isso sem autorização. Enquanto isso, o visual novo é conferido contra o `04-DESIGN-SYSTEM.md` e o `01-MAPA-DE-TELAS.md`, e a ilustração da entrada não pôde ser comparada byte a byte com a da demonstração | antes da Fase 3 (o módulo de referência pede a comparação lado a lado) |
