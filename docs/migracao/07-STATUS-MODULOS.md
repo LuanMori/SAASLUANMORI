@@ -2,29 +2,31 @@
 
 ## Fase atual
 
-**Fase 1 — Especificação: concluída em 27/11/2026** (branch `migration/fase-1-especificacao`, pull request para o
-`teste-local-windows`). Os 8 documentos estão em `docs/migracao/` (00 a 07).
-Próxima: **Fase 2 — Fundação** (branch `migration/fase-2-fundacao`, depois do merge da Fase 1). Pela decisão D3 do
-`06-RISCOS-E-DECISOES.md`, as fases seguem sem esperar aprovação entre elas, menos a Fase 6.
+**Fase 2 — Fundação: concluída em 27/11/2026** (branch `migration/fase-2-fundacao`, pull request para o
+`teste-local-windows`). Próxima: **Fase 3 — módulo de referência (Fornecedores)**, que depende da decisão P8 do
+`06-RISCOS-E-DECISOES.md` (como comparar o visual com o sistema antigo).
 
 ## Última sessão
 
 Data: 2026-11-27
 
 O que foi feito:
-- Fase 0 juntada ao `teste-local-windows` (PR #3, merge `d4e65be`).
-- Fase 1, os 8 documentos, com arquivo e linha do `legacy/` em cada afirmação:
-  - `03-REGRAS-DE-NEGOCIO.md`: Autenticação (scrypt, cookie, sessão, login, saída), Isolamento de dados, as regras e
-    mensagens de cada módulo, como cada operação grava e os 15 casos-limite;
-  - `04-DESIGN-SYSTEM.md`: cores dos dois temas, tipografia, medidas, breakpoints, estados, componentes com o HTML e os
-    assets (só SVG embutido e a ilustração gerada por código);
-  - `02-MAPA-DE-FUNCIONALIDADES.md`: o que cada tela lê e grava, e o que existia no servidor antigo ou só na demonstração;
-  - `01-MAPA-DE-TELAS.md`: cada tela, com campos, botões, mensagens, navegação e atalhos de teclado;
-  - `05-MATRIZ-PERMISSOES.md`: papéis, permissões, mensagens de recusa, Personalizado e barra lateral;
-  - `00-VISAO-GERAL.md`: o sistema antigo e o novo, as dívidas técnicas e o SQL exato do isolamento por loja;
-  - `06-RISCOS-E-DECISOES.md`: as decisões do dono (D1 a D4), 17 decisões técnicas (T1 a T17), as divergências entre as
-    fontes, os riscos e as decisões pendentes;
-  - este arquivo, com a lista definitiva de módulos e a ordem.
+- Fase 1 juntada ao `teste-local-windows` (PR #6, merge `d241f24`).
+- Fase 2, a fundação do `backend/`, com 51 testes contra um PostgreSQL de verdade (o CI ganhou um PostgreSQL 16 de
+  serviço):
+  - banco: `V1__fundacao.sql` com lojas, usuários, sessões e histórico, RLS ligado e forçado com a policy da regra 1.5,
+    as funções do Adm. Sup, a trava de usuários e os privilégios mínimos da `saas_app`; a loja e a pessoa vão para o banco
+    no início de cada transação; o servidor se recusa a subir se a conexão escapar do RLS;
+  - segurança: senha scrypt no formato antigo (confere hashes gerados pelo `crypto.scrypt` do Node), login próprio com
+    todos os passos do servidor antigo pelo `DaoAuthenticationProvider`, sessão no banco pelo cookie `__Host-sessao`
+    (sem `JSESSIONID`), CSRF ligado à sessão, conferência de origem, a CSP e os cabeçalhos do nginx antigo, "Crie a sua
+    senha", sair e a saída por inatividade;
+  - telas: `app.css` igual ao `estilos.css`, a entrada com a ilustração gerada em Java, "Crie a sua senha", a moldura com
+    a barra lateral por papel, o tema claro/escuro, o aviso nas partes ainda não reconstruídas e o Suporte em branco;
+  - comandos de administração `db:seed`, `db:usuario`, `db:suporte` e `db:app-role`;
+  - conferido no navegador (Chromium) com o servidor rodando (`mvn spring-boot:run` e `java -jar`), e o RLS conferido
+    pelo `psql` no banco de desenvolvimento;
+  - decisões T18 a T23 e a pendência P8 registradas no `06-RISCOS-E-DECISOES.md`.
 
 O que ficou pendente: ver Pendências abertas.
 
@@ -33,8 +35,8 @@ O que ficou pendente: ver Pendências abertas.
 Lista definitiva, tirada das telas do sistema antigo (`01-MAPA-DE-TELAS.md`; barra lateral em
 `legacy/web/src/painel/menu.tsx:191-198`), na ordem em que vão ser reconstruídos.
 
-**Como a ordem foi escolhida.** A fundação traz o que todo módulo usa (loja, usuário, sessão, permissões, histórico,
-regras da loja, autorizações com senha). Depois vem o módulo mais simples, como referência: **Fornecedores**, uma
+**Como a ordem foi escolhida.** A fundação traz o que todo módulo usa (loja, usuário, sessão, permissões, histórico). As
+regras da loja e as autorizações com senha chegam com o primeiro módulo que as usa. Depois vem o módulo mais simples, como referência: **Fornecedores**, uma
 tabela só, sem depender de outro módulo (`03-REGRAS-DE-NEGOCIO.md` §8). Os demais seguem quem alimenta quem: um
 módulo só vem depois dos que ele lê. Cada módulo traz as próprias tabelas e telas; o efeito dele sobre um módulo que já
 existe (por exemplo, a trava do Caixa do dia na venda) entra no pull request dele, com os testes dos dois lados. Nenhuma
@@ -43,8 +45,8 @@ tela mostra número inventado.
 | Módulo | Status | PR | Testes | Isolamento | RLS | Design |
 |---|---|---|---|---|---|---|
 | Preparação (Fase 0) | ✅ concluída | #3 | — | — | — | — |
-| Especificação (Fase 1) | ✅ concluída | ver o PR da Fase 1 | — | — | — | — |
-| Fundação (Fase 2): lojas (endereço, dados, regras e ajustes, com os padrões), usuários e permissões, entrada, primeiro acesso, trocar a senha, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), autorizações com senha, conferência ao subir | ⏳ pendente | — | — | — | — | — |
+| Especificação (Fase 1) | ✅ concluída | #6 | — | — | — | — |
+| Fundação (Fase 2): lojas, usuários e permissões, entrada, primeiro acesso, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), conferência ao subir, comandos de administração | ✅ concluída | ver o PR da Fase 2 | 51 | ✅ | ✅ | ✅ conferido com o `04` e o `01`; lado a lado com a demonstração: P8 |
 | Fornecedores (módulo de referência, Fase 3; fica na aba Compras) | ⏳ pendente | — | — | — | — | — |
 | Meu usuário | ⏳ pendente | — | — | — | — | — |
 | Usuários (com o Histórico e "O que cada papel pode fazer") | ⏳ pendente | — | — | — | — | — |
@@ -80,6 +82,9 @@ tela mostra número inventado.
   decisão, menos retrabalho.
 - [ ] **Pendências da Visão geral** (`docs/PENDENCIAS.md`, "Status: A DEFINIR"): a reconstrução repete o que estiver
   ligado (hoje 1, 2, 3, 16, 17, 18 e 19).
+- [ ] **Como comparar o visual com o sistema antigo** (P8 do `06`): o CLAUDE.md diz que o `legacy/` nunca é executado e
+  que a demonstração é a referência para comparar o visual; abrir a demonstração no navegador executa o JavaScript dela.
+  Falta o Luan dizer se a demonstração pode ser aberta no navegador só para a comparação (ou outro jeito de comparar).
 
 ## Decisões tomadas
 
@@ -98,7 +103,7 @@ tela mostra número inventado.
   `06-RISCOS-E-DECISOES.md` (R6 e P4).
 - 26/11: **compilação com `-Xlint:all -Werror`**: qualquer aviso de compilação para o build (regra 1.6).
 - 26/11: **seguir todas as fases** sem esperar aprovação entre elas, menos a Fase 6 (mensagem do Luan, decisão D3).
-- 27/11: **as decisões técnicas da reconstrução** (T1 a T17 do `06-RISCOS-E-DECISOES.md`): codificador scrypt próprio no
+- 27/11: **as decisões técnicas da reconstrução** (T1 a T23 do `06-RISCOS-E-DECISOES.md`; T18 a T23 vieram na Fase 2): codificador scrypt próprio no
   formato antigo; policy do prompt mestre com `set_config(..., true)`; o Adm. Sup com o mesmo desenho do antigo; a
   sessão e o cookie do antigo; CSRF com token e conferência de origem; a mesma CSP; autorizações e histórico completos no
   banco; relatórios, Excel e importação no servidor; cópia de segurança conferida com chave do servidor; carrinho no

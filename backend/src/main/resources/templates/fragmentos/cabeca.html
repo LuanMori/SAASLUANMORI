@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!--/* O <head> de toda página (legacy/web/index.html): título com o nome da marca, o CSS e o tema aplicado antes de a
+       página aparecer (static/js/tema.js, sem script embutido por causa da CSP). */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="cabeca">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>
+  <title th:text="${marca.nome}">Nome da empresa</title>
+  <link rel="stylesheet" th:href="@{/css/app.css}">
+  <script th:src="@{/js/tema.js}"></script>
+  <script th:src="@{/js/htmx-config.js}"></script>
+  <script th:src="@{/webjars/htmx.org/dist/htmx.min.js}" defer></script>
+</head>
+<body>
+</body>
+</html>

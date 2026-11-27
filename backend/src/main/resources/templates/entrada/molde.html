@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--/* O molde das telas antes de entrar (entrada e primeiro acesso), no modelo do Luan (24/11/2026)
+       (legacy/web/src/telas/LayoutEntrada.tsx:1-65): à esquerda a logo com "PDV · Estoque · Financeiro", a chamada, o
+       texto e os recursos; no meio a ilustração da loja; à direita o cartão de entrada, com a logo e a loja do endereço
+       num selo. O tema e o Suporte ficam no canto. */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="molde(loja, acoes, conteudo)" class="entrada">
+  <div class="entrada-acoes"><th:block th:replace="${acoes}"/></div>
+  <section class="entrada-vitrine" aria-label="Apresentação">
+    <div class="entrada-vitrine-marca">
+      <span th:replace="~{fragmentos/icones :: logo('grande')}"></span>
+      <p class="entrada-vitrine-linha" th:text="${marca.linha}">PDV · Estoque · Financeiro</p>
+    </div>
+    <div class="entrada-vitrine-corpo">
+      <div class="entrada-vitrine-texto">
+        <p class="entrada-vitrine-chamada"><span th:each="linha, i : ${marca.chamada}"><br th:if="${!i.first}"><th:block th:text="${linha}">linha</th:block></span></p>
+        <span class="entrada-vitrine-traco" aria-hidden="true"></span>
+        <p class="entrada-vitrine-descricao" th:text="${marca.descricao}">descrição</p>
+        <ul class="entrada-vitrine-recursos" aria-label="Recursos do sistema">
+          <li th:each="r : ${marca.recursos}"><span class="entrada-vitrine-icone"><svg th:replace="~{fragmentos/icones :: recurso(${r.icone()})}"></svg></span><th:block th:text="${r.texto()}">recurso</th:block></li>
+        </ul>
+      </div>
+      <div class="entrada-vitrine-ilustracao" aria-hidden="true">
+        <img th:src="@{/img/ilustracao-loja.svg}" alt="" width="552" height="350">
+      </div>
+    </div>
+  </section>
+  <main class="entrada-cartao">
+    <div class="entrada-logo">
+      <span th:replace="~{fragmentos/icones :: logo('grande')}"></span>
+    </div>
+    <p th:if="${loja != null}" class="entrada-loja-selo" th:attr="aria-label='Loja: ' + ${loja.nome}"><svg th:replace="~{fragmentos/icones :: lojaPequena}"></svg><span th:text="${loja.nome}">Loja</span></p>
+    <th:block th:replace="${conteudo}"/>
+  </main>
+</div>
+</body>
+</html>

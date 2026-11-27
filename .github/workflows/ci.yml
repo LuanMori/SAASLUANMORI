@@ -1,7 +1,8 @@
 # .github/workflows/ci.yml — confere a cada push e pull request (reconstrução em Java, Fase 0, 26/11/2026).
 # Falhou? O GitHub mostra um X vermelho no commit e manda e-mail.
 #   1. varredura de segredos nos arquivos e em todo o histórico do git (scripts/varrer-segredos.mjs)
-#   2. o sistema reconstruído: mvn -f backend/pom.xml verify (compila tratando todo aviso como erro e roda os testes)
+#   2. o sistema reconstruído: mvn -f backend/pom.xml verify (compila tratando todo aviso como erro e roda os testes,
+#      com um PostgreSQL 16 de serviço)
 # O CI do sistema antigo ficou em legacy/raiz/ci.yml, só para consulta: legacy/ não é executado.
 name: CI
 
@@ -35,6 +36,24 @@ jobs:
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # os testes rodam contra um PostgreSQL de verdade (o RLS não existe em banco de mentira): o teste recria o banco
+    # saasluanmori_teste com a role dona saas_dono, sem superusuário (backend/src/test/.../teste/BancoDeTeste.java)
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SAAS_TESTE_PG_URL: jdbc:postgresql://localhost:5432/postgres
+      SAAS_TESTE_PG_USUARIO: postgres
+      SAAS_TESTE_PG_SENHA: postgres
     steps:
       - uses: actions/checkout@v4
 

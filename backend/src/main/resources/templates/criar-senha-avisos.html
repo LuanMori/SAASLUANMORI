@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<!--/* A resposta do envio de "Crie a sua senha": os avisos de cada campo e (quando o servidor recusa) o aviso geral; a senha atual é apagada
+       depois de uma recusa do servidor, como no sistema antigo */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="avisos">
+  <span th:each="campo : ${ {'atual', 'nova', 'confirmacao'} }" th:id="'cs-erro-' + ${campo}" hx-swap-oob="true" th:class="${erros.get(campo) != null} ? 'campo-erro'" th:hidden="${erros.get(campo) == null}" th:text="${erros.get(campo)}"></span>
+  <p th:if="${erroGeral != null}" id="cs-alerta" hx-swap-oob="true" class="alerta alerta-erro" role="alert" th:text="${erroGeral}">erro</p>
+  <input th:if="${limparAtual}" id="ts-atual" hx-swap-oob="true" name="atual" type="password" value="" autocomplete="current-password" maxlength="128" data-senha>
+</th:block>
+</body>
+</html>

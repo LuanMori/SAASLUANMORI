@@ -1,0 +1,47 @@
+# backend/src/main/resources/application.yml — tudo o que é segredo ou muda por instalação vem do ambiente.
+#   SAAS_DB_URL               endereço JDBC do banco (ex.: jdbc:postgresql://localhost:5432/saasluanmori)
+#   SAAS_DB_APP_SENHA         senha da role saas_app, com que a aplicação conecta (sem BYPASSRLS, não é dona)
+#   SAAS_DB_DONO_USUARIO      role dona do schema, que roda as migrações (Flyway)
+#   SAAS_DB_DONO_SENHA        senha dela
+#   SAAS_DB_MIGRAR            true (padrão) roda as migrações ao subir
+#   SAAS_DB_DEFINIR_SENHA_APP true liga o LOGIN da saas_app com SAAS_DB_APP_SENHA depois das migrações
+#   COOKIE_SEGURO, DOMINIO_BASE, SESSAO_INATIVIDADE_MIN, SESSAO_MAXIMA_HORAS, SALTOS_DE_PROXY, WEB_ORIGINS:
+#                             os mesmos do servidor antigo (config/Ambiente.java)
+spring:
+  application:
+    name: saasluanmori
+  main:
+    banner-mode: off
+  datasource:
+    url: ${SAAS_DB_URL}
+    username: saas_app
+    password: ${SAAS_DB_APP_SENHA}
+    hikari:
+      maximum-pool-size: 10
+  flyway:
+    enabled: ${SAAS_DB_MIGRAR:true}
+    user: ${SAAS_DB_DONO_USUARIO:}
+    password: ${SAAS_DB_DONO_SENHA:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  thymeleaf:
+    mode: HTML
+  web:
+    resources:
+      add-mappings: true
+
+server:
+  port: ${PORT:8080}
+  error:
+    whitelabel:
+      enabled: false
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true

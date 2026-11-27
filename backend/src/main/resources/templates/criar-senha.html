@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!--/* Primeiro acesso, com a senha provisória (legacy/web/src/painel/TrocarSenha.tsx:24-119;
+       docs/migracao/01-MAPA-DE-TELAS.md §2): a pessoa só usa o sistema depois de criar a própria senha. O envio vai
+       pelo HTMX e o servidor devolve só os avisos ("avisos", abaixo), que entram no lugar dos marcadores: o que foi
+       digitado continua nos campos, como no sistema antigo. A resposta fica em criar-senha-avisos.html. */-->
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragmentos/cabeca :: cabeca}"></head>
+<body th:attr="hx-headers=${cabecalhosHtmx}">
+<div id="raiz">
+<div th:replace="~{entrada/molde :: molde(loja=${ {'nome': logado.lojaNome()} }, acoes=~{::acoes}, conteudo=~{::conteudo})}">
+<th:block th:fragment="acoes"><button th:replace="~{fragmentos/icones :: botaoTema('entrada-tema')}"></button></th:block>
+<th:block th:fragment="conteudo">
+  <section class="entrada-form" aria-labelledby="cs-titulo">
+    <h1 id="cs-titulo" class="entrada-titulo">Crie a sua senha</h1>
+    <p class="entrada-subtitulo cs-texto" th:text="|Olá, ${logado.nome()}. Por segurança, troque a senha provisória por uma senha pessoal, que só você vai saber. Ela vale para entrar no sistema e para autorizar operações no caixa.|">texto</p>
+    <form class="modal-form" method="post" th:action="@{/criar-senha}" novalidate th:attr="hx-post=@{/criar-senha}" hx-swap="none" data-criar-senha>
+      <div class="campo">
+        <label for="ts-atual">Senha provisória que você recebeu</label>
+        <input id="ts-atual" name="atual" type="password" value="" autocomplete="current-password" maxlength="128" data-senha>
+        <span id="cs-erro-atual" hidden></span>
+      </div>
+      <div class="campo">
+        <label for="ts-nova">Senha nova</label>
+        <input id="ts-nova" name="nova" type="password" value="" autocomplete="new-password" maxlength="128" aria-describedby="ts-dica" data-senha>
+        <span id="ts-dica" class="modal-dica">Pelo menos 8 caracteres. Uma frase curta é fácil de lembrar e difícil de adivinhar. Não use o seu nome nem o seu usuário.</span>
+        <span id="cs-erro-nova" hidden></span>
+      </div>
+      <div class="campo">
+        <label for="ts-confirmacao">Repita a senha nova</label>
+        <input id="ts-confirmacao" name="confirmacao" type="password" value="" autocomplete="new-password" maxlength="128" data-senha>
+        <span id="cs-erro-confirmacao" hidden></span>
+      </div>
+      <label class="ts-mostrar"><input type="checkbox"> Mostrar as senhas</label>
+      <p id="cs-alerta" hidden></p>
+      <div class="modal-acoes">
+        <button type="submit" class="botao botao-primario">Criar a minha senha</button>
+      </div>
+    </form>
+    <button type="button" class="entrada-link" data-sair>Sair</button>
+  </section>
+</th:block>
+</div>
+</div>
+<form id="form-sair" method="post" th:action="@{/sair}" hidden></form>
+
+
+<script th:src="@{/js/painel.js}"></script>
+<script th:src="@{/js/criar-senha.js}"></script>
+</body>
+</html>
