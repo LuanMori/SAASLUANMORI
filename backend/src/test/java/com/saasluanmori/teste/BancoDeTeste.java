@@ -49,6 +49,10 @@ public final class BancoDeTeste {
         registro.add("SAAS_DB_DONO_USUARIO", () -> DONO);
         registro.add("SAAS_DB_DONO_SENHA", () -> DONO_SENHA);
         registro.add("SAAS_DB_DEFINIR_SENHA_APP", () -> "true");
+        // o custo das senhas nos testes automatizados (legacy/api/src/auth/senhas.ts:23-27)
+        registro.add("SAAS_SENHA_LOG_N", () -> "10");
+        // os testes falam por http com localhost: o cookie sai sem Secure (nome "sessao")
+        registro.add("COOKIE_SEGURO", () -> "false");
     }
 
     private static void recriar() {
