@@ -2,9 +2,9 @@
 
 ## Fase atual
 
-**Fase 2 — Fundação: concluída em 27/11/2026** (PR #7), com a comparação lado a lado com a demonstração feita em
-seguida, depois da decisão D5 (branch `migration/fase-2-comparacao-visual`). Próxima: **Fase 3 — módulo de referência
-(Fornecedores)**.
+**Fase 3 — módulo de referência: Fornecedores, concluída em 27/11/2026** (PR #9, branch
+`migration/fase-3-modulo-referencia`). É o modelo dos demais módulos. Próxima: **Fase 4 — demais módulos**, na ordem da
+tabela abaixo, começando por **Meu usuário**.
 
 ## Última sessão
 
@@ -40,6 +40,26 @@ O que foi feito:
     acessórios" embaixo do nome (`legacy/web/src/painel/BarraLateral.tsx:66`); no sistema novo a descrição e o logo da
     loja chegam com os dados da loja (módulo Dados e backup) e, até lá, a barra mostra as iniciais e o nome, como o
     antigo mostra numa loja sem logo e sem descrição.
+- Comparação juntada ao `teste-local-windows` (PR #8, merge `c4835b6`).
+- Fase 3, o módulo de referência **Fornecedores** (fica na aba Compras), com 36 testes novos (89 no total):
+  - banco: `V2__create_fornecedores.sql` com `tenant_id`, RLS ligado e forçado, a policy
+    `fornecedores_tenant_isolation` (o nome do template; as da fundação ganharam o mesmo formato), o documento único por
+    loja, o formato do documento e do telefone conferidos, e a `saas_app` sem `DELETE` e sem poder mudar a loja, o id ou a
+    criação;
+  - regras: as do `fornecedor.ts`, na mesma ordem e com as mesmas mensagens (nome, CNPJ ou CPF com os dígitos
+    verificadores, telefone com DDD, contato, observação, "Campo não permitido.", documento repetido com o nome de quem já
+    o tem); a permissão `compras`; alterar só grava se algo mudou; desativar e reativar; o histórico (`fornecedor.*`, com
+    os campos alterados) na mesma transação; a trava da loja para dois cadastros ao mesmo tempo;
+  - tela: a aba Compras com o cartão Fornecedores, a janela de cadastrar e alterar (foco, Tab, Esc, clique fora), os
+    avisos de cada campo, "Salvando…", as mensagens de sucesso, desativar e reativar; os cartões do módulo Compras mostram
+    o aviso das partes ainda não reconstruídas (T24);
+  - comparação lado a lado com a demonstração (mesmos fornecedores cadastrados nos dois, pelas telas): o cartão vazio, com
+    a lista e no tema escuro, e a janela vazia, com avisos e no alterar ficaram **iguais pixel a pixel**; só falta o botão
+    "+ Registrar compra", que chega com o módulo Compras;
+  - RLS conferido pelo `psql` no banco de desenvolvimento (sem loja: erro; outra loja: nenhum fornecedor; apagar ou mudar
+    a loja: recusado);
+  - a ordem alfabética passou para o ICU4J (T13): o `Collator` do Java não dava a ordem do navegador;
+  - decisões T24 e T25 e as revisões de T2, T13 e T22 no `06-RISCOS-E-DECISOES.md`.
 
 O que ficou pendente: ver Pendências abertas.
 
@@ -60,7 +80,7 @@ tela mostra número inventado.
 | Preparação (Fase 0) | ✅ concluída | #3 | — | — | — | — |
 | Especificação (Fase 1) | ✅ concluída | #6 | — | — | — | — |
 | Fundação (Fase 2): lojas, usuários e permissões, entrada, primeiro acesso, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), conferência ao subir, comandos de administração | ✅ concluída | #7 e o PR da comparação | 53 | ✅ | ✅ | ✅ conferido com o `04` e o `01` e lado a lado com a demonstração (D5), nos temas claro e escuro |
-| Fornecedores (módulo de referência, Fase 3; fica na aba Compras) | ⏳ pendente | — | — | — | — | — |
+| Fornecedores (módulo de referência, Fase 3; fica na aba Compras) | ✅ concluído | #9 | 36 | ✅ | ✅ | ✅ igual à demonstração pixel a pixel (falta só o "+ Registrar compra", do módulo Compras) |
 | Meu usuário | ⏳ pendente | — | — | — | — | — |
 | Usuários (com o Histórico e "O que cada papel pode fazer") | ⏳ pendente | — | — | — | — | — |
 | Produtos e estoque | ⏳ pendente | — | — | — | — | — |
@@ -122,3 +142,8 @@ tela mostra número inventado.
 - 27/11: **a demonstração pode ser aberta no navegador** só para olhar e tirar fotos de tela ao lado do sistema novo, na
   comparação de cada módulo; nada nela é alterado, e o resto do `legacy/` continua sem ser executado (resposta do Luan à
   P8, decisão D5; registrado no CLAUDE.md).
+- 27/11: **uma aba com partes de módulos diferentes** (T24): na aba Compras, os fornecedores funcionam e os cartões do
+  módulo Compras mostram o aviso das partes ainda não reconstruídas no corpo, como o antigo fazia na aba Meu usuário.
+- 27/11: **a ordem alfabética vem do ICU4J** (T13), a mesma do navegador; o `Collator` do Java ignorava espaços e
+  pontuação. É a segunda biblioteca fora da lista da decisão 2.8, depois do Bouncy Castle.
+- 27/11: **as policies de RLS se chamam `<tabela>_tenant_isolation`** (T2), o nome do template do prompt mestre.

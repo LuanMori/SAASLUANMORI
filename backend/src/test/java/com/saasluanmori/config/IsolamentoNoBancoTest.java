@@ -61,7 +61,7 @@ class IsolamentoNoBancoTest extends TesteComBanco {
     void aConferenciaRecusaAConexaoDaRoleDona() throws SQLException {
         try (Connection c = BancoDeTeste.conectar(BancoDeTeste.DONO, BancoDeTeste.DONO_SENHA)) {
             List<String> problemas = ConferenciaDoBanco.problemasDeSeguranca(new JdbcTemplate(new SingleConnectionDataSource(c, true)));
-            assertThat(problemas).containsExactly("A role da aplicação é dona de tabela(s): auditoria, flyway_schema_history, lojas, sessoes, usuarios.");
+            assertThat(problemas).containsExactly("A role da aplicação é dona de tabela(s): auditoria, flyway_schema_history, fornecedores, lojas, sessoes, usuarios.");
         }
     }
 

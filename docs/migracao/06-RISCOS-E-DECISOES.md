@@ -51,6 +51,8 @@ chegar a vez dela.
     forçado ou sem policy, se não acha nenhuma tabela de loja, ou se o banco ou a conexão não estão em UTF-8;
   - **consequência**: nenhuma consulta a tabela de loja pode rodar fora de uma transação com a loja definida. Isso vale
     também para as funções do Adm. Sup (T3), que rodam dentro da loja em que ele entrou.
+  - **nome das policies** (Fase 3): `<tabela>_tenant_isolation`, o do template do prompt mestre. As três da fundação,
+    que tinham o nome das migrações antigas (`<tabela>_isolamento_loja`), foram renomeadas na `V2__create_fornecedores.sql`.
 
 ### T3. Adm. Sup sem loja: o mesmo desenho do antigo
 
@@ -170,6 +172,14 @@ vazia e os pedidos respondem no tempo do servidor.
 - **Ordem alfabética e dinheiro**: `localeCompare('pt-BR')` e `Intl.NumberFormat('pt-BR')` (espaço não separável
   U+00A0 depois de "R$") no antigo; `Collator` e `NumberFormat` do Java para pt-BR na reconstrução, conferidos por testes
   contra os textos do antigo (03 §21, item 12).
+  - **Ordem alfabética, revista na Fase 3**: o teste com nomes difíceis mostrou que o `java.text.Collator` do Java NÃO dá
+    a mesma ordem: ele ignora espaços e pontuação ("Distribuidora PetSul" vem antes de "distribuidora pet sul", e
+    "Alvaro.Cia" antes de "Alvaro (Cia)") e põe "Ølsen" depois do "Z". O `localeCompare` do navegador vem do ICU.
+    **Decisão**: a ordem vem do ICU4J (`com.ibm.icu:icu4j` 78.3, a mesma versão do ICU do Node 22), em
+    `backend/.../domain/OrdemAlfabetica.java`. Com 49 nomes (acentos, maiúsculas, espaço, hífen, ponto, sublinhado,
+    números e letras de outras línguas), o Chromium 153, o Node 22 e o ICU4J dão a mesma ordem
+    (`OrdemAlfabeticaTest`). É a segunda biblioteca fora da lista da decisão 2.8, depois do Bouncy Castle (T1), pelo
+    mesmo motivo: o resultado igual ao do antigo.
 - **Banco**: UTF-8 com ICU `pt-BR`, como o antigo (`legacy/raiz/docker-compose.prod.yml:31`).
 - **Fuso**: `America/Sao_Paulo` como padrão da loja (`legacy/core/src/venda.ts:94-95`); textos guardados em NFC e busca
   sem acento (03 §6).
@@ -241,6 +251,18 @@ iguais porque as telas citam um deles: "A senha do suporte é trocada pelo scrip
   (`hx-swap-oob`). Recusa de regra volta com 400, 403, 409, 422 ou 429 e aparece na tela
   (`backend/src/main/resources/static/js/htmx-config.js`); deu certo, o servidor manda para a próxima página
   (`HX-Redirect`).
+- Numa aba (Fase 3, Compras), deu certo: a parte inteira volta com o aviso no alto (`HX-Retarget` e `HX-Reswap`),
+  como o `concluir` das telas antigas, e a janela some junto. Recusa dentro da janela: só os avisos de cada campo (o
+  campo ganha `campo-com-erro` e `aria-invalid="true"`, como no React) e o aviso geral. Recusa fora da janela: a parte
+  volta com o erro no alto. O 404 ("Fornecedor não encontrado.") também aparece na tela.
+- A janela por cima da tela é a do `legacy/web/src/painel/caixa/Modal.tsx` (`static/js/janela.js`): o foco vai para o
+  primeiro campo, Tab não sai dela, Esc e o clique fora fecham, e o foco volta ao botão que a abriu. O "Salvando…" do
+  botão e as marcas dos campos ficam em `static/js/formulario.js`.
+- Sem resposta do servidor, ou com uma falha dele, a tela mostra a mensagem do antigo ("Sem conexão com o servidor.
+  Verifique a internet.", "Erro interno. Tente novamente." ou "Algo deu errado. Tente novamente.",
+  `legacy/web/src/api.ts:973-984`) onde o pedido saiu: no aviso geral da janela ou no alto da parte.
+- O token de CSRF recusado num pedido do HTMX (a pessoa saiu e entrou de novo em outra aba) recarrega a página com a
+  sessão atual (`HX-Refresh`), em vez de a página de erro entrar no meio da tela (`config/PedidoRecusadoHandler.java`).
 
 ### T23. As partes ainda não reconstruídas
 
@@ -249,6 +271,30 @@ ainda não atendia: "Esta parte ainda não está ligada ao servidor. Por enquant
 (sistema-padrao-demo.html)." (`legacy/web/src/api.ts:956`; `legacy/web/src/App.tsx:15-19`;
 `legacy/web/src/painel/TelaPainel.tsx:268-279`). Cada módulo, ao chegar, entra na lista de partes reconstruídas
 (`backend/.../web/PainelController.java`). A aba Suporte é em branco de propósito (CLAUDE.md).
+
+### T24. Uma aba com partes de módulos diferentes
+
+A aba Compras do antigo junta dois módulos: os fornecedores e as compras (contas a pagar, histórico de compras, validade
+dos lotes e o "+ Registrar compra") (`legacy/web/src/painel/TelaCompras.tsx:93-361`). Os fornecedores chegam primeiro
+(Fase 3). **Decisão**: cada parte segue a T23 por conta própria, do mesmo jeito que o sistema real antigo fazia dentro da
+aba Meu usuário, onde um cartão que o servidor ainda não atendia mantinha o título e mostrava o aviso no corpo
+(`legacy/web/src/painel/TelaMeuUsuario.tsx:164-200`, o aviso em `:175`; `App.tsx:15-19`):
+- os cartões "Contas a pagar" e "Histórico de compras" aparecem com o título, o aviso no lugar do conteúdo e o rodapé
+  que já tinham; o de validade dos lotes só aparecia com lotes, e continua sem aparecer;
+- o botão "+ Registrar compra" não aparece (no antigo, os botões do alto só aparecem com os dados da aba carregados);
+- o cartão "Fornecedores" funciona inteiro.
+
+Quando o módulo Compras chegar, os cartões dele trocam o aviso pelo conteúdo e o botão volta.
+
+### T25. As regras de um corpo JSON num formulário
+
+As regras antigas recebiam um objeto JSON. O formulário da tela manda sempre campos de texto. Duas regras mudam de
+forma, com a mesma mensagem:
+- "Envie um texto." vale para o campo mandado mais de uma vez (no JSON, uma lista); para o documento e o telefone, os
+  valores juntam-se com vírgula antes de tirar os números, como o `String(lista)` do JavaScript;
+- "Envie um objeto com os dados do fornecedor." não tem como acontecer: um formulário sempre é um conjunto de campos.
+
+O campo escondido do token de CSRF (`_csrf`) não é um dado e não entra no "Campo não permitido.".
 
 ## 3. Divergências entre as fontes do sistema antigo
 

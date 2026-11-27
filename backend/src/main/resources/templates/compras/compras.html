@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!--/* A aba Compras (legacy/web/src/painel/TelaCompras.tsx:93-361; docs/migracao/01-MAPA-DE-TELAS.md §9). Por enquanto, só
+       os fornecedores funcionam (módulo de referência, Fase 3); os cartões do módulo Compras mostram o aviso das partes
+       ainda não reconstruídas dentro deles, como o sistema antigo fazia na aba Meu usuário (decisão T24). A janela de
+       cadastrar e alterar chega pelo HTMX e entra no fim desta parte, como no React (compras/janela-fornecedor.html).
+       O texto fica junto das marcas onde o React não deixava espaço (o nome e a etiqueta "desativado"). */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="conteudo" class="rel compras">
+  <header class="vg-topo pe-topo">
+    <div>
+      <h1>Compras</h1>
+      <p class="suave">Compras por nota fiscal, contas a pagar, validade dos lotes e os fornecedores da loja.</p>
+    </div>
+    <div th:if="${fornecedores != null}" class="pe-topo-acoes">
+      <button type="button" class="botao" th:attr="hx-get=@{/compras/fornecedores/novo}" hx-target="closest .compras" hx-swap="beforeend" data-abre-janela data-foco="novo-fornecedor">+ Cadastrar fornecedor</button>
+    </div>
+  </header>
+
+  <p th:if="${aviso != null}" class="alerta" role="status" th:text="${aviso}">aviso</p>
+  <p th:if="${erro != null}" class="alerta alerta-erro" role="alert" th:text="${erro}">erro</p>
+
+  <th:block th:if="${fornecedores != null}">
+  <section class="card card-plano" aria-labelledby="pagar-titulo">
+    <div class="card-cabeca">
+      <h2 id="pagar-titulo">Contas a pagar</h2>
+    </div>
+    <p class="vazio" th:text="${avisoSemServidor}">aviso</p>
+  </section>
+
+  <section class="card card-plano" aria-labelledby="compras-titulo">
+    <div class="card-cabeca">
+      <h2 id="compras-titulo">Histórico de compras</h2>
+    </div>
+    <p class="vazio" th:text="${avisoSemServidor}">aviso</p>
+    <p class="card-rodape">Compra lançada errada: abra os itens e use “Estornar”; depois lance a compra certa. Bonificação (sem custo): entrada em Produtos e estoque.</p>
+  </section>
+
+  <section class="card card-plano" aria-labelledby="forn-titulo">
+    <div class="card-cabeca">
+      <h2 id="forn-titulo">Fornecedores</h2>
+      <span class="suave" th:text="${ativos}">0 ativos</span>
+    </div>
+    <p th:if="${fornecedores.isEmpty()}" class="vazio">Nenhum fornecedor cadastrado ainda. Use “+ Cadastrar fornecedor”.</p>
+    <div th:unless="${fornecedores.isEmpty()}" class="tabela-caixa">
+      <table class="tabela tabela-vendas forn-tabela">
+        <thead>
+          <tr>
+            <th>Fornecedor</th>
+            <th>CNPJ / CPF</th>
+            <th>Telefone</th>
+            <th>Contato</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="f : ${fornecedores}" th:class="${f.ativo} ? null : 'pe-inativo'">
+            <td data-rotulo="Fornecedor" class="pe-nome"><th:block th:text="${f.nome}">Nome</th:block><span th:unless="${f.ativo}" class="tag-cancelada">desativado</span><small th:if="${f.observacao != null}" class="suave pe-detalhe" th:text="${f.observacao}">observação</small></td>
+            <td data-rotulo="CNPJ / CPF" class="mono" th:text="${f.documento != null} ? ${f.documentoFormatado} : '—'">—</td>
+            <td data-rotulo="Telefone" th:text="${f.telefone != null} ? ${f.telefoneFormatado} : '—'">—</td>
+            <td data-rotulo="Contato" th:text="${f.contato != null} ? ${f.contato} : '—'">—</td>
+            <td data-rotulo="Ações" class="pe-acoes"><button type="button" class="botao" th:attr="aria-label=|Alterar ${f.nome}|,hx-get=@{/compras/fornecedores/{id}(id=${f.id})},data-foco=|alterar-${f.id}|" hx-target="closest .compras" hx-swap="beforeend" data-abre-janela>Alterar</button><button type="button" class="botao" th:attr="aria-label=|${f.ativo ? 'Desativar' : 'Reativar'} ${f.nome}|,hx-post=@{/compras/fornecedores/{id}/{acao}(id=${f.id},acao=${f.ativo ? 'desativar' : 'reativar'})},data-foco=|ativo-${f.id}|" hx-target="closest .compras" hx-swap="outerHTML" th:text="${f.ativo} ? 'Desativar' : 'Reativar'">Desativar</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="card-rodape">Desativar tira o fornecedor da lista de escolha; os produtos e as compras que já apontam para ele continuam com ele.</p>
+  </section>
+  </th:block>
+</div>
+</body>
+</html>

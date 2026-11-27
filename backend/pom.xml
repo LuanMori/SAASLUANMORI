@@ -27,6 +27,7 @@
     <!-- fora do controle de versões do Spring Boot: fixadas aqui -->
     <htmx.version>1.9.12</htmx.version>
     <bouncycastle.version>1.87</bouncycastle.version>
+    <icu4j.version>78.3</icu4j.version>
   </properties>
 
   <dependencies>
@@ -63,6 +64,14 @@
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
+    </dependency>
+
+    <!-- a ordem alfabética do sistema antigo (localeCompare('pt-BR') do navegador) vem do ICU; o Collator do próprio
+         Java ignora espaços e pontuação e não dá a mesma ordem (decisão T13 de docs/migracao/06-RISCOS-E-DECISOES.md) -->
+    <dependency>
+      <groupId>com.ibm.icu</groupId>
+      <artifactId>icu4j</artifactId>
+      <version>${icu4j.version}</version>
     </dependency>
 
     <!-- dados: JPA + Hibernate, migrações com Flyway, PostgreSQL -->

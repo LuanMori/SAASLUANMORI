@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!--/* "Cadastrar fornecedor" e "Alterar fornecedor: <nome>" (ModalFornecedor, legacy/web/src/painel/TelaCompras.tsx:375-471, na
+       janela Modal de legacy/web/src/painel/caixa/Modal.tsx:51-65; docs/migracao/01-MAPA-DE-TELAS.md §9). O comportamento da
+       janela (foco, Tab, Esc, clicar fora) fica em static/js/janela.js; o "Salvando…" e as marcas dos campos com aviso,
+       em static/js/formulario.js. Os avisos chegam pelo HTMX nos marcadores escondidos (compras/avisos-fornecedor.html);
+       o que foi digitado continua nos campos. */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="janela" class="modal-fundo">
+  <div class="modal-caixa" role="dialog" aria-modal="true" aria-labelledby="forn-janela-titulo">
+    <h2 id="forn-janela-titulo" class="modal-titulo" th:text="${titulo}">Cadastrar fornecedor</h2>
+    <form class="modal-form" novalidate autocomplete="off" th:attr="hx-post=@{${acao}}" hx-swap="none" data-salvando="Salvando…">
+      <div class="campo">
+        <label for="forn-nome">Nome do fornecedor</label>
+        <input id="forn-nome" name="nome" th:value="${dados.nome}" aria-invalid="false" maxlength="120" placeholder="Ex.: Distribuidora Pet Sul">
+        <span id="forn-erro-nome" data-erro-campo hidden></span>
+      </div>
+      <div class="modal-grade">
+        <div class="campo">
+          <label for="forn-documento">CNPJ ou CPF (opcional)</label>
+          <input id="forn-documento" name="documento" th:value="${dados.documento}" aria-invalid="false" inputmode="numeric" maxlength="18">
+          <span id="forn-erro-documento" data-erro-campo hidden></span>
+        </div>
+        <div class="campo">
+          <label for="forn-telefone">Telefone com DDD (opcional)</label>
+          <input id="forn-telefone" name="telefone" th:value="${dados.telefone}" aria-invalid="false" inputmode="tel" maxlength="16">
+          <span id="forn-erro-telefone" data-erro-campo hidden></span>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="forn-contato">Contato (opcional)</label>
+        <input id="forn-contato" name="contato" th:value="${dados.contato}" aria-invalid="false" maxlength="80" placeholder="Ex.: Marcos, representante">
+        <span id="forn-erro-contato" data-erro-campo hidden></span>
+      </div>
+      <div class="campo">
+        <label for="forn-observacao">Observação (opcional)</label>
+        <input id="forn-observacao" name="observacao" th:value="${dados.observacao}" aria-invalid="false" maxlength="300" placeholder="Ex.: entrega às terças">
+        <span id="forn-erro-observacao" data-erro-campo hidden></span>
+      </div>
+      <p id="forn-alerta" data-alerta hidden></p>
+      <div class="modal-acoes">
+        <button type="submit" class="botao botao-primario" th:text="${botao}">Cadastrar fornecedor</button>
+        <button type="button" class="botao" data-fechar>Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+</body>
+</html>

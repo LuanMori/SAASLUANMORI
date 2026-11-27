@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<!--/* A resposta de uma recusa na janela do fornecedor: o primeiro aviso de cada campo e, se houver, o aviso geral (o que
+       não é de nenhum campo, como "Campo não permitido." ou "Fornecedor não encontrado."), como o ModalFornecedor mostrava
+       (legacy/web/src/painel/TelaCompras.tsx:397,423-424,448-452). Cada um entra no lugar do marcador da janela. */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<th:block th:fragment="avisos">
+  <span th:each="campo : ${campos}" th:id="'forn-erro-' + ${campo}" hx-swap-oob="true" data-erro-campo th:class="${erros.get(campo) != null} ? 'campo-erro'" th:hidden="${erros.get(campo) == null}" th:text="${erros.get(campo)}"></span>
+  <p th:if="${erroGeral != null}" id="forn-alerta" hx-swap-oob="true" data-alerta class="alerta alerta-erro" role="alert" th:text="${erroGeral}">erro</p>
+  <p th:if="${erroGeral == null}" id="forn-alerta" hx-swap-oob="true" data-alerta hidden></p>
+</th:block>
+</body>
+</html>

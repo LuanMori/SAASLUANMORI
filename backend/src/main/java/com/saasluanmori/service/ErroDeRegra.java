@@ -1,5 +1,6 @@
 package com.saasluanmori.service;
 
+import com.saasluanmori.domain.ErroCampo;
 import java.io.Serial;
 import java.util.List;
 
@@ -12,10 +13,6 @@ public class ErroDeRegra extends RuntimeException {
 
     @Serial
     private static final long serialVersionUID = 1L;
-
-    /** Um erro de um campo do formulário. */
-    public record ErroCampo(String campo, String mensagem) {
-    }
 
     private final int status;
     private final String codigo;

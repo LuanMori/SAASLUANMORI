@@ -87,7 +87,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/entrar", "/sair", "/saude", "/error", "/css/**", "/js/**", "/img/**", "/webjars/**").permitAll()
                         .anyRequest().authenticated())
-                .exceptionHandling(e -> e.authenticationEntryPoint(new EntradaEntryPoint(amb)))
+                .exceptionHandling(e -> e.authenticationEntryPoint(new EntradaEntryPoint(amb)).accessDeniedHandler(new PedidoRecusadoHandler()))
                 .headers(h -> h
                         .contentSecurityPolicy(c -> c.policyDirectives(CSP))
                         .frameOptions(f -> f.deny())
