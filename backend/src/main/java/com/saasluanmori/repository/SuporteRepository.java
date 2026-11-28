@@ -59,6 +59,16 @@ public class SuporteRepository {
                 .list();
     }
 
+    /** A foto do perfil do Adm. Sup ({@code app_suporte_foto}); {@code null} = sem foto. */
+    public String foto(UUID id) {
+        return jdbc.sql("SELECT app_suporte_foto(?)").param(id).query(String.class).optional().orElse(null);
+    }
+
+    /** Troca a foto do Adm. Sup ({@code app_suporte_definir_foto}); {@code false} = ele não existe mais. */
+    public boolean definirFoto(UUID id, String foto) {
+        return Boolean.TRUE.equals(jdbc.sql("SELECT app_suporte_definir_foto(?, ?)").param(id).param(foto).query(Boolean.class).single());
+    }
+
     private static Instant instante(OffsetDateTime t) {
         return t == null ? null : t.toInstant();
     }

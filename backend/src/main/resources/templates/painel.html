@@ -30,7 +30,7 @@
         <div class="sideuser-id">
           <button type="button" th:class="'sideuser-perfil' + (${secao.id == 'meu-usuario'} ? ' active' : '')"
                   th:attr="aria-label=|Meu usuário: ${logado.nome()}, ${logado.papel().rotulo()}|" title="Abrir Meu usuário" data-ir="/meu-usuario">
-            <span class="sideuser-avatar" aria-hidden="true" th:text="${inicialDaPessoa}">A</span>
+            <span th:replace="~{fragmentos/avatar :: avatar(false)}"></span>
             <span class="sideuser-name">
               <b th:text="${logado.nome()}">Nome</b>
               <small th:text="${logado.papel().rotulo()}">Papel</small>

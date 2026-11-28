@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<!--/* A aba Meu usuário (legacy/web/src/painel/TelaMeuUsuario.tsx:37-258; docs/migracao/01-MAPA-DE-TELAS.md §4), para todos
+       os papéis: o perfil com a foto, as entradas e saídas e trocar a senha. A foto escolhida aparece antes de ser salva
+       (static/js/foto.js, que a corta em quadrado e reduz no navegador, como legacy/web/src/painel/imagem.ts); o que o
+       React mostrava só às vezes fica num <template> (decisão T22). O texto fica junto das marcas onde o React não
+       deixava espaço. */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="conteudo" class="rel mu">
+  <header class="vg-topo">
+    <div>
+      <h1>Meu usuário</h1>
+      <p class="suave">A sua foto, as suas entradas e saídas do sistema e a sua senha.</p>
+    </div>
+  </header>
+  <section th:replace="~{meu-usuario/meu-usuario :: perfil}"></section>
+  <section th:replace="~{meu-usuario/meu-usuario :: acessos}"></section>
+  <section th:replace="~{meu-usuario/meu-usuario :: senha}"></section>
+</div>
+
+<!--/* Perfil (TelaMeuUsuario.tsx:97-160): a foto ou a inicial, o nome, o login e o papel; escolher, trocar ou tirar a
+       foto. Salvar e tirar vão pelo HTMX; a recusa volta no marcador do erro (mu-perfil-erro). */-->
+<section th:fragment="perfil" class="card db-card" aria-labelledby="mu-perfil-titulo" data-perfil data-avisos>
+  <h2 id="mu-perfil-titulo">Perfil</h2>
+  <div class="mu-perfil">
+    <div class="mu-foto"><img th:if="${foto != null}" th:src="${foto}" alt="A sua foto"><span th:if="${foto == null}" aria-hidden="true" th:text="${inicialDaPessoa}">A</span></div>
+    <dl class="mu-dados">
+      <div>
+        <dt>Nome</dt>
+        <dd th:text="${logado.nome()}">Nome</dd>
+      </div>
+      <div>
+        <dt>Usuário (login)</dt>
+        <dd th:text="${logado.usuario() != null and !logado.usuario().isEmpty()} ? ${logado.usuario()} : '—'">login</dd>
+      </div>
+      <div>
+        <dt>Papel</dt>
+        <dd th:text="${logado.papel().rotulo()}">Papel</dd>
+      </div>
+    </dl>
+  </div>
+  <div class="mu-foto-acoes"><label class="botao db-arquivo"><th:block th:text="${foto != null} ? 'Trocar a foto' : 'Escolher uma foto'">Escolher uma foto</th:block><input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Escolher a foto do perfil" data-foto-arquivo></label><button th:if="${foto != null}" type="button" class="link" th:attr="hx-post=@{/meu-usuario/foto}" hx-target="closest section" hx-swap="outerHTML" data-foto-envio>Tirar a foto</button><span class="modal-dica">PNG, JPEG ou WebP. A foto é cortada em quadrado e reduzida aqui mesmo, no navegador.</span></div>
+  <template data-foto-nova><button type="button" class="botao botao-primario" th:attr="hx-post=@{/meu-usuario/foto}" hx-include="#mu-foto-nova" hx-target="closest section" hx-swap="outerHTML" data-foto-envio data-foto-salvar>Salvar a foto</button><button type="button" class="botao" data-foto-cancelar>Cancelar</button><span class="modal-dica">PNG, JPEG ou WebP. A foto é cortada em quadrado e reduzida aqui mesmo, no navegador.</span></template>
+  <input type="hidden" id="mu-foto-nova" name="foto" value="">
+  <p id="mu-perfil-erro" data-alerta hidden></p>
+  <p th:if="${avisoPerfil != null}" class="alerta" role="status" th:text="${avisoPerfil}">aviso</p>
+</section>
+
+<!--/* Entradas e saídas (TelaMeuUsuario.tsx:164-233): as 30 mais recentes, da mais nova para trás; a sessão de agora fica
+       marcada. */-->
+<section th:fragment="acessos" class="card card-plano mu-acessos" aria-labelledby="mu-acessos-titulo">
+  <div class="card-cabeca">
+    <h2 id="mu-acessos-titulo">Entradas e saídas</h2>
+    <span class="suave" th:text="|as ${maxAcessos} mais recentes|">as 30 mais recentes</span>
+  </div>
+  <p th:if="${acessos.isEmpty()}" class="vazio">Nenhuma entrada registrada ainda.</p>
+  <div th:unless="${acessos.isEmpty()}" class="tabela-caixa">
+    <table class="tabela mu-tabela">
+      <thead>
+        <tr>
+          <th scope="col">Dia</th>
+          <th scope="col">Entrada</th>
+          <th scope="col">Saída</th>
+          <th scope="col">Tempo</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="a : ${acessos}" th:class="${a.atual()} ? 'mu-atual'">
+          <td class="mu-dia" th:text="${a.dia()}">dia</td>
+          <td data-rotulo="Entrada" th:text="${a.entrada()}">—</td>
+          <td data-rotulo="Saída"><th:block th:if="${a.saida() != null}"><th:block th:text="${a.saida()}">hora</th:block><small th:if="${a.porFaltaDeUso()}" class="mu-como"> por falta de uso</small></th:block><strong th:if="${a.saida() == null and a.atual()}" class="mu-agora">em uso agora</strong><span th:if="${a.saida() == null and !a.atual()}" class="suave">não registrada</span></td>
+          <td data-rotulo="Tempo" th:text="${a.tempo()}">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="card-rodape">Saída “não registrada”: o sistema foi fechado sem clicar em Sair. Depois de um tempo sem uso, o sistema sai sozinho (“por falta de uso”).</p>
+</section>
+
+<!--/* Trocar a senha (TelaMeuUsuario.tsx:236-258): o FormTrocarSenha com "Senha atual" e "Trocar a senha". O envio vai pelo
+       HTMX: recusa, só os avisos (criar-senha-avisos.html, os mesmos marcadores); deu certo, o cartão volta com o aviso e o
+       formulário vazio. */-->
+<section th:fragment="senha" class="card db-card" aria-labelledby="mu-senha-titulo">
+  <h2 id="mu-senha-titulo">Trocar a senha</h2>
+  <p class="suave db-sub">A senha vale para entrar no sistema e para autorizar operações no caixa. Depois da troca, a sua sessão em outros aparelhos termina.</p>
+  <p th:if="${avisoSenha != null}" class="alerta mu-senha-aviso" role="status" th:text="${avisoSenha}">aviso</p>
+  <form class="modal-form" method="post" th:action="@{/meu-usuario/senha}" novalidate th:attr="hx-post=@{/meu-usuario/senha}" hx-swap="none" data-salvando="Salvando…" data-avisos>
+    <div class="campo">
+      <label for="ts-atual">Senha atual</label>
+      <input id="ts-atual" name="atual" type="password" value="" autocomplete="current-password" maxlength="128" data-senha>
+      <span id="cs-erro-atual" hidden></span>
+    </div>
+    <div class="campo">
+      <label for="ts-nova">Senha nova</label>
+      <input id="ts-nova" name="nova" type="password" value="" autocomplete="new-password" maxlength="128" aria-describedby="ts-dica" data-senha>
+      <span id="ts-dica" class="modal-dica">Pelo menos 8 caracteres. Uma frase curta é fácil de lembrar e difícil de adivinhar. Não use o seu nome nem o seu usuário.</span>
+      <span id="cs-erro-nova" hidden></span>
+    </div>
+    <div class="campo">
+      <label for="ts-confirmacao">Repita a senha nova</label>
+      <input id="ts-confirmacao" name="confirmacao" type="password" value="" autocomplete="new-password" maxlength="128" data-senha>
+      <span id="cs-erro-confirmacao" hidden></span>
+    </div>
+    <label class="ts-mostrar"><input type="checkbox"> Mostrar as senhas</label>
+    <p id="cs-alerta" data-alerta hidden></p>
+    <div class="modal-acoes">
+      <button type="submit" class="botao botao-primario">Trocar a senha</button>
+    </div>
+  </form>
+</section>
+
+<!--/* A foto salva (ou tirada): o cartão Perfil com o aviso e a pessoa da barra lateral com a foto nova. */-->
+<th:block th:fragment="perfilSalvo">
+  <section th:replace="~{meu-usuario/meu-usuario :: perfil}"></section>
+  <span th:replace="~{fragmentos/avatar :: avatar(true)}"></span>
+</th:block>
+
+<!--/* A foto recusada: só o aviso, no marcador do cartão (a foto escolhida continua na tela, como no antigo). */-->
+<p th:fragment="erroDaFoto" id="mu-perfil-erro" hx-swap-oob="true" data-alerta class="alerta alerta-erro" role="alert" th:text="${erroDaFoto}">erro</p>
+</body>
+</html>

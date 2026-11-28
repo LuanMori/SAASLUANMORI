@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<!--/* A pessoa no canto de baixo da barra lateral (legacy/web/src/painel/BarraLateral.tsx:92-94): a foto do perfil ou a
+       inicial do nome. A aba Meu usuário troca este pedaço quando a foto muda (o id é para isso; oob = a resposta do HTMX
+       que o troca). */-->
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<span th:fragment="avatar(oob)" id="barra-avatar" th:attr="hx-swap-oob=${oob} ? 'true' : null" class="sideuser-avatar" aria-hidden="true"><img th:if="${fotoDaPessoa != null}" th:src="${fotoDaPessoa}" alt=""><th:block th:if="${fotoDaPessoa == null}" th:text="${inicialDaPessoa}">A</th:block></span>
+</body>
+</html>

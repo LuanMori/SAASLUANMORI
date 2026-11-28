@@ -29,8 +29,33 @@
     botao.removeAttribute('data-texto');
   });
 
+  // "Mostrar as senhas" (FormTrocarSenha, legacy/web/src/painel/TrocarSenha.tsx:83-85): os campos [data-senha] do
+  // formulário viram texto; a senha atual que o servidor apaga depois de uma recusa segue a marca
+  function aplicarMostrar(caixa) {
+    var form = caixa.closest('form');
+    if (!form) return;
+    var campos = form.querySelectorAll('input[data-senha]');
+    for (var i = 0; i < campos.length; i++) campos[i].type = caixa.checked ? 'text' : 'password';
+  }
+
+  document.addEventListener('change', function (e) {
+    if (e.target.matches && e.target.matches('.ts-mostrar input[type=checkbox]')) aplicarMostrar(e.target);
+  });
+
+  // qualquer falha no envio apaga a senha atual (setAtual(''), TrocarSenha.tsx:55)
+  function apagarAtual(e) {
+    var form = e.detail.elt;
+    if (!form || !form.matches || !form.matches('form[data-salvando]')) return;
+    var atual = form.querySelector('#ts-atual');
+    if (atual) atual.value = '';
+  }
+  document.addEventListener('htmx:sendError', apagarAtual);
+  document.addEventListener('htmx:responseError', apagarAtual);
+
   // depois que os avisos novos assentam (o HTMX troca os atributos só no fim da troca)
   document.addEventListener('htmx:afterSettle', function () {
+    var mostrar = document.querySelectorAll('form[data-salvando] .ts-mostrar input[type=checkbox]');
+    for (var m = 0; m < mostrar.length; m++) aplicarMostrar(mostrar[m]);
     var marcadores = document.querySelectorAll('[data-erro-campo]');
     for (var i = 0; i < marcadores.length; i++) {
       var campo = marcadores[i].closest('.campo');

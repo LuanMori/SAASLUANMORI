@@ -2,7 +2,8 @@
 // indicadores (style-src 'self') nem de código em atributos (script-src 'self'). As recusas de regra (400, 403, 404, 409,
 // 422, 429) trazem os avisos para a tela, como as mensagens do sistema antigo. Sem resposta do servidor, ou com uma
 // falha dele, a mensagem é a mesma do sistema antigo (legacy/web/src/api.ts:973-984; legacy/api/src/http/filtro-erros.ts:86)
-// e aparece onde o pedido saiu: no aviso geral da janela, ou no alto da parte, no lugar dos outros avisos.
+// e aparece onde o pedido saiu: no aviso geral da janela ou do formulário ([data-avisos] com um [data-alerta]), ou no alto
+// da parte, no lugar dos outros avisos.
 (function () {
   'use strict';
   var SEM_CONEXAO = 'Sem conexão com o servidor. Verifique a internet.';
@@ -19,7 +20,7 @@
 
   function mostrarErro(elt, texto) {
     if (!elt || !elt.closest) return;
-    var caixa = elt.closest('.modal-caixa');
+    var caixa = elt.closest('.modal-caixa, [data-avisos]');
     var alerta = caixa ? caixa.querySelector('[data-alerta]') : null;
     if (alerta) {
       alerta.hidden = false;
