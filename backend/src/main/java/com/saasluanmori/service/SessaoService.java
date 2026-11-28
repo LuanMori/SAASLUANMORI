@@ -25,6 +25,7 @@ import com.saasluanmori.repository.UsuarioRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -297,8 +298,17 @@ public class SessaoService {
 
     // ------------------------------------------------------------------ sair e trocar a senha
 
-    /** Encerra a sessão deste navegador e grava a saída no histórico. */
+    /** Encerra a sessão deste navegador e grava a saída no histórico (pelo botão Sair). */
     public void sair(String valorDoCookie) {
+        sair(valorDoCookie, false);
+    }
+
+    /**
+     * Encerra a sessão deste navegador e grava a saída no histórico. {@code porFaltaDeUso}: a tela saiu sozinha depois
+     * de N minutos sem uso, e a saída leva {@code {"motivo": "inatividade"}}, como na demonstração
+     * ({@code legacy/web/src/demo/usuariosDemo.ts:309-314}); a aba Meu usuário mostra "por falta de uso".
+     */
+    public void sair(String valorDoCookie, boolean porFaltaDeUso) {
         Optional<CookieDaSessao.Lido> lido = CookieDaSessao.ler(valorDoCookie);
         if (lido.isEmpty()) {
             return;
@@ -309,7 +319,8 @@ public class SessaoService {
                 .filter(s -> !s.isEncerrada())
                 .ifPresent(s -> {
                     s.encerrar(BaseTenantEntity.agora());
-                    historico.registrar(s.getUsuarioId(), AcaoAuditoria.SESSAO_SAIU, null);
+                    historico.registrar(s.getUsuarioId(), AcaoAuditoria.SESSAO_SAIU, null,
+                            porFaltaDeUso ? Map.of("motivo", "inatividade") : Map.of());
                 }));
     }
 

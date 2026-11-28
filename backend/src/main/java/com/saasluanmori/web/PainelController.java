@@ -16,14 +16,14 @@ import org.springframework.web.server.ResponseStatusException;
  * {@code docs/migracao/01-MAPA-DE-TELAS.md} §3). As partes que ainda não foram reconstruídas mostram o mesmo aviso que o
  * sistema real antigo mostrava nas partes que o servidor ainda não atendia ({@code legacy/web/src/App.tsx:15-19};
  * {@code TelaPainel.tsx:268-279}); cada módulo, ao chegar, entra em {@link #RECONSTRUIDAS} e ganha o próprio
- * controlador (Compras: {@link ComprasController}). A aba Suporte fica em branco, como no sistema antigo (CLAUDE.md).
+ * controlador (Compras: {@link ComprasController}; Meu usuário: {@link MeuUsuarioController}). A aba Suporte fica em branco, como no sistema antigo (CLAUDE.md).
  * Mesmo que alguém force o endereço, quem não tem a permissão da parte não vê o conteúdo.
  */
 @Controller
 public class PainelController {
 
     /** As partes que já foram reconstruídas (as outras mostram o aviso). A Suporte é em branco de propósito. */
-    static final Set<Menu.Secao> RECONSTRUIDAS = EnumSet.of(Menu.Secao.SUPORTE, Menu.Secao.COMPRAS);
+    static final Set<Menu.Secao> RECONSTRUIDAS = EnumSet.of(Menu.Secao.SUPORTE, Menu.Secao.COMPRAS, Menu.Secao.MEU_USUARIO);
 
     /** {@code MENSAGEM_SEM_SERVIDOR} ({@code legacy/web/src/api.ts:956}). */
     static final String AVISO_SEM_SERVIDOR = "Esta parte ainda não está ligada ao servidor. Por enquanto ela funciona na demonstração (sistema-padrao-demo.html).";

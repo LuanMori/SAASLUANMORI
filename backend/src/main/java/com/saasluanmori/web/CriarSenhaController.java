@@ -4,13 +4,10 @@ import com.saasluanmori.config.Ambiente;
 import com.saasluanmori.config.Avisos;
 import com.saasluanmori.config.CookieDaSessao;
 import com.saasluanmori.config.UsuarioLogado;
-import com.saasluanmori.domain.RegrasDeSenha;
 import com.saasluanmori.service.ErroDeRegra;
 import com.saasluanmori.service.SessaoService;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -48,24 +45,12 @@ public class CriarSenhaController {
     public String criar(@AuthenticationPrincipal UsuarioLogado logado, @RequestParam(name = "atual", required = false) String atual,
             @RequestParam(name = "nova", required = false) String nova, @RequestParam(name = "confirmacao", required = false) String confirmacao,
             HttpServletResponse res, Model modelo) {
-        String a = atual == null ? "" : atual;
-        String n = nova == null ? "" : nova;
-        String c = confirmacao == null ? "" : confirmacao;
+        String a = FormularioDeSenha.texto(atual);
+        String n = FormularioDeSenha.texto(nova);
+        String c = FormularioDeSenha.texto(confirmacao);
 
         // as conferências da tela (FormTrocarSenha, TrocarSenha.tsx:33-42)
-        Map<String, String> erros = new LinkedHashMap<>();
-        if (a.isEmpty()) {
-            erros.put("atual", "Informe a senha atual.");
-        }
-        Optional<String> regra = RegrasDeSenha.validar(n, logado.usuario(), logado.nome());
-        if (regra.isPresent()) {
-            erros.put("nova", regra.get());
-        } else if (n.equals(a)) {
-            erros.put("nova", "A senha nova precisa ser diferente da atual.");
-        }
-        if (!erros.containsKey("nova") && !c.equals(n)) {
-            erros.put("confirmacao", "A confirmação está diferente da senha nova.");
-        }
+        Map<String, String> erros = FormularioDeSenha.conferir(logado, a, n, c);
         if (!erros.isEmpty()) {
             return avisos(res, modelo, 422, erros, null, false);
         }
@@ -81,16 +66,11 @@ public class CriarSenhaController {
                 res.setHeader("HX-Redirect", "/entrar?aviso=" + Avisos.BLOQUEADO);
                 return "fragmentos/vazio :: vazio";
             }
-            Map<String, String> doServidor = new LinkedHashMap<>();
-            boolean atualErrada = e.erros().stream().anyMatch(x -> x.campo().equals("senhaAtual"));
-            if (atualErrada) {
-                doServidor.put("atual", "Senha atual errada.");
-            }
-            return avisos(res, modelo, e.status(), doServidor, e.getMessage(), true);
+            return avisos(res, modelo, e.status(), FormularioDeSenha.doServidor(e), e.getMessage(), true);
         }
     }
 
-    private static String avisos(HttpServletResponse res, Model modelo, int status, Map<String, String> erros, String erroGeral, boolean limparAtual) {
+    static String avisos(HttpServletResponse res, Model modelo, int status, Map<String, String> erros, String erroGeral, boolean limparAtual) {
         res.setStatus(status);
         modelo.addAttribute("erros", erros);
         modelo.addAttribute("erroGeral", erroGeral);

@@ -28,8 +28,9 @@ public class SairController {
 
     @PostMapping("/sair")
     public String sair(@RequestParam(name = "aviso", required = false) String aviso, HttpServletRequest req, HttpServletResponse res) {
-        CookieDaSessao.doPedido(req, amb.nomeDoCookie()).ifPresent(sessoes::sair);
+        boolean porFaltaDeUso = Avisos.INATIVIDADE.equals(aviso);
+        CookieDaSessao.doPedido(req, amb.nomeDoCookie()).ifPresent(c -> sessoes.sair(c, porFaltaDeUso));
         res.addHeader("Set-Cookie", CookieDaSessao.apagado(amb));
-        return Avisos.INATIVIDADE.equals(aviso) ? "redirect:/entrar?aviso=" + Avisos.INATIVIDADE : "redirect:/entrar";
+        return porFaltaDeUso ? "redirect:/entrar?aviso=" + Avisos.INATIVIDADE : "redirect:/entrar";
     }
 }

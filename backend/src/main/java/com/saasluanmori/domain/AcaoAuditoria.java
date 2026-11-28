@@ -10,6 +10,8 @@ public enum AcaoAuditoria {
     SESSAO_SENHA_ERRADA("sessao.senha_errada", "Senha errada"),
     SESSAO_BLOQUEADO("sessao.bloqueado", "Bloqueado por senhas erradas"),
     USUARIO_SENHA_TROCADA("usuario.senha_trocada", "Trocou a própria senha"),
+    // Meu usuário (legacy/core/src/auditoria.ts:31); tirou a foto leva {"tirou": true}
+    USUARIO_FOTO_ALTERADA("usuario.foto_alterada", "Foto do perfil alterada"),
     // fornecedores (legacy/core/src/auditoria.ts:83-87); alterado leva os campos que mudaram
     FORNECEDOR_CADASTRADO("fornecedor.cadastrado", "Fornecedor cadastrado"),
     FORNECEDOR_ALTERADO("fornecedor.alterado", "Fornecedor alterado"),

@@ -66,6 +66,10 @@ chegar a vez dela.
   `super_admin` (mesmo `CHECK`); a aplicação nunca cria nem lê o Adm. Sup pelo JPA: lê pelas três funções (para o login,
   pelo id e para registrar tentativas e último acesso), com os mesmos nomes de colunas e as mesmas travas. O cadastro do
   Adm. Sup é um comando de administração (equivalente ao `db:suporte`), fora das telas.
+- **A foto do perfil do Adm. Sup** (aba Meu usuário, Fase 4): a linha dele continua invisível para a aplicação; a foto
+  passa por mais duas funções do mesmo desenho, `app_suporte_foto` (lê) e `app_suporte_definir_foto` (troca), que só
+  mexem na linha do `super_admin` (`V3__meu_usuario.sql`). A foto dele vale em toda loja, como na demonstração, que a
+  guarda junto do Adm. Sup e não da loja (`legacy/web/src/demo/usuariosDemo.ts:202-205`).
 
 ### T4. Sessão: a mesma do antigo, sem a sessão do servidor de aplicação
 
@@ -296,6 +300,20 @@ forma, com a mesma mensagem:
 
 O campo escondido do token de CSRF (`_csrf`) não é um dado e não entra no "Campo não permitido.".
 
+### T26. A foto do perfil fora do cadastro do usuário
+
+A foto (até 150.000 caracteres) fica na coluna `usuarios.foto`, mas fora da entidade `Usuario`: o cadastro é lido no
+login e a cada pedido, e a foto só é preciso na tela. Ela é lida e trocada por consultas próprias
+(`UsuarioRepository.fotoDe` e `definirFoto`). A barra lateral mostra a foto em toda página (`<img src="data:…">`, como o
+React fazia), lida a cada página.
+
+### T27. Texto com valores no meio: diferenças de fração de pixel
+
+O React montava um texto com um valor no meio em pedaços separados ("Pelo menos ", "8", " caracteres…"), e o navegador
+posiciona as letras depois de cada pedaço com uma diferença de fração de pixel. O HTML do servidor chega com o texto
+inteiro. As caixas, as cores e as fontes ficam iguais (conferido nas comparações lado a lado); sobram poucos pixels de
+suavização das letras, que não se veem. A reconstrução não imita os pedaços.
+
 ## 3. Divergências entre as fontes do sistema antigo
 
 Ordem que vale (decisão 2.3): `legacy/core` → `apiLocal.ts` (demonstração) → `api.ts` → `legacy/api`. Encontradas na
@@ -306,6 +324,7 @@ Fase 1:
 | Histórico | só acrescenta (`legacy/core/src/auditoria.ts:4`) | guarda as últimas 2000 linhas (`legacy/web/src/demo/usuariosDemo.ts:65,232`) | o core (T8) |
 | Autorização dada com senha | vale 4 horas (`legacy/core/src/venda.ts:91-92`) | perdida ao recarregar a página (`apiLocal.ts:570-572`) | o core (T7) |
 | Conferência da cópia de segurança | SHA-256, com a chave do servidor prevista (`copiaDaLoja.ts:10-12`) | SHA-256 sem chave | o core (T10) |
+| Saída por falta de uso no histórico | lê o motivo da saída e mostra "por falta de uso" (`legacy/core/src/perfil.ts:74`); o servidor antigo gravava `sessao.saiu` sem motivo (`legacy/api/src/auth/sessao.service.ts:385`) | grava `{"motivo": "inatividade"}` (`legacy/web/src/demo/usuariosDemo.ts:309-314`) | o core e a demonstração (ordem da decisão 2.3; Fase 4, Meu usuário) |
 
 Fora do core, a senha também difere: a demonstração guarda PBKDF2 do navegador (`pbkdf2$<iterações>$<sal>$<hash>`,
 100 mil iterações; `legacy/web/src/demo/usuariosDemo.ts:68,89-101`) e o servidor antigo, scrypt

@@ -2,9 +2,8 @@
 
 ## Fase atual
 
-**Fase 3 — módulo de referência: Fornecedores, concluída em 27/11/2026** (PR #9, branch
-`migration/fase-3-modulo-referencia`). É o modelo dos demais módulos. Próxima: **Fase 4 — demais módulos**, na ordem da
-tabela abaixo, começando por **Meu usuário**.
+**Fase 4 — demais módulos, em andamento** (desde 28/11/2026), na ordem da tabela abaixo, cada um com o template da
+Fase 3 (o módulo de referência, Fornecedores, PR #9). Pronto: **Meu usuário** (PR #10). Próximo: **Usuários**.
 
 ## Última sessão
 
@@ -60,6 +59,20 @@ O que foi feito:
     a loja: recusado);
   - a ordem alfabética passou para o ICU4J (T13): o `Collator` do Java não dava a ordem do navegador;
   - decisões T24 e T25 e as revisões de T2, T13 e T22 no `06-RISCOS-E-DECISOES.md`.
+- Fase 3 juntada ao `teste-local-windows` (PR #9, merge `c47b07e`).
+- Fase 4, módulo **Meu usuário** (28/11/2026), com 16 testes novos (105 no total):
+  - banco: `V3__meu_usuario.sql` com a coluna `usuarios.foto` (PNG, JPEG ou WebP em data URL, até 150.000 caracteres,
+    conferidos no banco), as funções da foto do Adm. Sup e o índice das entradas e saídas da pessoa;
+  - regras do `perfil.ts`: a foto, as entradas e saídas montadas do histórico (a de agora, a sem saída registrada, a
+    saída por falta de uso), o tempo de cada uma e o texto da duração; a saída por falta de uso passa a gravar o motivo,
+    como na demonstração;
+  - tela: o perfil com a foto (cortada em quadrado e reduzida no navegador, com prévia, Cancelar, Salvar, Tirar), a foto
+    também na barra lateral, as 30 entradas e saídas mais recentes e trocar a senha (o mesmo formulário de "Crie a sua
+    senha", que encerra as sessões dos outros aparelhos);
+  - comparação lado a lado com a demonstração: os três cartões iguais em todos os estados (sem foto, prévia, salva,
+    tirada; os avisos da senha da tela e do servidor), e a foto reduzida sai com o mesmo texto, byte a byte; sobram
+    diferenças de fração de pixel no desenho de algumas letras (T27);
+  - decisões T26 e T27, a foto do Adm. Sup na T3 e a divergência da saída por falta de uso no `06`.
 
 O que ficou pendente: ver Pendências abertas.
 
@@ -81,7 +94,7 @@ tela mostra número inventado.
 | Especificação (Fase 1) | ✅ concluída | #6 | — | — | — | — |
 | Fundação (Fase 2): lojas, usuários e permissões, entrada, primeiro acesso, sair, moldura (barra lateral, tema, saída por inatividade), histórico (gravação), conferência ao subir, comandos de administração | ✅ concluída | #7 e o PR da comparação | 53 | ✅ | ✅ | ✅ conferido com o `04` e o `01` e lado a lado com a demonstração (D5), nos temas claro e escuro |
 | Fornecedores (módulo de referência, Fase 3; fica na aba Compras) | ✅ concluído | #9 | 36 | ✅ | ✅ | ✅ igual à demonstração pixel a pixel (falta só o "+ Registrar compra", do módulo Compras) |
-| Meu usuário | ⏳ pendente | — | — | — | — | — |
+| Meu usuário | ✅ concluído | #10 | 16 | ✅ | ✅ | ✅ igual à demonstração em todos os estados (T27: frações de pixel no texto) |
 | Usuários (com o Histórico e "O que cada papel pode fazer") | ⏳ pendente | — | — | — | — | — |
 | Produtos e estoque | ⏳ pendente | — | — | — | — | — |
 | Clientes (cadastro, busca, conta, fiado e LGPD) | ⏳ pendente | — | — | — | — | — |
